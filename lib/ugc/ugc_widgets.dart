@@ -268,7 +268,7 @@ class _UgcFeedCardState extends State<UgcFeedCard> {
               const ColoredBox(color: Color(0xFF1E2027)),
               if (m != null)
                 Image(
-                  image: MediaCache.image(m.coverUrl, headers: UgcApi.headers, cacheKey: m.coverCacheKey),
+                  image: MediaCache.image(m.coverUrl, headers: m.headers, cacheKey: m.coverCacheKey),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 ),

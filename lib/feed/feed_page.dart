@@ -172,17 +172,21 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   // أي بوست (صورة / فيديو / لينك) بيفتح في نفس السكرول full-screen ويقدر يقلّب للي بعده
+  // ستريم واحد زي الريلز: نفس ترتيب الفيد (BDGR + اليوزرز)، والإعلانات بتظهر كل كام سوايب جوه العارض
   Future<void> _open(FeedPost p, {List<FeedPost>? list}) async {
-    final all = list ?? _posts;
-    await openFeedViewer(context, all, all.indexOf(p));
+    if (list != null) {
+      await openFeedViewer(context, list, list.indexOf(p));
+    } else {
+      final all = _entries;
+      await openMixedFeedViewer(context, all, all.indexOf(p), onUgcDeleted: (d) => _ugc.remove(d));
+    }
     if (mounted) setState(() {});   // عدد الـ Hype ممكن يكون اتغير جوه
   }
 
-
-  // بوست يوزر: يفتح في عارض البوستات (سحبة لفوق للبوست اللي بعده)
+  // بوست يوزر: نفس الستريم الموحّد
   Future<void> _openUgc(UgcItem it) async {
-    await openUgcViewer(context, items: _ugc, start: _ugc.indexOf(it), isOwner: false, ownerName: '',
-        onDeleted: (d) => _ugc.remove(d));
+    final all = _entries;
+    await openMixedFeedViewer(context, all, all.indexOf(it), onUgcDeleted: (d) => _ugc.remove(d));
     if (mounted) setState(() {});
   }
 

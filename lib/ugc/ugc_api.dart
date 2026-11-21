@@ -26,7 +26,7 @@ class UgcMedia {
 
   final int idx;
   final String type; // image | video
-  final String provider; // supabase | r2
+  final String provider; // supabase | r2 | external (لينك من برّه، مفيش ملف عندنا)
   final String key;
   final String? posterKey;
   final int size;
@@ -40,6 +40,8 @@ class UgcMedia {
 
   String get url => UgcApi.url(key, provider);
   String get coverUrl => UgcApi.url(coverKey, provider);
+  /// الهيدرز: توكن Supabase للملفات بتاعتنا بس — عمره ما يتبعت لموقع برّه.
+  Map<String, String> get headers => provider == 'external' ? const {} : UgcApi.headers;
   String get cacheKey => 'ugc/$key';
   String get coverCacheKey => 'ugc/$coverKey';
 
@@ -233,6 +235,7 @@ class UgcApi {
 
   /// لينك الملف حسب مكان تخزينه. R2 لسه مش متفعّل (بعدين: لينك موقّع من Edge Function).
   static String url(String key, String provider) {
+    if (provider == 'external') return key;   // الملف برّه (مثلاً Wikimedia): صفر مساحة وصفر egress عندنا
     final encoded = key.split('/').map(Uri.encodeComponent).join('/');
     return '${AppConfig.supabaseUrl}/storage/v1/object/authenticated/$bucket/$encoded';
   }

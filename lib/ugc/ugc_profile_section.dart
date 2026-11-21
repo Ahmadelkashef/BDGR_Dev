@@ -288,7 +288,7 @@ class _UgcProfileSectionState extends State<UgcProfileSection> {
           const ColoredBox(color: Color(0xFF1E2027)),
           if (m != null)
             Image(
-              image: MediaCache.image(m.coverUrl, headers: UgcApi.headers, cacheKey: m.coverCacheKey),
+              image: MediaCache.image(m.coverUrl, headers: m.headers, cacheKey: m.coverCacheKey),
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),

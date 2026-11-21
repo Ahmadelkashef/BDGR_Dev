@@ -47,16 +47,69 @@ class _UgcViewerState extends State<_UgcViewer> {
   late final PageController _pc = PageController(initialPage: widget.start);
   late final List<UgcItem> _items = List.of(widget.items);
   late int _i = widget.start;
-  final Map<int, int> _sub = {}; // الملف الظاهر جوه كل بوست
 
   bool get _ar => AppLang.isArabic;
-  String _t(String en, String ar) => _ar ? ar : en;
 
   @override
   void dispose() {
     _pc.dispose();
     super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Directionality(
+        textDirection: _ar ? TextDirection.rtl : TextDirection.ltr,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(children: [
+            PageView.builder(
+              controller: _pc,
+              scrollDirection: Axis.vertical,
+              itemCount: _items.length,
+              onPageChanged: (i) => setState(() => _i = i),
+              itemBuilder: (_, i) => UgcReelPage(
+                key: ValueKey(_items[i].id),
+                item: _items[i], active: i == _i, isOwner: widget.isOwner, ownerName: widget.ownerName,
+                onDeleted: (d) {
+                  widget.onDeleted?.call(d);
+                  setState(() => _items.remove(d));
+                  if (_items.isEmpty) Navigator.of(context).pop();
+                },
+              ),
+            ),
+            SafeArea(child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: IconButton(onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28)),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// صفحة بوست يوزر واحد full-screen (ملفاته يمين/شمال + Hype + كومنت + ريبوست + شير + ⋮).
+/// بتتستخدم في عارض بوستات اليوزر وفي الستريم الموحّد بتاع الفيد.
+class UgcReelPage extends StatefulWidget {
+  const UgcReelPage({super.key, required this.item, required this.active,
+      this.isOwner = false, this.ownerName = '', this.onDeleted});
+  final UgcItem item;
+  final bool active;
+  final bool isOwner;
+  final String ownerName;
+  final void Function(UgcItem)? onDeleted;
+  @override
+  State<UgcReelPage> createState() => _UgcReelPageState();
+}
+
+class _UgcReelPageState extends State<UgcReelPage> {
+  int _sub = 0; // الملف الظاهر جوه البوست
+  bool get _ar => AppLang.isArabic;
+  String _t(String en, String ar) => _ar ? ar : en;
 
   // بوستي أنا: امسح بدل ابلّغ، ومفيش ريبوست
   bool _own(UgcItem it) => widget.isOwner || it.mine;
@@ -79,9 +132,6 @@ class _UgcViewerState extends State<_UgcViewer> {
     try {
       await UgcApi.delete(it);
       widget.onDeleted?.call(it);
-      if (!mounted) return;
-      setState(() => _items.remove(it));
-      if (_items.isEmpty) Navigator.of(context).pop();
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(UgcError('unknown').message)));
     }
@@ -113,39 +163,6 @@ class _UgcViewerState extends State<_UgcViewer> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Directionality(
-        textDirection: _ar ? TextDirection.rtl : TextDirection.ltr,
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          body: Stack(children: [
-            PageView.builder(
-              controller: _pc,
-              scrollDirection: Axis.vertical,
-              itemCount: _items.length,
-              onPageChanged: (i) => setState(() => _i = i),
-              itemBuilder: (_, i) => _page(i),
-            ),
-            SafeArea(child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(children: [
-                IconButton(onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28)),
-                const Spacer(),
-                if (_items.isNotEmpty)
-                  IconButton(onPressed: () => _menu(_items[_i.clamp(0, _items.length - 1).toInt()]),
-                      icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 26)),
-              ]),
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
-
   Future<void> _hype(UgcItem it) async {
     HapticFeedback.lightImpact();
     final f = UgcApi.toggleHype(it);
@@ -154,18 +171,19 @@ class _UgcViewerState extends State<_UgcViewer> {
     if (mounted) setState(() {});
   }
 
-  Widget _page(int i) {
-    final it = _items[i];
-    final sub = _sub[i] ?? 0;
+  @override
+  Widget build(BuildContext context) {
+    final it = widget.item;
+    final sub = _sub;
     return Stack(fit: StackFit.expand, children: [
       GestureDetector(
         onDoubleTap: it.myHype || it.underReview ? null : () => _hype(it),
         child: PageView.builder(
         itemCount: it.media.length,
-        onPageChanged: (k) => setState(() => _sub[i] = k),
+        onPageChanged: (k) => setState(() => _sub = k),
         itemBuilder: (_, k) {
           final m = it.media[k];
-          final active = i == _i && k == sub;
+          final active = widget.active && k == sub;
           return m.isVideo ? _UgcVideo(media: m, active: active) : _UgcImage(media: m);
         },
       )),
@@ -241,6 +259,12 @@ class _UgcViewerState extends State<_UgcViewer> {
           ]),
         )),
       ),
+          // ⋮ = امسح (بوستي) / ابلّغ
+      PositionedDirectional(top: 0, end: 0, child: SafeArea(child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: IconButton(onPressed: () => _menu(it),
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 26)),
+      ))),
     ]);
   }
 }
@@ -250,7 +274,7 @@ class _UgcImage extends StatelessWidget {
   final UgcMedia media;
   @override
   Widget build(BuildContext context) => Image(
-        image: MediaCache.image(media.url, headers: UgcApi.headers, cacheKey: media.cacheKey),
+        image: MediaCache.image(media.url, headers: media.headers, cacheKey: media.cacheKey),
         fit: BoxFit.contain,
         loadingBuilder: (_, child, p) => p == null ? child : const Center(child: SizedBox(width: 28, height: 28,
             child: CircularProgressIndicator(color: Brand.navAccent, strokeWidth: 2))),
@@ -285,7 +309,7 @@ class _UgcVideoState extends State<_UgcVideo> {
   }
 
   Future<void> _load() async {
-    final c = await MediaCache.video(widget.media.url, headers: UgcApi.headers);
+    final c = await MediaCache.video(widget.media.url, headers: widget.media.headers);
     try {
       await c.initialize();
       await c.setLooping(true);
@@ -316,7 +340,7 @@ class _UgcVideoState extends State<_UgcVideo> {
       },
       child: Stack(fit: StackFit.expand, children: [
         if (!ready && widget.media.posterKey != null)
-          Image(image: MediaCache.image(widget.media.coverUrl, headers: UgcApi.headers, cacheKey: widget.media.coverCacheKey),
+          Image(image: MediaCache.image(widget.media.coverUrl, headers: widget.media.headers, cacheKey: widget.media.coverCacheKey),
               fit: BoxFit.contain, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
         if (ready) Center(child: AspectRatio(aspectRatio: c.value.aspectRatio, child: VideoPlayer(c))),
         if (!ready)

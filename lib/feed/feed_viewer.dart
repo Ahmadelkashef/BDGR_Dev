@@ -15,22 +15,32 @@ import '../social/comments_sheet.dart';
 import 'feed_api.dart';
 import 'feed_page.dart' show HypeButton, HypeMark;
 import '../web/web_layout.dart' show WebStage;
+import '../ugc/ugc_api.dart' show UgcItem;
+import '../ugc/ugc_viewer.dart' show UgcReelPage;
 
 /// الفيد full-screen: صور وفيديوهات ولينكات يوتيوب/تيك توك في نفس السكرول، سحبة لفوق للي بعده.
 /// كل فيديو بينزل مرة واحدة ويتكاش؛ بنجهّز الفيديو اللي بعده بس (مش أكتر) علشان الـ egress.
 /// الـ Hype هنا وبره هو نفس الأوبجكت، فاللي يدوسه جوه بيبان بره على طول.
-Future<void> openFeedViewer(BuildContext context, List<FeedPost> posts, int start) {
-  if (posts.isEmpty) return Future.value();
+Future<void> openFeedViewer(BuildContext context, List<FeedPost> posts, int start) =>
+    openMixedFeedViewer(context, posts, start);
+
+/// الستريم الموحّد (زي الريلز): بوستات BDGR + بوستات اليوزرز بنفس ترتيب الفيد، وإعلان كل كام سوايب.
+/// items = FeedPost أو UgcItem.
+Future<void> openMixedFeedViewer(BuildContext context, List<Object> items, int start,
+    {void Function(UgcItem)? onUgcDeleted}) {
+  if (items.isEmpty) return Future.value();
   return Navigator.of(context, rootNavigator: true).push(PageRouteBuilder<void>(
-    pageBuilder: (_, __, ___) => WebStage(child: _FeedViewer(videos: posts, start: start.clamp(0, posts.length - 1).toInt())),
+    pageBuilder: (_, __, ___) => WebStage(child: _FeedViewer(items: items,
+        start: start.clamp(0, items.length - 1).toInt(), onUgcDeleted: onUgcDeleted)),
     transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
   ));
 }
 
 class _FeedViewer extends StatefulWidget {
-  const _FeedViewer({required this.videos, required this.start});
-  final List<FeedPost> videos;   // كل البوستات (مش فيديوهات بس)
+  const _FeedViewer({required this.items, required this.start, this.onUgcDeleted});
+  final List<Object> items;   // FeedPost (BDGR) أو UgcItem (يوزر)
   final int start;
+  final void Function(UgcItem)? onUgcDeleted;
   @override
   State<_FeedViewer> createState() => _FeedViewerState();
 }
@@ -38,6 +48,8 @@ class _FeedViewer extends StatefulWidget {
 class _FeedViewerState extends State<_FeedViewer> {
   late final PageController _pc = PageController(initialPage: widget.start);
   late int _i = widget.start;
+  late final List<Object> _items = List.of(widget.items);
+  FeedPost? _p(int i) => i >= 0 && i < _items.length && _items[i] is FeedPost ? _items[i] as FeedPost : null;
   final Map<int, VideoPlayerController> _ctrls = {};
   final Set<int> _loading = {};
   bool _paused = false;
@@ -53,15 +65,16 @@ class _FeedViewerState extends State<_FeedViewer> {
     _prepare(_i + 1);
     _countView(_i);
     // لو فتح لينك يوتيوب/تيك توك من الفيد: نشغّله على طول، ولما يقفل يكمّل يقلّب عادي
-    if (widget.videos[_i].isExternal) {
-      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _openExternal(widget.videos[_i]); });
+    final first = _p(_i);
+    if (first != null && first.isExternal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _openExternal(first); });
     }
   }
 
   // الفيديو بيتحسب لما يشتغل؛ الصورة لما تتشاف؛ يوتيوب/تيك توك لما يتفتح المشغّل
   void _countView(int i) {
-    final p = widget.videos[i];
-    if (!p.isVideo) FeedApi.view(p);
+    final p = _p(i);
+    if (p != null && !p.isVideo) FeedApi.view(p);
   }
 
   @override
@@ -75,9 +88,9 @@ class _FeedViewerState extends State<_FeedViewer> {
   }
 
   Future<void> _prepare(int i, {bool play = false}) async {
-    if (i < 0 || i >= widget.videos.length || _ctrls.containsKey(i) || !_loading.add(i)) return;
-    final p = widget.videos[i];
-    if (!p.isOwnVideo) { _loading.remove(i); return; }
+    if (i < 0 || i >= _items.length || _ctrls.containsKey(i) || !_loading.add(i)) return;
+    final p = _p(i);
+    if (p == null || !p.isOwnVideo) { _loading.remove(i); return; }
     final c = await MediaCache.video(FeedApi.mediaUrl(p.storagePath), headers: FeedApi.headers);
     _loading.remove(i);
     if (!mounted || (i - _i).abs() > 1) { c.dispose(); return; }
@@ -107,7 +120,8 @@ class _FeedViewerState extends State<_FeedViewer> {
     if (c != null) {
       c.seekTo(Duration.zero);
       c.play();
-      FeedApi.view(widget.videos[i]);
+      final p = _p(i);
+      if (p != null) FeedApi.view(p);
     } else {
       _prepare(i, play: true);
     }
@@ -128,7 +142,7 @@ class _FeedViewerState extends State<_FeedViewer> {
     if (cfg.maxPerSession != null && _adsShown >= cfg.maxPerSession!) return;
     final ad = Ads.rotate('feed_viewer', _adsShown);
     if (ad == null) return;
-    _adOpen = true;
+    setState(() => _adOpen = true);   // بوست اليوزر اللي تحت الإعلان بيقف كمان
     _adsShown++;
     _ctrls[_i]?.pause();
     await Navigator.of(context).push(PageRouteBuilder<void>(
@@ -142,8 +156,9 @@ class _FeedViewerState extends State<_FeedViewer> {
           position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
           child: child),
     ));
-    _adOpen = false;
-    if (mounted && !_paused) _ctrls[_i]?.play();
+    if (!mounted) return;
+    setState(() => _adOpen = false);
+    if (!_paused) _ctrls[_i]?.play();
   }
 
   void _togglePause() {
@@ -183,7 +198,7 @@ class _FeedViewerState extends State<_FeedViewer> {
             PageView.builder(
               controller: _pc,
               scrollDirection: Axis.vertical,
-              itemCount: widget.videos.length,
+              itemCount: _items.length,
               onPageChanged: _onPage,
               itemBuilder: (_, i) => _page(i),
             ),
@@ -201,7 +216,19 @@ class _FeedViewerState extends State<_FeedViewer> {
   }
 
   Widget _page(int i) {
-    final p = widget.videos[i];
+    final o = _items[i];
+    if (o is UgcItem) {
+      return UgcReelPage(
+        key: ValueKey('ugc-${o.id}'),
+        item: o, active: i == _i && !_adOpen,
+        onDeleted: (d) {
+          widget.onUgcDeleted?.call(d);
+          setState(() => _items.remove(d));
+          if (_items.isEmpty) Navigator.of(context).pop();
+        },
+      );
+    }
+    final p = o as FeedPost;
     if (p.isExternal) return _shell(i, p, _externalBody(p), onTap: () => _openExternal(p));
     if (!p.isVideo) return _shell(i, p, _imageBody(p));
     final c = _ctrls[i];
