@@ -35,6 +35,8 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
   List<Map<String, dynamic>> _cats = [];
   List<Map<String, dynamic>> _top = [];   // كل الليجز: أول 5 (الأكبر عدد)
   int _topTotal = 0;
+  String _scope = 'all';   // all | member | following | followers
+  bool _topLoading = false;
   bool _loading = true;
   String? _error;
   String t(String en, String ar) => widget.isArabic ? ar : en;
@@ -48,7 +50,7 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
       final r = await Future.wait([
         _sb.rpc('league_my_list'),
         _sb.rpc('league_inbox'),
-        _sb.rpc('league_directory', params: {'p': {'limit': 5}}).catchError((_) => null),
+        _sb.rpc('league_directory', params: {'p': {'limit': 5, 'scope': _scope}}).catchError((_) => null),
         if (_cats.isEmpty) _sb.rpc('league_categories'),
       ]);
       if (!mounted) return;
@@ -132,7 +134,7 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
         else
           for (final l in _leagues) _leagueCard(l),
         // كل الليجز (الأكبر عدد الأول)
-        if (_top.isNotEmpty) ...[
+        if (_top.isNotEmpty || _scope != 'all') ...[
           const SizedBox(height: 18),
           Row(children: [
             Text(t('ALL LEAGUES', 'كل الليجز'), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
@@ -143,7 +145,15 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
               child: Text(t('See all ›', 'شوف الكل ›'), style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
           ]),
           const SizedBox(height: 8),
-          for (final l in _top)
+          _ScopeChips(isArabic: widget.isArabic, value: _scope, onChanged: _setScope),
+          const SizedBox(height: 10),
+          if (_topLoading)
+            const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 22, height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2, color: brandRed))))
+          else if (_top.isEmpty)
+            Padding(padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(_scopeEmpty(_scope, widget.isArabic), textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 13)))
+          else for (final l in _top)
             _DirLeagueCard(l: l, isArabic: widget.isArabic, catName: _catName(l['category']),
               onOpen: () => _openLeague(l['league_id'] as String),
               onJoined: (id) async { await _load(); if (mounted) _openLeague(id); }),
@@ -160,8 +170,24 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
 
   Future<void> _openDirectory() async {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
-        _LeagueDirectoryPage(isArabic: widget.isArabic, categories: _cats)));
+        _LeagueDirectoryPage(isArabic: widget.isArabic, categories: _cats, initialScope: _scope)));
     _load();
+  }
+
+  Future<void> _setScope(String v) async {
+    if (v == _scope) return;
+    setState(() { _scope = v; _topLoading = true; });
+    try {
+      final dir = Map<String, dynamic>.from(await _sb.rpc('league_directory', params: {'p': {'limit': 5, 'scope': v}}) as Map);
+      if (!mounted || v != _scope) return;
+      setState(() {
+        _top = ((dir['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _topTotal = (dir['total'] as num?)?.toInt() ?? 0;
+        _topLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _topLoading = false);
+    }
   }
 
   String _inboxLine() {
@@ -1097,7 +1123,9 @@ class _DirLeagueCardState extends State<_DirLeagueCard> {
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
             ])),
             const SizedBox(width: 8),
-            if (member)
+            if (l['is_owner'] == true)
+              Text(t('👑 Owner', '👑 صاحبها'), style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w900))
+            else if (member)
               Text(t('✓ Member', '✓ عضو'), style: TextStyle(color: Brand.green, fontSize: 12, fontWeight: FontWeight.w900))
             else
               SizedBox(height: 32, child: ElevatedButton(
@@ -1117,7 +1145,8 @@ class _DirLeagueCardState extends State<_DirLeagueCard> {
 class _LeagueDirectoryPage extends StatefulWidget {
   final bool isArabic;
   final List<Map<String, dynamic>> categories;
-  const _LeagueDirectoryPage({required this.isArabic, required this.categories});
+  final String initialScope;
+  const _LeagueDirectoryPage({required this.isArabic, required this.categories, this.initialScope = 'all'});
   @override
   State<_LeagueDirectoryPage> createState() => _LeagueDirectoryPageState();
 }
@@ -1127,6 +1156,7 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
   final _scroll = ScrollController();
   final List<Map<String, dynamic>> _items = [];
   String? _cat;
+  late String _scope = widget.initialScope;
   bool _loading = true, _more = false, _loadingMore = false, _error = false;
   int _total = 0, _req = 0;
   Timer? _debounce;
@@ -1149,7 +1179,7 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
     setState(() { if (more) { _loadingMore = true; } else { _loading = _items.isEmpty; _error = false; } });
     try {
       final r = Map<String, dynamic>.from(await _sb.rpc('league_directory', params: {'p': {
-        'q': _q.text.trim(), if (_cat != null) 'category': _cat, 'offset': more ? _items.length : 0, 'limit': 20,
+        'q': _q.text.trim(), 'scope': _scope, if (_cat != null) 'category': _cat, 'offset': more ? _items.length : 0, 'limit': 20,
       }}) as Map);
       if (!mounted || req != _req) return;
       final list = ((r['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -1217,6 +1247,8 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line))),
           )),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: _ScopeChips(isArabic: widget.isArabic, value: _scope, onChanged: (v) { setState(() => _scope = v); _fetch(); })),
           SizedBox(height: 46, child: ListView(
             scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
             children: [
@@ -1230,7 +1262,9 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
               ? Center(child: TextButton(onPressed: _fetch,
                   child: Text(t('Could not load. Tap to retry.', 'مش قادرين نحمّل. دوس وجرّب تاني.'), style: const TextStyle(color: muted))))
               : _items.isEmpty
-                ? Center(child: Text(t('No leagues found.', 'مفيش ليجز بالاسم ده.'), style: const TextStyle(color: muted)))
+                ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
+                    _q.text.trim().isNotEmpty || _cat != null ? t('No leagues found.', 'مفيش ليجز بالشكل ده.') : _scopeEmpty(_scope, widget.isArabic),
+                    textAlign: TextAlign.center, style: const TextStyle(color: muted))))
                 : RefreshIndicator(color: brandRed, onRefresh: () => _fetch(),
                     child: ListView.builder(
                       controller: _scroll, padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -1250,5 +1284,51 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
         ])),
       ),
     );
+  }
+}
+
+String _scopeEmpty(String scope, bool ar) {
+  String t(String en, String a) => ar ? a : en;
+  return switch (scope) {
+    'member' => t("You're not in any league yet.", 'إنت لسه مش في أي ليج.'),
+    'following' => t('People you follow have no leagues you can see.', 'اللي بتتابعهم معندهمش ليجز تقدر تشوفها.'),
+    'followers' => t('Your followers have no leagues you can see.', 'متابعينك معندهمش ليجز تقدر تشوفها.'),
+    _ => t('No leagues yet.', 'مفيش ليجز لسه.'),
+  };
+}
+
+/// فلتر "كل الليجز": الكل · ليجزي · اللي بتابعهم · متابعيني.
+class _ScopeChips extends StatelessWidget {
+  final bool isArabic;
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _ScopeChips({required this.isArabic, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    String t(String en, String ar) => isArabic ? ar : en;
+    final items = [
+      ('all', t('All', 'الكل')),
+      ('member', t("I'm in", 'ليجزي')),
+      ('following', t('People I follow', 'اللي بتابعهم')),
+      ('followers', t('My followers', 'متابعيني')),
+    ];
+    return SizedBox(height: 34, child: ListView(
+      scrollDirection: Axis.horizontal,
+      children: [
+        for (final (key, label) in items)
+          Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: GestureDetector(
+            onTap: () => onChanged(key),
+            child: Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: value == key ? brandRed : cardBg,
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: value == key ? brandRed : line)),
+              child: Text(label, style: TextStyle(color: value == key ? Colors.white : Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w800))),
+          )),
+      ],
+    ));
   }
 }
