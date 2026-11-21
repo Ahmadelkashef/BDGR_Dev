@@ -1318,40 +1318,44 @@ class _FancyPageState extends State<FancyPage> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: TextStyle(color: ph == 'open' ? Colors.white : c, fontSize: ph == 'open' ? 20 : 14.5,
                 fontWeight: FontWeight.w900, fontFeatures: const [FontFeature.tabularFigures()])),
-            Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
+            Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
           ])),
           const SizedBox(width: 8),
           _phasePill(ph),
         ]),
-        // الجوايز: كل مركز في سطر لوحده (أوضح)
-        if (event.prizes.isNotEmpty) ...[
-          const Padding(padding: EdgeInsets.symmetric(vertical: 9), child: Divider(height: 1, color: line)),
-          Row(children: [
-            const Icon(Icons.emoji_events_rounded, color: gold, size: 16),
-            const SizedBox(width: 6),
-            Text(t('PRIZES', 'الجوايز'), style: const TextStyle(color: gold, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
-          ]),
-          const SizedBox(height: 4),
-          for (final p in event.prizes)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2.5),
-              child: Row(children: [
-                SizedBox(width: 26, child: Text(medals[p.rank] ?? '🏅', style: const TextStyle(fontSize: 17))),
-                SizedBox(width: 50, child: Text(place(p.rank), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
-                Expanded(child: Text(p.text(isArabic), maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: p.rank == 1 ? gold : Colors.white, fontSize: p.rank == 1 ? 16 : 14.5, fontWeight: FontWeight.w900))),
-              ]),
-            ),
-        ],
-        // راعي واحد بس للجولة (بيتحدّث لما الإعلانات تتحمّل)
+        // الجوايز (كل مركز في سطر) + الراعي جنبها في المساحة الفاضية: لوجو + اسمه (الأونر، 21 نوفمبر)
         ValueListenableBuilder<int>(
           valueListenable: Ads.version,
           builder: (_, __, ___) {
-            final sponsor = _roundSponsor(event);
-            if (sponsor == null) return const SizedBox.shrink();
+            final ad = _roundSponsorAd(event);
+            final prizes = event.prizes.isEmpty ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.emoji_events_rounded, color: gold, size: 16),
+                const SizedBox(width: 6),
+                Text(t('PRIZES', 'الجوايز'), style: const TextStyle(color: gold, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+              ]),
+              const SizedBox(height: 4),
+              for (final p in event.prizes)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2.5),
+                  child: Row(children: [
+                    SizedBox(width: 26, child: Text(medals[p.rank] ?? '🏅', style: const TextStyle(fontSize: 17))),
+                    SizedBox(width: 44, child: Text(place(p.rank), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
+                    Expanded(child: Text(p.text(isArabic), maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: p.rank == 1 ? gold : Colors.white, fontSize: p.rank == 1 ? 16 : 14.5, fontWeight: FontWeight.w900))),
+                  ]),
+                ),
+            ]);
+            if (prizes == null && ad == null) return const SizedBox.shrink();
             return Column(mainAxisSize: MainAxisSize.min, children: [
-              const Padding(padding: EdgeInsets.only(top: 9, bottom: 8), child: Divider(height: 1, color: line)),
-              sponsor,
+              const Padding(padding: EdgeInsets.symmetric(vertical: 9), child: Divider(height: 1, color: line)),
+              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                if (prizes != null) Expanded(child: prizes) else const Spacer(),
+                if (ad != null) ...[
+                  const SizedBox(width: 10),
+                  _sponsorBlock(ad),
+                ],
+              ]),
             ]);
           },
         ),
@@ -1361,38 +1365,40 @@ class _FancyPageState extends State<FancyPage> {
 
   /// راعي الجولة: واحد بس على صفحة الجولة (الأونر، 21 نوفمبر).
   /// بياخد أول حملة موجودة بالترتيب ده: بانر الجولة ← "الجولة برعاية" ← "الجوايز مقدّمة من".
-  /// الدوسة بتفتح كارت الإعلان الكبير (كام ثانية وبيتقفل، وفيه زرار اللينك).
-  Widget? _roundSponsor(FantasyEvent event) {
+  AdItem? _roundSponsorAd(FantasyEvent event) {
     Ads.ensure();
-    AdItem? ad;
     for (final pl in const ['fantasy_lobby_banner', 'fantasy_round_title', 'fantasy_prize']) {
-      ad = Ads.pick(pl, eventId: event.eventId);
-      if (ad != null) break;
+      final ad = Ads.pick(pl, eventId: event.eventId);
+      if (ad != null) return ad;
     }
-    if (ad == null) return null;
-    final a = ad;
-    final name = a.sponsorName ?? a.title ?? '';
-    return AdImpression(
-      ad: a,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => showAdModal(context, a),
-        child: Row(children: [
-          Flexible(child: Text(t('Round sponsored by', 'الجولة برعاية'), maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
-          const SizedBox(width: 8),
-          AdLogo(a, size: 22),
-          const SizedBox(width: 6),
-          Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900))),
-          const SizedBox(width: 6),
-          AdLabel(demo: a.demo, onDark: false),
-          const Spacer(),
-          const Icon(Icons.chevron_right_rounded, color: muted, size: 20),
-        ]),
-      ),
-    );
+    return null;
   }
+
+  /// "Sponsored by" + اللوجو + الاسم تحته + "إعلان" — الدوسة بتفتح كارت الإعلان الكبير (كام ثانية وبيتقفل)
+  Widget _sponsorBlock(AdItem a) => AdImpression(
+        ad: a,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => showAdModal(context, a),
+          child: Container(
+            width: 96,
+            padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white10)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(t('Sponsored by', 'برعاية'), maxLines: 1,
+                  style: const TextStyle(color: muted, fontSize: 10, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              AdLogo(a, size: 40),
+              const SizedBox(height: 6),
+              Text(a.sponsorName ?? a.title ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900, height: 1.2)),
+              const SizedBox(height: 5),
+              AdLabel(demo: a.demo, onDark: false),
+            ]),
+          ),
+        ),
+      );
 
   String _dayLabel(DateTime dt) {
     final en = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
