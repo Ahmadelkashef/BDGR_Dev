@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import '../media_cache.dart';
 import 'dart:ui' show ImageFilter;
 
@@ -438,7 +439,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _welcomeChecked = true;
       _maybeShowWelcome();
     }
-    // Home Takeover (لو فيه حملة): مرة في اليوم، مش لليوزر الجديد، وبس لو الهوم هي اللي قدام اليوزر
+    // Home Takeover (لو فيه حملة): مرة في اليوم للكل (حتى اليوزر الجديد)، وبس لو الهوم هي اللي قدام اليوزر
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future<void>.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
@@ -588,6 +589,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // ---- Build ----
 
+  // ---- الرياضات + الإعلان تحت الهيرو من غير سكرول ----
+  final GlobalKey _headKey = GlobalKey();
+  double? _headH;   // ارتفاع الهيدر + الهيرو
+
+  void _measureHead() {
+    if (!mounted) return;
+    final h = _headKey.currentContext?.size?.height;
+    if (h != null && (_headH == null || (h - _headH!).abs() > 0.5)) setState(() => _headH = h);
+  }
+
+  /// ارتفاع كروت الرياضات والإعلان عشان الهيرو + الرياضات + الإعلان يتشافوا مرة واحدة.
+  /// لو الشاشة صغيرة أوي: الإعلان بيبقى شريط أرفع، ولو برضه مش كفاية → المقاسات العادية + سكرول.
+  ({double card, double ad})? _fitBelowHero(BuildContext context, double viewH, double w, bool narrow) {
+    final head = _headH;
+    if (head == null || w <= 0) return null;
+    final normalCard = narrow ? 155.0 : 190.0;
+    const minCard = 104.0;
+    final title = MediaQuery.textScalerOf(context).scale(18) * 1.3;
+    // 16 فوق الصفحة + 14 قبل العنوان + 13 تحته + 12 قبل الإعلان + 10 تحت
+    final avail = viewH - 16 - head - 14 - title - 13 - 12 - 10;
+    var ad = w / 3.2;
+    var card = avail - ad;
+    if (card < minCard) {
+      ad = math.max(w / 6, avail - minCard);
+      card = avail - ad;
+    }
+    if (card < minCard) return null;
+    return (card: math.min(card, normalCard), ad: ad);
+  }
+
   @override
   Widget build(BuildContext context) => Directionality(
         textDirection: AppLang.isArabic ? TextDirection.rtl : TextDirection.ltr,
@@ -627,7 +658,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         else
         SafeArea(
           bottom: false,
-          child: SingleChildScrollView(
+          child: LayoutBuilder(builder: (context, box) {
+          final viewH = box.maxHeight;
+          final contentW = math.min(box.maxWidth - 2 * (narrow ? 14 : 18), 484.0);
+          WidgetsBinding.instance.addPostFrameCallback((_) => _measureHead());
+          return SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               narrow ? 14 : 18,
               16,
@@ -641,24 +676,40 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildTopBar(),
-                    const SizedBox(height: 18),
-                    _buildHero(narrow),
-                    // إعلان: بانر تحت الهيرو (مفيش حملة = مفيش حاجة)
-                    // بعد الـ Takeover: نفس الإعلان بينزل هنا مكان البانر
+                    Column(
+                      key: _headKey,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTopBar(),
+                        const SizedBox(height: 18),
+                        _buildHero(narrow),
+                      ],
+                    ),
+                    // الترتيب (21 نوفمبر): الهيرو ← الرياضات ← الإعلان.
+                    // بعد الـ Takeover الإعلان بينزل تحت الرياضات، والمقاسات بتتحسب عشان كله يبان من غير سكرول.
                     ValueListenableBuilder<AdItem?>(
                       valueListenable: Ads.docked,
-                      builder: (_, d, __) => d == null
-                          ? const AdSlot('home_banner', padding: EdgeInsets.only(top: 18))
-                          : Padding(padding: const EdgeInsets.only(top: 18), child: DockedTakeoverBanner(d)),
+                      builder: (context, d, __) {
+                        final fit = d == null ? null : _fitBelowHero(context, viewH, contentW, narrow);
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(height: fit == null ? 24 : 14),
+                            _buildComingSection(narrow, cardHeight: fit?.card),
+                            if (d == null)
+                              const AdSlot('home_banner', padding: EdgeInsets.only(top: 18))
+                            else
+                              Padding(padding: const EdgeInsets.only(top: 12), child: DockedTakeoverBanner(d, height: fit?.ad)),
+                          ],
+                        );
+                      },
                     ),
-                    const SizedBox(height: 28),
-                    _buildComingSection(narrow),
                   ],
                 ),
               ),
             ),
-          ),
+          );
+          }),
         ),
         Positioned(
           left: 20,
@@ -1234,9 +1285,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // ---- More coming ----
 
-  Widget _buildComingSection(bool narrow, {bool wide = false}) {
+  Widget _buildComingSection(bool narrow, {bool wide = false, double? cardHeight}) {
     final gap = narrow ? 7.0 : 9.0;
-    final cardHeight = narrow ? 155.0 : 190.0;
+    final cardH = cardHeight ?? (narrow ? 155.0 : 190.0);
     if (wide) return _buildComingGrid();
 
     return Column(
@@ -1258,7 +1309,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             final cardWidth = (constraints.maxWidth - 2 * gap) / 3;
             // بيتحرك لوحده كارت كارت (دايرة مالهاش آخر)، ويقف لما اليوزر يلمسه
             return SizedBox(
-              height: cardHeight,
+              height: cardH,
               child: _AutoSlideRow(
                 count: kCompSports.length,
                 itemExtent: cardWidth + gap,
@@ -1266,7 +1317,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   padding: EdgeInsetsDirectional.only(end: gap),
                   child: SizedBox(
                     width: cardWidth,
-                    child: _sportCard(kCompSports[i], cardHeight, narrow),
+                    child: _sportCard(kCompSports[i], cardH, narrow),
                   ),
                 ),
               ),

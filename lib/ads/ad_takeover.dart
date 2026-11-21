@@ -47,8 +47,10 @@ Widget takeoverShuttle(BuildContext _, Animation<double> anim, HeroFlightDirecti
 
 /// البانر اللي بيفضل في الهوم بعد ما الـ Takeover يتقفل
 class DockedTakeoverBanner extends StatelessWidget {
-  const DockedTakeoverBanner(this.ad, {super.key});
+  const DockedTakeoverBanner(this.ad, {super.key, this.height});
   final AdItem ad;
+  /// ارتفاع ثابت (الهوم بيحسبه عشان كله يبان من غير سكرول)؛ null = نسبة 3.2
+  final double? height;
   @override
   Widget build(BuildContext context) => AdImpression(
         ad: ad,
@@ -56,9 +58,8 @@ class DockedTakeoverBanner extends StatelessWidget {
           onTap: () => openTakeoverDetails(context, ad),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: AspectRatio(
-              aspectRatio: 3.2,
-              child: Stack(fit: StackFit.expand, children: [
+            child: _box(
+              Stack(fit: StackFit.expand, children: [
                 Hero(tag: takeoverHeroTag(ad), flightShuttleBuilder: takeoverShuttle, child: AdMedia(ad)),
                 const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
                     begin: Alignment.topCenter, end: Alignment.bottomCenter,
@@ -72,6 +73,9 @@ class DockedTakeoverBanner extends StatelessWidget {
           ),
         ),
       );
+
+  Widget _box(Widget child) =>
+      height == null ? AspectRatio(aspectRatio: 3.2, child: child) : SizedBox(height: height, child: child);
 }
 
 /// "اعرف أكتر": لو فيه تفاصيل (بريميوم) → صفحة جوه التطبيق، وإلا → اللينك على طول

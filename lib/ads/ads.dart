@@ -96,7 +96,7 @@ class Ads with WidgetsBindingObserver {
   static final ValueNotifier<String?> deepLink = ValueNotifier<String?>(null);
 
   static List<AdItem> _ads = const [];
-  /// حساب جديد (أقل من 24 ساعة): مفيش Takeover في أول يوم
+  /// حساب جديد (أقل من 24 ساعة) — مبقاش بيمنع الـ Takeover (21 نوفمبر)
   static bool newUser = true;
   /// إعلان الـ Takeover بعد ما اتقفل: بينزل مكانه في الهوم كبانر (مكان home_banner)
   static final ValueNotifier<AdItem?> docked = ValueNotifier<AdItem?>(null);
@@ -275,7 +275,7 @@ class Ads with WidgetsBindingObserver {
   /// الـ Takeover: إعلان واحد مرة في اليوم (التجريبي: مرة في كل فتحة للتطبيق عشان التجربة)
   static Future<AdItem?> takeoverToShow() async {
     await ensure();
-    if (newUser) return null;
+    // الأونر (21 نوفمبر): الـ Takeover بيظهر للكل، حتى الحساب الجديد
     final ad = pick('home_takeover');
     if (ad == null || _takeoverShown.contains(ad.id)) return null;
     if (!ad.demo) {
