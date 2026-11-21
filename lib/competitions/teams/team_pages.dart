@@ -74,8 +74,21 @@ Route<void> teamPageRoute(String id, {bool justCreated = false}) =>
 // كارت "فريقي ⚽" في صفحة المسابقات
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// صفحة "فرقي": كل الفرق + الدعوات + الطلبات + فريق جديد / انضم بكود
+class MyTeamsPage extends StatelessWidget {
+  const MyTeamsPage({super.key});
+  @override
+  Widget build(BuildContext context) => _dir(Scaffold(
+        backgroundColor: Brand.background,
+        appBar: _bar(_t('My teams', 'فرقي')),
+        body: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: const [TeamHubCard(compact: false)]),
+      ));
+}
+
+/// compact = الكارت الصغير في صفحة المسابقات (سطر واحد + دوسة تفتح "فرقي")
 class TeamHubCard extends StatefulWidget {
-  const TeamHubCard({super.key});
+  const TeamHubCard({super.key, this.compact = true});
+  final bool compact;
   @override
   State<TeamHubCard> createState() => _TeamHubCardState();
 }
@@ -130,6 +143,7 @@ class _TeamHubCardState extends State<TeamHubCard> {
     final d = _d;
     if (d == null) return const SizedBox.shrink();
     final teams = _list('teams'), invites = _list('invites'), requests = _list('requests');
+    if (widget.compact && teams.isNotEmpty) return _compact(teams, invites);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
@@ -180,6 +194,43 @@ class _TeamHubCardState extends State<TeamHubCard> {
     );
   }
 
+  /// الكارت الصغير: "⚽ فرقي · 3 فرق ›" + سطر الأشكال + تنبيه لو فيه دعوات/طلبات مستنية
+  Widget _compact(List<Map<String, dynamic>> teams, List<Map<String, dynamic>> invites) {
+    final pending = teams.fold<int>(0, (s, t) => s + ((t['pending'] as num?)?.toInt() ?? 0));
+    final alerts = <String>[
+      if (invites.isNotEmpty) _t('${invites.length} invite${invites.length > 1 ? 's' : ''}', '${invites.length} دعوة'),
+      if (pending > 0) _t('$pending request${pending > 1 ? 's' : ''}', '$pending طلب'),
+    ];
+    final line = teams.map((t) => '${AppLang.isArabic ? t['format_ar'] : t['format_en']}: ${t['count']}/${t['min']}${t['ready'] == true ? ' ✓' : ''}').join(' · ');
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MyTeamsPage())),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(16), border: Border.all(color: _gold.withOpacity(0.35))),
+        child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text(_t('⚽ My teams', '⚽ فرقي'), style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+              if (alerts.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(width: 7, height: 7, decoration: const BoxDecoration(color: brandRed, shape: BoxShape.circle)),
+                const SizedBox(width: 4),
+                Flexible(child: Text(alerts.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: brandRed, fontSize: 12, fontWeight: FontWeight.w800))),
+              ],
+            ]),
+            const SizedBox(height: 4),
+            Text(line, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 12)),
+          ])),
+          const SizedBox(width: 8),
+          Text(_t('${teams.length} team${teams.length > 1 ? 's' : ''}', teams.length == 1 ? 'فريق واحد' : '${teams.length} فرق'),
+              style: const TextStyle(color: Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w800)),
+          const Icon(Icons.chevron_right_rounded, color: muted),
+        ]),
+      ),
+    );
+  }
+
   /// الأشكال اللي لسه مالوش فيها فريق
   List<String> _freeFormats() {
     final used = _list('teams').map((t) => '${t['format']}').toSet();
@@ -198,11 +249,19 @@ class _TeamHubCardState extends State<TeamHubCard> {
         decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(14)),
         child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${t['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+            Row(children: [
+              Flexible(child: Text('${t['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900))),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: _gold.withOpacity(0.14), borderRadius: BorderRadius.circular(8)),
+                child: Text('${AppLang.isArabic ? t['format_ar'] : t['format_en']}',
+                    style: const TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w900))),
+            ]),
             const SizedBox(height: 3),
-            Text('${AppLang.isArabic ? t['format_ar'] : t['format_en']} · ${t['count']} / ${t['min']}'
-                '${t['is_captain'] == true ? _t(' · Captain', ' · كابتن') : ''}',
+            Text(_t('${t['count']} / ${t['min']} players', '${t['count']} من ${t['min']} لاعيبة')
+                + (t['is_captain'] == true ? _t(' · Captain', ' · كابتن') : ''),
                 style: const TextStyle(color: muted, fontSize: 12)),
           ])),
           if (pending > 0) Container(
