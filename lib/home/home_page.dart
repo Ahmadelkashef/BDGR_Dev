@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import '../media_cache.dart';
 import 'dart:ui' show ImageFilter;
 
@@ -589,36 +588,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // ---- Build ----
 
-  // ---- الرياضات + الإعلان تحت الهيرو من غير سكرول ----
-  final GlobalKey _headKey = GlobalKey();
-  double? _headH;   // ارتفاع الهيدر + الهيرو
-
-  void _measureHead() {
-    if (!mounted) return;
-    final h = _headKey.currentContext?.size?.height;
-    if (h != null && (_headH == null || (h - _headH!).abs() > 0.5)) setState(() => _headH = h);
-  }
-
-  /// ارتفاع كروت الرياضات والإعلان عشان الهيرو + الرياضات + الإعلان يتشافوا مرة واحدة.
-  /// لو الشاشة صغيرة أوي: الإعلان بيبقى شريط أرفع، ولو برضه مش كفاية → المقاسات العادية + سكرول.
-  ({double card, double ad})? _fitBelowHero(BuildContext context, double viewH, double w, bool narrow) {
-    final head = _headH;
-    if (head == null || w <= 0) return null;
-    final normalCard = narrow ? 155.0 : 190.0;
-    const minCard = 104.0;
-    final title = MediaQuery.textScalerOf(context).scale(18) * 1.3;
-    // 16 فوق الصفحة + 14 قبل العنوان + 13 تحته + 12 قبل الإعلان + 10 تحت
-    final avail = viewH - 16 - head - 14 - title - 13 - 12 - 10;
-    var ad = w / 3.2;
-    var card = avail - ad;
-    if (card < minCard) {
-      ad = math.max(w / 6, avail - minCard);
-      card = avail - ad;
-    }
-    if (card < minCard) return null;
-    return (card: math.min(card, normalCard), ad: ad);
-  }
-
   @override
   Widget build(BuildContext context) => Directionality(
         textDirection: AppLang.isArabic ? TextDirection.rtl : TextDirection.ltr,
@@ -658,11 +627,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         else
         SafeArea(
           bottom: false,
-          child: LayoutBuilder(builder: (context, box) {
-          final viewH = box.maxHeight;
-          final contentW = math.min(box.maxWidth - 2 * (narrow ? 14 : 18), 484.0);
-          WidgetsBinding.instance.addPostFrameCallback((_) => _measureHead());
-          return SingleChildScrollView(
+          child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               narrow ? 14 : 18,
               16,
@@ -676,40 +641,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Column(
-                      key: _headKey,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTopBar(),
-                        const SizedBox(height: 18),
-                        _buildHero(narrow),
-                      ],
-                    ),
-                    // الترتيب (21 نوفمبر): الهيرو ← الرياضات ← الإعلان.
-                    // بعد الـ Takeover الإعلان بينزل تحت الرياضات، والمقاسات بتتحسب عشان كله يبان من غير سكرول.
-                    ValueListenableBuilder<AdItem?>(
-                      valueListenable: Ads.docked,
-                      builder: (context, d, __) {
-                        final fit = d == null ? null : _fitBelowHero(context, viewH, contentW, narrow);
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(height: fit == null ? 24 : 14),
-                            _buildComingSection(narrow, cardHeight: fit?.card),
-                            if (d == null)
-                              const AdSlot('home_banner', padding: EdgeInsets.only(top: 18))
-                            else
-                              Padding(padding: const EdgeInsets.only(top: 12), child: DockedTakeoverBanner(d, height: fit?.ad)),
-                          ],
-                        );
-                      },
-                    ),
+                    _buildTopBar(),
+                    const SizedBox(height: 18),
+                    _buildHero(narrow),
+                    // الأونر (21 نوفمبر): مفيش إعلان تحت الهيرو ولا تحت الرياضات على الموبايل.
+                    // الـ Takeover بيظهر كام ثانية ويتقفل، والرعاة باينين على كروت الرياضات بس ("by …").
+                    const SizedBox(height: 24),
+                    _buildComingSection(narrow),
                   ],
                 ),
               ),
             ),
-          );
-          }),
+          ),
         ),
         Positioned(
           left: 20,

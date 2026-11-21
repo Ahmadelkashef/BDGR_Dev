@@ -25,7 +25,8 @@ Future<void> showHomeTakeover(BuildContext context) async {
     barrierColor: Colors.black.withOpacity(0.72),
     transitionDuration: const Duration(milliseconds: 320),
     reverseTransitionDuration: const Duration(milliseconds: 450),
-    pageBuilder: (_, __, ___) => _TakeoverPage(ad: ad),
+    // الأونر (21 نوفمبر): بعد ما يخلص بيتقفل وبس (مبينزلش بانر في الهوم)
+    pageBuilder: (_, __, ___) => _TakeoverPage(ad: ad, dock: false),
     transitionsBuilder: (_, a, __, child) => FadeTransition(
       opacity: a,
       child: ScaleTransition(scale: Tween(begin: 0.94, end: 1.0).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)), child: child),
