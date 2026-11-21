@@ -139,10 +139,6 @@ class _TeamHubCardState extends State<TeamHubCard> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           Text(_t('My team ⚽', 'فريقي ⚽'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-          const Spacer(),
-          if (teams.isNotEmpty)
-            GestureDetector(onTap: () => openTeamJoin(context),
-                child: Text(_t('Join with code', 'انضم بكود'), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800))),
         ]),
         const SizedBox(height: 10),
         // دعوات جاية لي
@@ -151,6 +147,21 @@ class _TeamHubCardState extends State<TeamHubCard> {
         for (final t in teams) _teamRow(t),
         // طلبات بعتها ومستنية
         for (final r in requests) _requestRow(r),
+        // عنده فريق: يقدر يعمل/ينضم لفريق في شكل تاني (5 ضد 5 / 7 ضد 7 / 11 ضد 11 — فريق واحد لكل شكل)
+        if (teams.isNotEmpty && _freeFormats().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(_t('Play another format too: ${_freeFormats().join(' · ')}', 'تقدر تلعب في شكل تاني كمان: ${_freeFormats().join(' · ')}'),
+              style: const TextStyle(color: muted, fontSize: 12)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: SizedBox(height: 42, child: OutlinedButton.icon(onPressed: () => openTeamCreate(context), style: _outline(),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(_t('New team', 'فريق جديد'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13))))),
+            const SizedBox(width: 8),
+            Expanded(child: SizedBox(height: 42, child: OutlinedButton(onPressed: () => openTeamJoin(context), style: _outline(),
+                child: Text(_t('Join with code', 'انضم بكود'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13))))),
+          ]),
+        ],
         if (teams.isEmpty) ...[
           if (invites.isEmpty && requests.isEmpty)
             Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(
@@ -167,6 +178,13 @@ class _TeamHubCardState extends State<TeamHubCard> {
         ],
       ]),
     );
+  }
+
+  /// الأشكال اللي لسه مالوش فيها فريق
+  List<String> _freeFormats() {
+    final used = _list('teams').map((t) => '${t['format']}').toSet();
+    return _list('formats').where((f) => !used.contains('${f['key']}'))
+        .map((f) => AppLang.isArabic ? '${f['ar']}' : '${f['en']}').toList();
   }
 
   Widget _teamRow(Map<String, dynamic> t) {
@@ -258,6 +276,7 @@ class TeamCreatePage extends StatefulWidget {
 
 class _TeamCreatePageState extends State<TeamCreatePage> {
   List<Map<String, dynamic>> _formats = [];
+  Set<String> _used = {};   // أشكال عنده فيها فريق بالفعل (فريق واحد لكل شكل)
   String? _format;
   final _name = TextEditingController();
   final Set<String> _times = {};
@@ -270,7 +289,9 @@ class _TeamCreatePageState extends State<TeamCreatePage> {
       if (!mounted) return;
       setState(() {
         _formats = ((d['formats'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        _format = _formats.isEmpty ? null : _formats.first['key'] as String;
+        _used = ((d['teams'] as List?) ?? []).map((e) => '${(e as Map)['format']}').toSet();
+        final free = _formats.where((f) => !_used.contains(f['key'])).toList();
+        _format = free.isEmpty ? null : free.first['key'] as String;
         _loading = false;
       });
     }).catchError((Object e) {
@@ -310,8 +331,8 @@ class _TeamCreatePageState extends State<TeamCreatePage> {
                 Text(_t('Format', 'شكل الفريق'), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 for (final f in _formats) GestureDetector(
-                  onTap: () => setState(() => _format = f['key'] as String),
-                  child: AnimatedContainer(
+                  onTap: _used.contains(f['key']) ? null : () => setState(() => _format = f['key'] as String),
+                  child: Opacity(opacity: _used.contains(f['key']) ? 0.45 : 1, child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(14),
@@ -323,12 +344,17 @@ class _TeamCreatePageState extends State<TeamCreatePage> {
                     child: Row(children: [
                       Expanded(child: Text(AppLang.isArabic ? '${f['ar']}' : '${f['en']}',
                           style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900))),
-                      Text(_t('${f['min']}–${f['max']} players', 'من ${f['min']} لـ ${f['max']} لاعيبة'), style: const TextStyle(color: muted, fontSize: 12.5)),
+                      Text(_used.contains(f['key']) ? _t('You have a team', 'عندك فريق') : _t('${f['min']}–${f['max']} players', 'من ${f['min']} لـ ${f['max']} لاعيبة'),
+                          style: const TextStyle(color: muted, fontSize: 12.5)),
                       const SizedBox(width: 8),
-                      Icon(_format == f['key'] ? Icons.radio_button_checked : Icons.radio_button_off, color: _format == f['key'] ? brandRed : muted, size: 20),
+                      Icon(_used.contains(f['key']) ? Icons.check_circle_rounded : (_format == f['key'] ? Icons.radio_button_checked : Icons.radio_button_off),
+                          color: _format == f['key'] ? brandRed : muted, size: 20),
                     ]),
-                  ),
+                  )),
                 ),
+                Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(
+                    _t('One team per format — you can have a 5, a 7 and an 11-a-side team.', 'فريق واحد لكل شكل — تقدر يبقى عندك فريق 5 وفريق 7 وفريق 11.'),
+                    style: const TextStyle(color: muted, fontSize: 11.5))),
                 const SizedBox(height: 10),
                 Text(_t('Team name', 'اسم الفريق'), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
