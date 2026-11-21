@@ -1,0 +1,80 @@
+name: mobile_app
+description: "BDGR Sports App"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Supabase
+  supabase_flutter: ^2.8.0
+
+  # Storage & Preferences
+  shared_preferences: ^2.2.3
+
+  # Media
+  video_player: ^2.8.0
+  flutter_cache_manager: ^3.4.1
+  cached_network_image: ^3.4.1
+  cached_network_image_platform_interface: ^4.1.1
+  image_picker: ^1.1.2
+  video_compressor_plus: ^4.1.0
+
+  # UI
+  flutter_svg: ^2.0.10+1
+
+  # Device
+  device_info_plus: ^10.1.0
+  uuid: ^4.4.0
+
+  # Links
+  url_launcher: ^6.2.6
+
+  # Location
+  geolocator: ^13.0.2
+
+  # HTTP
+  http: ^1.2.2
+
+  # Share
+  share_plus: ^10.0.0
+
+  # Deep links (لينكات المشاركة)
+  app_links: '>=6.0.0 <8.0.0'
+  firebase_core: ^5.2.0
+  firebase_messaging: ^17.1.0
+  flutter_local_notifications: ^19.5.0
+  # مشغّل يوتيوب / تيك توك الرسمي جوه الفيد (من سيرفراتهم، مش من Supabase)
+  webview_flutter: ^4.13.0
+  webview_flutter_android: '>=4.3.0 <5.0.0'
+  # الآيفون: تشغيل الفيديو جوه الصفحة
+  webview_flutter_wkwebview: ^3.27.0
+  # الويب: iframe + window (برانش web)
+  web: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo_white.png
+    - assets/badger_white.png
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/icon_foreground.png
+  min_sdk_android: 21
+
+dependency_overrides:
+  shared_preferences_android: 2.4.28

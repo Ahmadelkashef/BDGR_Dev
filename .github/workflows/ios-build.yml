@@ -1,0 +1,129 @@
+name: iOS build
+
+# الآيفون بيتبني بس لما الأونر يطلبه (ماكينة الـ Mac بتتحسب 10 أضعاف من دقايق GitHub):
+#   1) Actions → "iOS build" → Run workflow   (branch: dev)
+#   2) أو push على dev ورسالة الـ commit فيها [ios]
+# نفس الكود بتاع الأندرويد والموقع بالظبط (آخر نسخة على dev).
+# من غير حساب Apple Developer: بيطلع .ipa مش موقّع → يتركّب بـ Sideloadly (Apple ID عادي، 7 أيام).
+on:
+  workflow_dispatch:
+  push:
+    branches: [ dev ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ID: com.bdgr.app       # نفس الـ ID بتاع الأندرويد (Bundle ID)
+  APP_NAME: BDGR
+  DART_PROJECT: mobile_app
+  DEV_MODE: 'true'           # زي الأندرويد: خليه 'false' قبل الإطلاق
+  IOS_MIN: '15.0'            # Firebase بيطلب iOS 15 على الأقل
+
+jobs:
+  ios:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ios]')
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate iOS project
+        run: |
+          ORG="${APP_ID%.*}"
+          flutter create . --platforms=ios --org="$ORG" --project-name="$DART_PROJECT"
+          rm -rf test
+
+      - name: Configure bundle id, name, permissions, deep links
+        run: |
+          PLIST=ios/Runner/Info.plist
+          PB=/usr/libexec/PlistBuddy
+          set_str () { $PB -c "Delete :$1" "$PLIST" 2>/dev/null || true; $PB -c "Add :$1 string $2" "$PLIST"; }
+          set_bool () { $PB -c "Delete :$1" "$PLIST" 2>/dev/null || true; $PB -c "Add :$1 bool $2" "$PLIST"; }
+
+          # Bundle ID + أقل نسخة iOS
+          sed -i '' -E "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*RunnerTests;/PRODUCT_BUNDLE_IDENTIFIER = ${APP_ID}.RunnerTests;/g; s/PRODUCT_BUNDLE_IDENTIFIER = [^;R]*;/PRODUCT_BUNDLE_IDENTIFIER = ${APP_ID};/g" ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' -E "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN};/g" ios/Runner.xcodeproj/project.pbxproj
+          grep -m3 "PRODUCT_BUNDLE_IDENTIFIER" ios/Runner.xcodeproj/project.pbxproj
+
+          # الاسم تحت الأيقونة
+          set_str CFBundleDisplayName "$APP_NAME"
+          set_str CFBundleName "$APP_NAME"
+
+          # رسايل الصلاحيات (Apple بترفض التطبيق من غيرها)
+          set_str NSLocationWhenInUseUsageDescription "BDGR uses your location once to set your governorate and city for local rankings and prizes."
+          set_str NSPhotoLibraryUsageDescription "Choose photos and videos for your profile and posts."
+          set_str NSPhotoLibraryAddUsageDescription "Save your BDGR card to your photos."
+          set_str NSCameraUsageDescription "Take a photo or video for your profile and posts."
+          set_str NSMicrophoneUsageDescription "Record sound with your videos."
+
+          # مفيش تشفير خاص (بيوفّر سؤال في App Store Connect)
+          set_bool ITSAppUsesNonExemptEncryption false
+
+          # لينكات الشير: com.bdgr.app://post/<id> ... (app_links هو اللي بيستقبلها)
+          set_bool FlutterDeepLinkingEnabled false
+          $PB -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
+          $PB -c "Add :CFBundleURLTypes array" "$PLIST"
+          $PB -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
+          $PB -c "Add :CFBundleURLTypes:0:CFBundleURLName string $APP_ID" "$PLIST"
+          $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
+          $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $APP_ID" "$PLIST"
+
+          # أقل نسخة iOS في الـ Podfile
+          if grep -q "^# platform :ios" ios/Podfile; then
+            perl -pi -e "s/^# platform :ios.*/platform :ios, '${IOS_MIN}'/" ios/Podfile
+          elif ! grep -q "^platform :ios" ios/Podfile; then
+            perl -0pi -e "s/^/platform :ios, '${IOS_MIN}'\n/" ios/Podfile
+          fi
+          head -3 ios/Podfile
+          plutil -lint "$PLIST"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icon (iOS)
+        run: |
+          # في الريبو الأيقونات للأندرويد بس؛ هنا بنفعّل الآيفون للبيلد ده بس
+          perl -pi -e 's/^  ios: false/  ios: true\n  remove_alpha_ios: true/; s/^  android: true/  android: false/' pubspec.yaml
+          sed -n '/^flutter_launcher_icons:/,/^$/p' pubspec.yaml
+          dart run flutter_launcher_icons
+
+      - name: Build iOS (no codesign)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_KEY="$SUPABASE_KEY" \
+            --dart-define=APP_ID="$APP_ID" \
+            --dart-define=APP_NAME="$APP_NAME" \
+            --dart-define=DEV_MODE="$DEV_MODE"
+
+      - name: Package .ipa (unsigned)
+        run: |
+          mkdir -p out/Payload
+          cp -R build/ios/iphoneos/Runner.app out/Payload/
+          cd out && zip -qry "${APP_NAME}-iOS-${GITHUB_RUN_NUMBER}.ipa" Payload
+          ls -lh *.ipa
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-iOS-${{ github.run_number }}
+          path: out/${{ env.APP_NAME }}-iOS-${{ github.run_number }}.ipa
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

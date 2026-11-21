@@ -1,0 +1,35 @@
+# pubspec.lock بيترفع عن قصد: نفس نسخ الباكدجات في كل بيلد
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+**/generated_plugin_registrant.dart
+
+# فولدرات المنصات بتتعمل في الـ workflow، مش بتترفع
+/android/
+/ios/
+/macos/
+/linux/
+/windows/
+/test/
+
+# Secrets (أبدًا مايترفعوش)
+*.jks
+*.keystore
+key.properties
+.env
+
+# Flutter tool
+.metadata
+pubspec.lock
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.log

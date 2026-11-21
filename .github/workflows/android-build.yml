@@ -1,0 +1,310 @@
+name: Android APK
+
+on:
+  push:
+    branches: [ main, dev ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+# ============================================================
+# المكان الوحيد اللي فيه اسم التطبيق والـ ID.
+# لو عايز تغيرهم بعدين: غيّر هنا بس (وضيف الـ redirect الجديد في Supabase).
+# ============================================================
+env:
+  APP_ID: com.bdgr.app      # applicationId + deep link scheme
+  APP_NAME: BDGR            # الاسم اللي تحت الأيقونة
+  DART_PROJECT: mobile_app  # لازم يطابق name في pubspec.yaml
+  DEV_MODE: 'true'          # وضع التجربة: خليه 'false' قبل الإطلاق
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+          key = os.environ.get("SUPABASE_KEY", "").strip()
+          if not url or not key:
+              raise SystemExit("ERROR: SUPABASE_URL or SUPABASE_KEY is missing in repo secrets.")
+          host = urlparse(url).hostname or ""
+          if not url.startswith("https://") or not host.endswith(".supabase.co"):
+              raise SystemExit("ERROR: SUPABASE_URL format is invalid.")
+          print("Secrets OK. key length:", len(key))
+          PY
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android project
+        run: |
+          ORG="${APP_ID%.*}"
+          flutter create . --platforms=android --org="$ORG" --project-name="$DART_PROJECT"
+          rm -rf test
+
+      - name: Configure applicationId, name, permissions and deep link
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          app_id = os.environ["APP_ID"]
+          app_name = os.environ["APP_NAME"]
+
+          # 1) applicationId
+          gradle = next(p for p in [Path("android/app/build.gradle.kts"),
+                                    Path("android/app/build.gradle")] if p.exists())
+          text = gradle.read_text(encoding="utf-8")
+          text, n = re.subn(r'(?m)^(\s*applicationId\s*(?:=\s*)?)["\'][^"\']+["\']',
+                            lambda m: f'{m.group(1)}"{app_id}"', text, count=1)
+          assert n == 1, "applicationId not found"
+
+          # Android Lint بيكراش في بيلد الـ release (باج في الأداة نفسها، مش في كودنا)
+          if "checkReleaseBuilds" not in text:
+              text, n = re.subn(r'(?m)^android\s*\{',
+                                'android {\n    lint {\n        checkReleaseBuilds = false\n    }',
+                                text, count=1)
+              assert n == 1, "android block not found"
+
+          gradle.write_text(text, encoding="utf-8")
+
+          # Force compileSdk 35 for all subprojects (fixes geocoding_android)
+          root_gradle = Path("android/build.gradle")
+          if root_gradle.exists():
+              root_text = root_gradle.read_text(encoding="utf-8")
+              override = (
+                  "\nsubprojects {\n"
+                  "    afterEvaluate { proj ->\n"
+                  "        if (proj.hasProperty(\'android\')) {\n"
+                  "            proj.android.compileSdkVersion 35\n"
+                  "        }\n"
+                  "    }\n"
+                  "}\n"
+              )
+              if "subprojects" not in root_text:
+                  root_gradle.write_text(root_text + override, encoding="utf-8")
+                  print("subprojects override added")
+
+          # 2) Manifest
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+
+          text, n = re.subn(r'android:label\s*=\s*"[^"]*"',
+                            f'android:label="{app_name}"', text, count=1)
+          assert n == 1, "android:label not found"
+
+          for perm in ("android.permission.INTERNET",
+                       "android.permission.ACCESS_FINE_LOCATION",
+                       "android.permission.ACCESS_COARSE_LOCATION"):
+              line = f'<uses-permission android:name="{perm}"/>'
+              if line not in text:
+                  text = text.replace("<application", line + "\n    <application", 1)
+
+          deep_link = (
+              '<meta-data android:name="flutter_deeplinking_enabled" android:value="false"/>\n'
+              '            <intent-filter>\n'
+              '                <action android:name="android.intent.action.VIEW"/>\n'
+              '                <category android:name="android.intent.category.DEFAULT"/>\n'
+              '                <category android:name="android.intent.category.BROWSABLE"/>\n'
+              f'                <data android:scheme="{app_id}" android:host="auth-callback"/>\n'
+              '                <data android:host="moment"/>\n'
+              '                <data android:host="league"/>\n'
+              '                <data android:host="post"/>\n'
+              '                <data android:host="ugc"/>\n'
+              '            </intent-filter>\n'
+              '        '
+          )
+          if 'android:host="auth-callback"' not in text:
+              text = text.replace("</activity>", deep_link + "</activity>", 1)
+
+          manifest.write_text(text, encoding="utf-8")
+          print("applicationId:", app_id, "| label:", app_name)
+          PY
+
+      - name: Configure notifications (icon, color, default channel, desugaring)
+        run: |
+          # الأيقونة الصغيرة واللون (android_res/ في الريبو) — مجلد android بيتعمل من الأول كل بيلد
+          cp -r android_res/drawable-* android_res/values android_res/raw android/app/src/main/res/
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          # 1) Manifest: أيقونة/لون/قناة افتراضية للإشعارات اللي Firebase بيعرضها لوحده
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+          meta = (
+              '<meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_bdgr"/>\n'
+              '        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/bdgr_red"/>\n'
+              '        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="general"/>\n'
+              '        '
+          )
+          if "default_notification_icon" not in text:
+              text, n = re.subn(r'(<application[^>]*>\s*)', lambda m: m.group(1) + meta, text, count=1)
+              assert n == 1, "application tag not found"
+          manifest.write_text(text, encoding="utf-8")
+
+          # 2) flutter_local_notifications محتاج core library desugaring
+          gradle = Path("android/app/build.gradle.kts")
+          text = gradle.read_text(encoding="utf-8")
+          if "isCoreLibraryDesugaringEnabled" not in text:
+              text, n = re.subn(r'(compileOptions\s*\{)', r'\1\n        isCoreLibraryDesugaringEnabled = true', text, count=1)
+              assert n == 1, "compileOptions not found"
+              text += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
+          gradle.write_text(text, encoding="utf-8")
+          print("notifications configured")
+          PY
+
+      - name: Configure release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 or ANDROID_KEYSTORE_PASSWORD is missing."
+            exit 1
+          fi
+
+          # 1) نرجّع ملف المفتاح من الـ Secret، ونتأكد إنه سليم والباسورد صح
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          keytool -list -keystore android/app/upload-keystore.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" > /dev/null \
+            || { echo "ERROR: keystore is corrupted or the password is wrong."; exit 1; }
+
+          # البصمة (مش سرية): هنحتاجها بعدين لجوجل وفيسبوك
+          keytool -list -v -keystore android/app/upload-keystore.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" | grep -E "SHA1:|SHA256:"
+
+          # 2) نخلي بيلد الـ release يتوقّع بالمفتاح ده بدل مفتاح الـ debug
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path("android/app/build.gradle.kts")
+          assert gradle.exists(), "Expected android/app/build.gradle.kts"
+          text = gradle.read_text(encoding="utf-8")
+
+          signing = (
+              "    signingConfigs {\n"
+              "        create(\"release\") {\n"
+              "            storeFile = file(\"upload-keystore.jks\")\n"
+              "            storePassword = System.getenv(\"ANDROID_KEYSTORE_PASSWORD\")\n"
+              "            keyAlias = \"upload\"\n"
+              "            keyPassword = System.getenv(\"ANDROID_KEYSTORE_PASSWORD\")\n"
+              "        }\n"
+              "    }\n\n"
+              "    buildTypes {"
+          )
+          assert text.count("    buildTypes {") == 1, "buildTypes block not found"
+          text = text.replace("    buildTypes {", signing, 1)
+
+          old = 'signingConfig = signingConfigs.getByName("debug")'
+          assert old in text, "debug signingConfig line not found"
+          text = text.replace(old, 'signingConfig = signingConfigs.getByName("release")', 1)
+
+          gradle.write_text(text, encoding="utf-8")
+          print("Release signing configured.")
+          PY
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icon
+        run: dart run flutter_launcher_icons
+
+      - name: Build APK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_KEY="$SUPABASE_KEY" \
+            --dart-define=APP_ID="$APP_ID" \
+            --dart-define=APP_NAME="$APP_NAME" \
+            --dart-define=DEV_MODE="$DEV_MODE"
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             "build/app/outputs/flutter-apk/${APP_NAME}-${GITHUB_RUN_NUMBER}.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/${{ env.APP_NAME }}-${{ github.run_number }}.apk
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  # ============================================================
+  # الموقع (نفس الكود): بيتبني ويترفع على bdgr-link/app/ مع كل push.
+  # job لوحده: لو فشل مش بيأثر على الـ APK.
+  # محتاج secret اسمه BDGR_LINK_TOKEN (توكن بصلاحية كتابة على ريبو bdgr-link).
+  # من غيره البيلد بيتعمل بس من غير رفع.
+  # ============================================================
+  web:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: web-deploy-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build website
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          flutter pub get
+          bash tool/build_web.sh /bdgr-link/app/
+          rm -rf build/web/canvaskit build/web/icons build/web/*.map
+          echo "Web-${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" > build/web/build.txt
+
+      - name: Deploy to bdgr-link/app
+        env:
+          TOKEN: ${{ secrets.BDGR_LINK_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::BDGR_LINK_TOKEN is not set — website built but NOT deployed."
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/Ahmadelkashef/bdgr-link.git" site
+          rm -rf site/app
+          cp -r build/web site/app
+          cd site
+          git config user.name  "bdgr-web-deploy"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A app
+          if git diff --cached --quiet; then echo "No website changes."; exit 0; fi
+          git commit -m "Web-${GITHUB_RUN_NUMBER}: deploy from BDGR ${GITHUB_SHA::7}"
+          git push origin HEAD:main
+          echo "Deployed Web-${GITHUB_RUN_NUMBER} → https://ahmadelkashef.github.io/bdgr-link/app/"
