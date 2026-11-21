@@ -208,18 +208,34 @@ class _AthleteFormPageState extends State<AthleteFormPage> {
           );
           if (picked != null) onChanged(picked);
         },
-        child: InputDecorator(
-          decoration: _deco(label).copyWith(suffixIcon: const Icon(Icons.expand_more_rounded, color: muted)),
-          child: cur.isEmpty
+        child: _labeled(label, _box(Row(children: [
+          Expanded(child: cur.isEmpty
               ? Text(_t('Choose', 'اختار'), style: const TextStyle(color: muted, fontSize: 14))
-              : DefaultTextStyle(style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600), child: cur.first.child),
-        ),
+              : DefaultTextStyle(style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, child: cur.first.child)),
+          const Icon(Icons.expand_more_rounded, color: muted, size: 20),
+        ]))),
       ),
     );
   }
 
-  InputDecoration _deco(String label) => InputDecoration(
-        labelText: label, labelStyle: const TextStyle(color: muted),
+  /// عنوان صغير فوق الخانة (مش جوه البوردر) — عشان كله يبقى على نفس الخط
+  Widget _labeled(String label, Widget field) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(padding: const EdgeInsetsDirectional.only(start: 2, bottom: 6),
+            child: Text(label, style: const TextStyle(color: muted, fontSize: 12.5, fontWeight: FontWeight.w600))),
+        field,
+      ]);
+
+  Widget _box(Widget child) => Container(
+        height: 48, width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: AlignmentDirectional.centerStart,
+        decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(12)),
+        child: child,
+      );
+
+  InputDecoration _deco(String hint) => InputDecoration(
+        hintText: hint, hintStyle: const TextStyle(color: muted),
         filled: true, fillColor: surface2, isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -320,12 +336,12 @@ class _AthleteFormPageState extends State<AthleteFormPage> {
                 _section(_t('About you', 'عنك'), icon: Icons.person_outline_rounded, children: [
                   GestureDetector(
                     onTap: _pickBirth,
-                    child: InputDecorator(
-                      decoration: _deco(_t('Date of birth', 'تاريخ الميلاد')),
-                      child: Text(_birth == null ? _t('Pick a date', 'اختار التاريخ')
+                    child: _labeled(_t('Date of birth', 'تاريخ الميلاد'), _box(Row(children: [
+                      Expanded(child: Text(_birth == null ? _t('Pick a date', 'اختار التاريخ')
                           : '${_birth!.day}/${_birth!.month}/${_birth!.year}',
-                          style: TextStyle(color: _birth == null ? muted : Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                    ),
+                          style: TextStyle(color: _birth == null ? muted : Colors.white, fontSize: 14, fontWeight: FontWeight.w700))),
+                      const Icon(Icons.calendar_today_rounded, color: muted, size: 18),
+                    ]))),
                   ),
                   const SizedBox(height: 12),
                   Text(_t('Gender', 'النوع'), style: const TextStyle(color: muted, fontSize: 12.5)),

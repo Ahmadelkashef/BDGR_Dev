@@ -194,10 +194,12 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
         FantasyLangToggle(isArabic: _ar, onTap: () => setState(() => _ar = !_ar)),
       ]);
 
+  // الأونر (21 نوفمبر): "قريب جداً" + العنوان بس، وكارت أصغر عشان الصفحة تطلع لفوق
   Widget _hero() => Container(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: brandRed.withOpacity(0.35)),
           gradient: LinearGradient(
             begin: AlignmentDirectional.topStart, end: AlignmentDirectional.bottomEnd,
@@ -211,22 +213,9 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
             child: Text(t('COMING SOON', 'قريب جداً'),
                 style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(t('Your game. Your tournament.', 'لعبتك. بطولتك.'),
-              style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, height: 1.2)),
-          const SizedBox(height: 6),
-          Text(
-            t('Pick the sports you want to compete in. When a tournament opens, you hear about it first.',
-              'اختار الألعاب اللي عايز تنافس فيها. أول ما بطولة تفتح، هتعرف قبل أي حد.'),
-            style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
-          ),
-          const SizedBox(height: 14),
-          Row(children: [
-            const Icon(Icons.emoji_events_rounded, color: Color(0xFFFFD54F), size: 18),
-            const SizedBox(width: 6),
-            Expanded(child: Text(t('Prizes — announced soon', 'الجوايز — هتتعلن قريب'),
-                style: const TextStyle(color: Color(0xFFFFD54F), fontSize: 12, fontWeight: FontWeight.w800))),
-          ]),
+              style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, height: 1.2)),
         ]),
       );
 
@@ -377,7 +366,7 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
               Expanded(child: _loading
                   ? const Center(child: CircularProgressIndicator(color: brandRed, strokeWidth: 2))
                   : CustomScrollView(slivers: [
-                      SliverPadding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 18), sliver: SliverToBoxAdapter(child: _hero())),
+                      SliverPadding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 14), sliver: SliverToBoxAdapter(child: _hero())),
                       // فريقي ⚽ (لو مسجّل في الكورة)
                       if (_saved.contains('football'))
                         const SliverPadding(padding: EdgeInsets.fromLTRB(16, 0, 16, 18), sliver: SliverToBoxAdapter(child: TeamHubCard())),
