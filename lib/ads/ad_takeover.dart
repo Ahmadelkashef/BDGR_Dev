@@ -45,6 +45,32 @@ Widget takeoverShuttle(BuildContext _, Animation<double> anim, HeroFlightDirecti
   );
 }
 
+/// نفس كارت الـ Takeover (كام ثانية وبيتقفل لوحده) بس من دوسة على بانر في أي مكان.
+/// مش بينزل في الهوم (مفيش dock) — بيتقفل ويرجع اليوزر مكانه والبانر زي ما هو.
+Future<void> showAdModal(BuildContext context, AdItem ad) {
+  Ads.click(ad);
+  return Navigator.of(context, rootNavigator: true).push(PageRouteBuilder<void>(
+    opaque: false,
+    barrierColor: Colors.black.withOpacity(0.72),
+    transitionDuration: const Duration(milliseconds: 320),
+    reverseTransitionDuration: const Duration(milliseconds: 280),
+    pageBuilder: (_, __, ___) => _TakeoverPage(ad: ad, dock: false),
+    transitionsBuilder: (_, a, __, child) => FadeTransition(
+      opacity: a,
+      child: ScaleTransition(scale: Tween(begin: 0.94, end: 1.0).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)), child: child),
+    ),
+  ));
+}
+
+/// دوسة على بانر: لينك برّه (موقع / تطبيق) → يفتحه على طول؛ غير كده (مفيش لينك، أو صفحة جوه التطبيق) → الكارت الكبير
+void onAdBannerTap(BuildContext context, AdItem ad) {
+  if (ad.hasLink && ad.linkType != 'deeplink' && ad.details == null) {
+    Ads.open(ad);
+  } else {
+    showAdModal(context, ad);
+  }
+}
+
 /// البانر اللي بيفضل في الهوم بعد ما الـ Takeover يتقفل
 class DockedTakeoverBanner extends StatelessWidget {
   const DockedTakeoverBanner(this.ad, {super.key, this.height});
@@ -89,8 +115,10 @@ void openTakeoverDetails(BuildContext context, AdItem ad) {
 }
 
 class _TakeoverPage extends StatefulWidget {
-  const _TakeoverPage({required this.ad});
+  const _TakeoverPage({required this.ad, this.dock = true});
   final AdItem ad;
+  /// true = Takeover الهوم (بينزل مكانه كبانر)؛ false = من دوسة على بانر (بيتقفل وبس)
+  final bool dock;
   @override
   State<_TakeoverPage> createState() => _TakeoverPageState();
 }
@@ -153,8 +181,10 @@ class _TakeoverPageState extends State<_TakeoverPage> with SingleTickerProviderS
     if (_closing || !mounted) return;
     _closing = true;
     _p.stop();
-    Ads.docked.value = widget.ad;
-    await WidgetsBinding.instance.endOfFrame;
+    if (widget.dock) {
+      Ads.docked.value = widget.ad;
+      await WidgetsBinding.instance.endOfFrame;
+    }
     if (!mounted) return;
     final nav = Navigator.of(context);
     final ctx = nav.context;
@@ -184,7 +214,10 @@ class _TakeoverPageState extends State<_TakeoverPage> with SingleTickerProviderS
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: Stack(fit: StackFit.expand, children: [
-                  Hero(tag: takeoverHeroTag(ad), flightShuttleBuilder: takeoverShuttle, child: AdMedia(ad)),
+                  if (widget.dock)
+                    Hero(tag: takeoverHeroTag(ad), flightShuttleBuilder: takeoverShuttle, child: AdMedia(ad))
+                  else
+                    AdMedia(ad),
                   const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
                       begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0, 0.2, 0.55, 1],
                       colors: [Color(0x99000000), Color(0x00000000), Color(0x00000000), Color(0xDD000000)]))),

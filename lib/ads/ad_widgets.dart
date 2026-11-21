@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'ad_takeover.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app_lang.dart';
@@ -19,6 +21,7 @@ class AdSlot extends StatefulWidget {
   const AdSlot(this.placement, {
     super.key, this.eventId, this.sport, this.slotKey = '', this.padding = EdgeInsets.zero,
     this.prefixEn, this.prefixAr, this.center = false, this.compact = false, this.boxed = false,
+    this.banner = false,
   });
 
   final String placement;
@@ -29,6 +32,9 @@ class AdSlot extends StatefulWidget {
   final bool center, compact;
   /// boxed = جوه كبسولة غامقة (لما يبقى فوق صورة أو هيتشير كصورة)
   final bool boxed;
+  /// banner = أي إعلان صورة/فيديو (native / video / banner) بيترسم بانر ثابت من غير ✕؛
+  /// الدوسة: لينك برّه، أو الكارت الكبير اللي بيتقفل لوحده بعد كام ثانية (onAdBannerTap)
+  final bool banner;
 
   @override
   State<AdSlot> createState() => _AdSlotState();
@@ -48,7 +54,9 @@ class _AdSlotState extends State<AdSlot> {
           final ad = Ads.pick(widget.placement,
               eventId: widget.eventId, sport: widget.sport, slotKey: widget.slotKey);
           if (ad == null) return const SizedBox.shrink();
-          Widget v = AdView(ad,
+          Widget v = widget.banner && const {'banner', 'native', 'video', 'fullscreen'}.contains(ad.template)
+              ? AdImpression(ad: ad, child: AdBanner(ad, onTap: () => onAdBannerTap(context, ad)))
+              : AdView(ad,
               prefixEn: widget.prefixEn, prefixAr: widget.prefixAr,
               center: widget.center, compact: widget.compact);
           if (widget.boxed) {
@@ -354,9 +362,11 @@ class _AdVideoState extends State<AdVideo> {
 
 /// قالب banner: صورة/فيديو عريض (3:1 تقريباً) + "إعلان" في الركن
 class AdBanner extends StatelessWidget {
-  const AdBanner(this.ad, {super.key, this.aspect = 3.2});
+  const AdBanner(this.ad, {super.key, this.aspect = 3.2, this.onTap});
   final AdItem ad;
   final double aspect;
+  /// null = اللينك على طول (Ads.open)
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
     final box = ClipRRect(
@@ -381,7 +391,7 @@ class AdBanner extends StatelessWidget {
         ]),
       ),
     );
-    return GestureDetector(onTap: ad.hasLink ? () => Ads.open(ad) : null, child: box);
+    return GestureDetector(onTap: onTap ?? (ad.hasLink ? () => Ads.open(ad) : null), child: box);
   }
 }
 

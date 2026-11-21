@@ -375,7 +375,7 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
                   : CustomScrollView(slivers: [
                       SliverPadding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 18), sliver: SliverToBoxAdapter(child: _hero())),
                       // بانر إعلان (لو فيه)
-                      const SliverToBoxAdapter(child: AdSlot('competitions_top', compact: true, padding: EdgeInsets.fromLTRB(16, 0, 16, 18))),
+                      const SliverToBoxAdapter(child: AdSlot('competitions_top', compact: true, banner: true, padding: EdgeInsets.fromLTRB(16, 0, 16, 18))),
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                         sliver: SliverToBoxAdapter(child: Text(
