@@ -6,6 +6,7 @@ import '../../app_lang.dart';
 import '../../brand.dart';
 import '../../fantasy.dart' show cardBg, brandRed, surface2, muted, line;
 import '../../media_cache.dart';
+import '../competition_sports.dart';
 import 'athlete_form.dart';
 import 'team_api.dart';
 
@@ -144,17 +145,32 @@ class _TeamHubCardState extends State<TeamHubCard> {
     if (d == null) return const SizedBox.shrink();
     final teams = _list('teams'), invites = _list('invites'), requests = _list('requests');
     if (widget.compact && teams.isNotEmpty) return _compact(teams, invites);
+    // بوكس لكل رياضة (الكورة دلوقتي، والرياضات التانية لما تتعمل)
+    String sportOf(Map<String, dynamic> m) =>
+        '${m['sport'] ?? (m['team'] is Map ? (m['team'] as Map)['sport'] : null) ?? 'football'}';
+    final sports = <String>{'football', ...teams.map(sportOf), ...invites.map(sportOf), ...requests.map(sportOf)};
+    return Column(children: [
+      for (final sp in sports)
+        Padding(padding: const EdgeInsets.only(bottom: 14), child: _sportBox(sp,
+            teams.where((t) => sportOf(t) == sp).toList(),
+            invites.where((t) => sportOf(t) == sp).toList(),
+            requests.where((t) => sportOf(t) == sp).toList())),
+    ]);
+  }
+
+  Widget _sportBox(String sport, List<Map<String, dynamic>> teams, List<Map<String, dynamic>> invites,
+      List<Map<String, dynamic>> requests) {
+    final football = sport == 'football';   // الفرق متاحة للكورة بس دلوقتي
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: cardBg, borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _gold.withOpacity(0.35)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Text(_t('My team ⚽', 'فريقي ⚽'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-        ]),
-        const SizedBox(height: 10),
+        SportBanner(sport: sport, subtitle: teams.isEmpty ? null
+            : _t('${teams.length} team${teams.length > 1 ? 's' : ''}', teams.length == 1 ? 'فريق واحد' : '${teams.length} فرق')),
+        Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         // دعوات جاية لي
         for (final i in invites) _inviteRow(i),
         // فرقي
@@ -162,7 +178,7 @@ class _TeamHubCardState extends State<TeamHubCard> {
         // طلبات بعتها ومستنية
         for (final r in requests) _requestRow(r),
         // عنده فريق: يقدر يعمل/ينضم لفريق في شكل تاني (5 ضد 5 / 7 ضد 7 / 11 ضد 11 — فريق واحد لكل شكل)
-        if (teams.isNotEmpty && _freeFormats().isNotEmpty) ...[
+        if (football && teams.isNotEmpty && _freeFormats().isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(_t('Play another format too: ${_freeFormats().join(' · ')}', 'تقدر تلعب في شكل تاني كمان: ${_freeFormats().join(' · ')}'),
               style: const TextStyle(color: muted, fontSize: 12)),
@@ -176,7 +192,7 @@ class _TeamHubCardState extends State<TeamHubCard> {
                 child: Text(_t('Join with code', 'انضم بكود'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13))))),
           ]),
         ],
-        if (teams.isEmpty) ...[
+        if (football && teams.isEmpty) ...[
           if (invites.isEmpty && requests.isEmpty)
             Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(
               _t('Create your team as captain, or join a friend\'s team with its code.',
@@ -190,6 +206,7 @@ class _TeamHubCardState extends State<TeamHubCard> {
                 child: Text(_t('Join a team', 'انضم لفريق'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13))))),
           ]),
         ],
+        ])),
       ]),
     );
   }
@@ -205,12 +222,17 @@ class _TeamHubCardState extends State<TeamHubCard> {
     return GestureDetector(
       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MyTeamsPage())),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
         decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(16), border: Border.all(color: _gold.withOpacity(0.35))),
         child: Row(children: [
+          SportThumb(sport: '${teams.first['sport'] ?? 'football'}', size: 52),
+          const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(sportLabel('${teams.first['sport'] ?? 'football'}').toUpperCase(),
+                style: const TextStyle(color: _gold, fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+            const SizedBox(height: 2),
             Row(children: [
-              Text(_t('⚽ My teams', '⚽ فرقي'), style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+              Text(_t('My teams', 'فرقي'), style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
               if (alerts.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Container(width: 7, height: 7, decoration: const BoxDecoration(color: brandRed, shape: BoxShape.circle)),
@@ -888,5 +910,66 @@ class _TeamPageState extends State<TeamPage> {
             child: Text(_t('Cancel', 'إلغاء'), style: const TextStyle(color: muted))),
       ]),
     );
+  }
+}
+
+/// اسم الرياضة بالعربي/الإنجليزي من قايمة المسابقات
+String sportLabel(String id) {
+  final sp = kCompSports.where((x) => x.id == id).firstOrNull;
+  if (sp == null) return id;
+  return AppLang.isArabic ? sp.ar : sp.en;
+}
+
+/// صورة الرياضة الصغيرة (من غير فيديو) — نفس صور صفحة المسابقات (مش من الـ storage بتاعنا)
+class SportThumb extends StatelessWidget {
+  const SportThumb({super.key, required this.sport, this.size = 48});
+  final String sport;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final sp = kCompSports.where((x) => x.id == sport).firstOrNull;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(width: size, height: size, child: sp == null
+          ? Container(color: surface2, child: const Icon(Icons.sports, color: Colors.white54))
+          : Image(image: MediaCache.image(sp.imageUrl), fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(color: surface2, child: Icon(sp.icon, color: Colors.white54)))),
+    );
+  }
+}
+
+/// هيدر بوكس الرياضة: صورة الرياضة خلفية + تدرّج غامق + أيقونة + الاسم (عربي وإنجليزي)
+class SportBanner extends StatelessWidget {
+  const SportBanner({super.key, required this.sport, this.subtitle});
+  final String sport;
+  final String? subtitle;
+  @override
+  Widget build(BuildContext context) {
+    final sp = kCompSports.where((x) => x.id == sport).firstOrNull;
+    final ar = AppLang.isArabic;
+    return SizedBox(height: 92, child: Stack(fit: StackFit.expand, children: [
+      if (sp != null)
+        Image(image: MediaCache.image(sp.imageUrl), fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(color: surface2))
+      else
+        Container(color: surface2),
+      const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
+          begin: Alignment.bottomCenter, end: Alignment.topCenter,
+          colors: [Color(0xF0101114), Color(0x99101114), Color(0x33101114)]))),
+      Padding(padding: const EdgeInsets.fromLTRB(14, 10, 14, 12), child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Container(width: 34, height: 34,
+          decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle, border: Border.all(color: _gold.withOpacity(0.6))),
+          child: Icon(sp?.icon ?? Icons.sports, color: _gold, size: 19)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text((sp == null ? sport : (ar ? sp.en : sp.ar)).toUpperCase(),
+              style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 1.4)),
+          Text(sp == null ? sport : (ar ? sp.ar : sp.en),
+              style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+        ])),
+        if (subtitle != null)
+          Text(subtitle!, style: const TextStyle(color: _gold, fontSize: 12.5, fontWeight: FontWeight.w900)),
+      ])),
+    ]));
   }
 }
