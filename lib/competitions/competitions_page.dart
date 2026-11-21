@@ -7,6 +7,7 @@ import '../app_lang.dart';
 import '../brand.dart';
 import '../fantasy.dart' show FantasyLangToggle, cardBg, brandRed, surface2, muted, line;
 import 'badger_card.dart';
+import 'teams/team_pages.dart';
 import 'competition_sports.dart';
 
 /// صفحة المسابقات: تسجيل اهتمام بس.
@@ -90,7 +91,10 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
       // أول تسجيل أو المفضلة اتغيرت → كارت WELCOME NEW BADGER
       final fav = list.isEmpty ? null : _sport(list.first);
       if (fav != null && list.first != oldFav) {
-        await showBadgerWelcomeCard(context, fav, arabic: _ar);
+        final next = await showBadgerWelcomeCard(context, fav, arabic: _ar);
+        if (!mounted) return;
+        if (next == 'captain') await openTeamCreate(context);
+        if (next == 'join') await openTeamJoin(context);
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -374,6 +378,9 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
                   ? const Center(child: CircularProgressIndicator(color: brandRed, strokeWidth: 2))
                   : CustomScrollView(slivers: [
                       SliverPadding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 18), sliver: SliverToBoxAdapter(child: _hero())),
+                      // فريقي ⚽ (لو مسجّل في الكورة)
+                      if (_saved.contains('football'))
+                        const SliverPadding(padding: EdgeInsets.fromLTRB(16, 0, 16, 18), sliver: SliverToBoxAdapter(child: TeamHubCard())),
                       // بانر إعلان (لو فيه)
                       const SliverToBoxAdapter(child: AdSlot('competitions_top', compact: true, banner: true, padding: EdgeInsets.fromLTRB(16, 0, 16, 18))),
                       SliverPadding(

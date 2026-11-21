@@ -23,7 +23,8 @@ const _goldGradient = LinearGradient(
 );
 
 /// يجيب بيانات البروفايل ويفتح الكارت. مفيش حاجة بتتحفظ هنا.
-Future<void> showBadgerWelcomeCard(BuildContext context, CompSport sport, {required bool arabic}) async {
+/// الكورة: بيرجّع 'captain' أو 'join' لو اليوزر اختار (وإلا null).
+Future<String?> showBadgerWelcomeCard(BuildContext context, CompSport sport, {required bool arabic}) async {
   String name = 'BDGR Athlete';
   String? avatar;
   try {
@@ -38,15 +39,15 @@ Future<void> showBadgerWelcomeCard(BuildContext context, CompSport sport, {requi
   } catch (e) {
     debugPrint('badger card profile error: $e');
   }
-  if (!context.mounted) return;
+  if (!context.mounted) return null;
   // نحمّل الصورة الأول عشان الكارت يظهر كامل (والشير يطلع فيه الصورة)
   if (avatar != null) {
     try {
       await precacheImage(NetworkImage(avatar), context).timeout(const Duration(seconds: 6));
     } catch (_) {}
   }
-  if (!context.mounted) return;
-  await showGeneralDialog(
+  if (!context.mounted) return null;
+  return showGeneralDialog<String>(
     context: context,
     barrierDismissible: false,
     barrierLabel: 'badger-card',
@@ -127,7 +128,36 @@ class _BadgerCardDialogState extends State<_BadgerCardDialog> {
                   ]),
                 ),
                 const SizedBox(height: 22),
-                SizedBox(
+                // الكورة: بعد الكارت نسأله عن الفريق (بدل شير / تمام)
+                if (widget.sport.id == 'football') SizedBox(
+                  width: cardW,
+                  child: Column(children: [
+                    Text(t('Ready to play? Build your team', 'جاهز تلعب؟ كوّن فريقك'),
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      Expanded(child: SizedBox(height: 48, child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop('captain'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _gold, foregroundColor: Colors.black, elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                        child: Text(t('Captain: create', 'كابتن: اعمل فريق'), textAlign: TextAlign.center,
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+                      ))),
+                      const SizedBox(width: 10),
+                      Expanded(child: SizedBox(height: 48, child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop('join'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _gold, side: BorderSide(color: _gold.withOpacity(0.6)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                        child: Text(t('Join a team', 'انضم لفريق'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                      ))),
+                    ]),
+                    TextButton(onPressed: () => Navigator.of(context).pop(),
+                        child: Text(t('Later', 'بعدين'), style: const TextStyle(color: Colors.white54))),
+                  ]),
+                )
+                else SizedBox(
                   width: cardW,
                   child: Row(children: [
                     Expanded(child: SizedBox(height: 48, child: OutlinedButton.icon(

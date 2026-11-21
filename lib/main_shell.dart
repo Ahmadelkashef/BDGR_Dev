@@ -1,3 +1,4 @@
+import 'competitions/teams/team_pages.dart' show TeamJoinPage, teamPageRoute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -132,6 +133,7 @@ class _MainShellState extends State<MainShell> {
     AppUsage.trackOpen(); // user_apps: اليوزر فتح التطبيق ده
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.addListener(_joinPendingLeague);
+    DeepLinks.pendingTeamCode.addListener(_openPendingTeam);
     DeepLinks.pendingPostId.addListener(_goToPendingPost);
     DeepLinks.pendingUgcId.addListener(_goToPendingPost);
     // لو اللينك جه قبل اللوجن أو قبل ما الشاشة دي تتبني
@@ -139,7 +141,7 @@ class _MainShellState extends State<MainShell> {
     PushService.opened.addListener(_onPushOpened);
     Ads.deepLink.addListener(_openAdLink);   // إعلان لينكه جوه التطبيق
     Ads.ensure();
-    WidgetsBinding.instance.addPostFrameCallback((_) { _openPendingMoment(); _joinPendingLeague(); _goToPendingPost(); _showPriceAlerts(); _cancelPendingDeletion(); _checkLegalUpdate().then((_) => _pushOnOpen()); });
+    WidgetsBinding.instance.addPostFrameCallback((_) { _openPendingMoment(); _joinPendingLeague(); _openPendingTeam(); _goToPendingPost(); _showPriceAlerts(); _cancelPendingDeletion(); _checkLegalUpdate().then((_) => _pushOnOpen()); });
   }
 
   // الشروط اتحدّثت بعد ما اليوزر وافق: نطلب موافقته على النسخة الجديدة (مرة واحدة)
@@ -249,6 +251,8 @@ class _MainShellState extends State<MainShell> {
     } else if (kind == 'support_reply') {
       final id = int.tryParse(d['ticket_id']?.toString() ?? '');
       if (id != null) { tab = 0; page = supportThreadRoute(id); }
+    } else if ((kind == 'team_request' || kind == 'team_accepted') && (d['team_id']?.toString() ?? '').isNotEmpty) {
+      tab = 3; page = teamPageRoute(d['team_id'].toString());
     } else if (_pushTabs.containsKey(d['open'])) {
       tab = _pushTabs[d['open']];
     }
@@ -295,6 +299,7 @@ class _MainShellState extends State<MainShell> {
     Ads.deepLink.removeListener(_openAdLink);
     DeepLinks.pendingMomentId.removeListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.removeListener(_joinPendingLeague);
+    DeepLinks.pendingTeamCode.removeListener(_openPendingTeam);
     DeepLinks.pendingPostId.removeListener(_goToPendingPost);
     DeepLinks.pendingUgcId.removeListener(_goToPendingPost);
     _feedActive.dispose();
@@ -307,6 +312,21 @@ class _MainShellState extends State<MainShell> {
     if (supa.auth.currentSession == null) return;   // بعد اللوجن
     setState(() => _index = _feedTab);
     WidgetsBinding.instance.addPostFrameCallback((_) => _navKeys[_feedTab].currentState?.popUntil((r) => r.isFirst));
+  }
+
+  // ── دعوة فريق (مسابقات): نروح للمسابقات ونفتح صفحة الانضمام بالكود ──
+  void _openPendingTeam() {
+    final code = DeepLinks.pendingTeamCode.value;
+    if (code == null || !mounted) return;
+    if (supa.auth.currentSession == null) return;   // بعد اللوجن
+    DeepLinks.consumeTeam();
+    const tab = 3;
+    setState(() => _index = tab);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = _navKeys[tab].currentState;
+      nav?.popUntil((r) => r.isFirst);
+      nav?.push(MaterialPageRoute<void>(builder: (_) => TeamJoinPage(code: code)));
+    });
   }
 
   // ── دعوة ليج: يأكد وبعدين يدخل الليج ويروح للفانتازي ─────────────────────

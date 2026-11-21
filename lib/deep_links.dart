@@ -26,6 +26,9 @@ class DeepLinks {
   static final ValueNotifier<String?> pendingLeagueCode = ValueNotifier<String?>(null);
   static final RegExp _code = RegExp(r'^[A-Za-z0-9]{4,12}$');
 
+  /// كود فريق (مسابقات) مستني — من لينك دعوة ?t=<code> أو com.bdgr.app://team/<code>
+  static final ValueNotifier<String?> pendingTeamCode = ValueNotifier<String?>(null);
+
   static final AppLinks _appLinks = AppLinks();
   static StreamSubscription<Uri>? _sub;
   static bool _started = false;
@@ -55,6 +58,8 @@ class DeepLinks {
     if (ugc != null) { pendingUgcId.value = ugc; return; }
     final id = momentIdFrom(uri);
     if (id != null) { pendingMomentId.value = id; return; }
+    final team = teamCodeFrom(uri);
+    if (team != null) { pendingTeamCode.value = team; return; }
     final code = leagueCodeFrom(uri);
     if (code != null) pendingLeagueCode.value = code;
   }
@@ -72,6 +77,20 @@ class DeepLinks {
   }
 
   static void consumeLeague() => pendingLeagueCode.value = null;
+
+  /// com.bdgr.app://team/<code>  أو  https://...?t=<code>
+  static String? teamCodeFrom(Uri uri) {
+    String? c;
+    if (uri.host == 'team' && uri.pathSegments.isNotEmpty) {
+      c = uri.pathSegments.first;
+    } else {
+      c = uri.queryParameters['t'];
+    }
+    if (c == null || !_code.hasMatch(c)) return null;
+    return c.toUpperCase();
+  }
+
+  static void consumeTeam() => pendingTeamCode.value = null;
 
   /// بيطلّع id المومنت من اللينك، أو null لو اللينك مش لمومنت
   static String? momentIdFrom(Uri uri) {
