@@ -17,6 +17,7 @@ String _leagueErr(Object e, bool ar) {
   if (m.contains('already_member')) return t('Already a member.', 'عضو بالفعل.');
   if (m.contains('owner_must_transfer_or_delete')) return t('Transfer or delete the league first.', 'انقل الليج لحد أو امسحها الأول.');
   if (m.contains('not_league_owner')) return t('Only the league owner can do this.', 'صاحب الليج بس يقدر يعمل كده.');
+  if (m.contains('invalid_visibility')) return t('Pick who can see the league.', 'اختار مين يشوف الليج.');
   if (m.contains('new_owner_has_too_many_leagues')) return t('That member already owns 10 leagues.', 'العضو ده عنده 10 ليجز بالفعل.');
   return t('Something went wrong. Try again.', 'حصلت مشكلة. جرّب تاني.');
 }
@@ -32,6 +33,8 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
   List<Map<String, dynamic>> _leagues = [];
   Map<String, dynamic>? _inbox;
   List<Map<String, dynamic>> _cats = [];
+  List<Map<String, dynamic>> _top = [];   // كل الليجز: أول 5 (الأكبر عدد)
+  int _topTotal = 0;
   bool _loading = true;
   String? _error;
   String t(String en, String ar) => widget.isArabic ? ar : en;
@@ -45,13 +48,19 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
       final r = await Future.wait([
         _sb.rpc('league_my_list'),
         _sb.rpc('league_inbox'),
+        _sb.rpc('league_directory', params: {'p': {'limit': 5}}).catchError((_) => null),
         if (_cats.isEmpty) _sb.rpc('league_categories'),
       ]);
       if (!mounted) return;
       setState(() {
         _leagues = ((r[0] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _inbox = Map<String, dynamic>.from(r[1] as Map);
-        if (r.length > 2) _cats = ((r[2] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        if (r[2] is Map) {
+          final dir = Map<String, dynamic>.from(r[2] as Map);
+          _top = ((dir['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _topTotal = (dir['total'] as num?)?.toInt() ?? 0;
+        }
+        if (r.length > 3) _cats = ((r[3] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _loading = false;
       });
     } catch (e) {
@@ -122,8 +131,37 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
           )
         else
           for (final l in _leagues) _leagueCard(l),
+        // كل الليجز (الأكبر عدد الأول)
+        if (_top.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Row(children: [
+            Text(t('ALL LEAGUES', 'كل الليجز'), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+            const SizedBox(width: 6),
+            Text('$_topTotal', style: const TextStyle(color: muted, fontSize: 12)),
+            const Spacer(),
+            GestureDetector(onTap: _openDirectory,
+              child: Text(t('See all ›', 'شوف الكل ›'), style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
+          ]),
+          const SizedBox(height: 8),
+          for (final l in _top)
+            _DirLeagueCard(l: l, isArabic: widget.isArabic, catName: _catName(l['category']),
+              onOpen: () => _openLeague(l['league_id'] as String),
+              onJoined: (id) async { await _load(); if (mounted) _openLeague(id); }),
+          const SizedBox(height: 4),
+          SizedBox(height: 44, child: OutlinedButton(
+            onPressed: _openDirectory,
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: line),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text(t('See all leagues', 'شوف كل الليجز'), style: const TextStyle(fontWeight: FontWeight.w900)))),
+        ],
       ]),
     );
+  }
+
+  Future<void> _openDirectory() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+        _LeagueDirectoryPage(isArabic: widget.isArabic, categories: _cats)));
+    _load();
   }
 
   String _inboxLine() {
@@ -374,8 +412,8 @@ class _CodeBox extends StatelessWidget {
 class _LeagueFormSheet extends StatefulWidget {
   final bool isArabic;
   final List<Map<String, dynamic>> categories;
-  final String? leagueId, initialName, initialCategory;
-  const _LeagueFormSheet({required this.isArabic, required this.categories, this.leagueId, this.initialName, this.initialCategory});
+  final String? leagueId, initialName, initialCategory, initialVisibility;
+  const _LeagueFormSheet({required this.isArabic, required this.categories, this.leagueId, this.initialName, this.initialCategory, this.initialVisibility});
   @override
   State<_LeagueFormSheet> createState() => _LeagueFormSheetState();
 }
@@ -383,6 +421,7 @@ class _LeagueFormSheet extends StatefulWidget {
 class _LeagueFormSheetState extends State<_LeagueFormSheet> {
   late final TextEditingController _name = TextEditingController(text: widget.initialName ?? '');
   late String _cat = widget.initialCategory ?? 'general';
+  late String _vis = widget.initialVisibility ?? 'public';   // public | followers | private
   bool _busy = false;
   String? _err;
   String t(String en, String ar) => widget.isArabic ? ar : en;
@@ -393,6 +432,11 @@ class _LeagueFormSheetState extends State<_LeagueFormSheet> {
       final r = widget.leagueId == null
           ? await _sb.rpc('league_create', params: {'p_name': _name.text, 'p_category': _cat})
           : await _sb.rpc('league_update', params: {'p_league_id': widget.leagueId, 'p_name': _name.text, 'p_category': _cat});
+      final id = widget.leagueId ?? (r as Map)['league_id']?.toString();
+      final changed = widget.leagueId == null ? _vis != 'public' : _vis != (widget.initialVisibility ?? 'public');
+      if (id != null && changed) {
+        await _sb.rpc('league_set_visibility', params: {'p_league_id': id, 'p_visibility': _vis});
+      }
       if (!mounted) return;
       Navigator.pop(context, {...Map<String, dynamic>.from(r as Map), 'name': _name.text.trim()});
     } catch (e) {
@@ -438,6 +482,33 @@ class _LeagueFormSheetState extends State<_LeagueFormSheet> {
               ),
             ),
         ]),
+        const SizedBox(height: 16),
+        Text(t('Who can see it', 'مين يشوف الليج'), style: const TextStyle(color: muted, fontSize: 12.5, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        for (final (key, icon, title, sub) in [
+          ('public', '🌍', t('Everyone', 'الكل'), t('Shows in "All leagues". Anyone can join.', 'بتظهر في "كل الليجز"، وأي حد يقدر يدخل.')),
+          ('followers', '👥', t('My followers', 'المتابعين بس'), t('Only people who follow you see it and join.', 'بس اللي متابعينك يشوفوها ويدخلوا.')),
+          ('private', '🔒', t('Private', 'برايفت'), t('Hidden. Join with the code or an invite only.', 'مخفية. الدخول بالكود أو بدعوة بس.')),
+        ])
+          Padding(padding: const EdgeInsets.only(bottom: 8), child: GestureDetector(
+            onTap: () => setState(() => _vis = key),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _vis == key ? Brand.green.withOpacity(0.12) : cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _vis == key ? Brand.green : line)),
+              child: Row(children: [
+                Text(icon, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: TextStyle(color: _vis == key ? Brand.green : Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
+                  Text(sub, style: const TextStyle(color: muted, fontSize: 11.5)),
+                ])),
+                Icon(_vis == key ? Icons.radio_button_checked : Icons.radio_button_off, size: 20, color: _vis == key ? Brand.green : muted),
+              ]),
+            ),
+          )),
         if (_err != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_err!, style: const TextStyle(color: Color(0xFFFF6B6B)))),
         const SizedBox(height: 16),
         SizedBox(height: 48, child: ElevatedButton(
@@ -668,7 +739,7 @@ class _LeaguePageState extends State<_LeaguePage> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${d['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
-                Text(t('${d['members']} members', '${d['members']} عضو') + (_owner ? t(' · you own it', ' · إنت صاحبها') : ''),
+                Text('${_visIcon(d['visibility'])} ' + t('${d['members']} members', '${d['members']} عضو') + (_owner ? t(' · you own it', ' · إنت صاحبها') : ''),
                   style: const TextStyle(color: muted, fontSize: 12)),
               ])),
               IconButton(onPressed: _menu, icon: const Icon(Icons.more_vert_rounded, color: Colors.white)),
@@ -813,7 +884,8 @@ class _LeaguePageState extends State<_LeaguePage> {
           context: context, isScrollControlled: true, backgroundColor: bg,
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
           builder: (_) => _LeagueFormSheet(isArabic: widget.isArabic, categories: widget.categories,
-              leagueId: widget.leagueId, initialName: '${_d?['name'] ?? ''}', initialCategory: '${_d?['category'] ?? 'general'}'));
+              leagueId: widget.leagueId, initialName: '${_d?['name'] ?? ''}', initialCategory: '${_d?['category'] ?? 'general'}',
+              initialVisibility: '${_d?['visibility'] ?? 'public'}'));
         if (r != null) { _snack(t('Saved', 'اتحفظ')); _load(); }
       case 'invite':
         _openInvite();
@@ -931,6 +1003,251 @@ class _InviteSheetState extends State<_InviteSheet> {
             },
           ),
         ]),
+      ),
+    );
+  }
+}
+
+String _visIcon(dynamic v) => switch ('$v') { 'followers' => '👥', 'private' => '🔒', _ => '🌍' };
+
+/// ادخل ليج من "كل الليجز" (من غير كود). بيرجّع league_id لو دخل.
+Future<String?> _joinOpenLeague(BuildContext context, Map<String, dynamic> l, bool ar) async {
+  String t(String en, String a) => ar ? a : en;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final r = Map<String, dynamic>.from(await _sb.rpc('league_join_open', params: {'p_league_id': l['league_id']}) as Map);
+    final st = r['status']?.toString();
+    final msg = switch (st) {
+      'joined' => t('You joined the league! 🎉', 'دخلت الليج! 🎉'),
+      'already_member' => t("You're already in this league.", 'إنت في الليج دي بالفعل.'),
+      'requested' => t('You were removed from this league before — a request was sent to the owner.', 'إنت اتشلت من الليج دي قبل كده — اتبعت طلب لصاحبها.'),
+      'pending' => t('Your request is still waiting for the owner.', 'طلبك لسه مستني رد صاحب الليج.'),
+      'blocked' || 'not_allowed' => t("You can't join this league.", 'مش هتقدر تدخل الليج دي.'),
+      'league_full' => t('This league is full.', 'الليج دي مليانة.'),
+      _ => t('This league is not available.', 'الليج دي مش متاحة.'),
+    };
+    messenger.showSnackBar(SnackBar(content: Text(msg)));
+    return (st == 'joined' || st == 'already_member') ? l['league_id']?.toString() : null;
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(_leagueErr(e, ar))));
+    return null;
+  }
+}
+
+/// كارت ليج في "كل الليجز": الترتيب بالعدد + الاسم + صاحبها + الأعضاء + ادخل.
+class _DirLeagueCard extends StatefulWidget {
+  final Map<String, dynamic> l;
+  final bool isArabic;
+  final String catName;
+  final VoidCallback onOpen;
+  final ValueChanged<String> onJoined;
+  const _DirLeagueCard({required this.l, required this.isArabic, required this.catName, required this.onOpen, required this.onJoined});
+  @override
+  State<_DirLeagueCard> createState() => _DirLeagueCardState();
+}
+
+class _DirLeagueCardState extends State<_DirLeagueCard> {
+  bool _busy = false;
+  String t(String en, String ar) => widget.isArabic ? ar : en;
+
+  Future<void> _join() async {
+    setState(() => _busy = true);
+    final id = await _joinOpenLeague(context, widget.l, widget.isArabic);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (id != null) {
+      widget.l['is_member'] = true;
+      widget.onJoined(id);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.l;
+    final rank = (l['rank'] as num?)?.toInt() ?? 0;
+    final member = l['is_member'] == true;
+    final owner = l['owner'] is Map ? Map<String, dynamic>.from(l['owner'] as Map) : const <String, dynamic>{};
+    final by = (owner['username'] ?? '').toString().isNotEmpty ? '@${owner['username']}' : '${owner['name'] ?? ''}';
+    final rankColor = switch (rank) { 1 => _gold, 2 => const Color(0xFFC9CED6), 3 => const Color(0xFFCD8B5A), _ => muted };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: member ? widget.onOpen : (_busy ? null : _join),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: l['is_owner'] == true ? _gold.withOpacity(0.4) : line)),
+          child: Row(children: [
+            SizedBox(width: 34, child: Text('#$rank', textAlign: TextAlign.center,
+              style: TextStyle(color: rankColor, fontSize: rank <= 3 ? 15 : 13, fontWeight: FontWeight.w900))),
+            Container(width: 40, height: 40, alignment: Alignment.center,
+              decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(12)),
+              child: Text('${l['icon']}', style: const TextStyle(fontSize: 21))),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Flexible(child: Text('${l['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900))),
+                if (l['visibility'] != 'public') Padding(padding: const EdgeInsetsDirectional.only(start: 5),
+                  child: Text(_visIcon(l['visibility']), style: const TextStyle(fontSize: 11.5))),
+              ]),
+              const SizedBox(height: 2),
+              Text('${t('${l['members']} members', '${l['members']} عضو')} · ${widget.catName}${by.isEmpty ? '' : ' · $by'}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
+            ])),
+            const SizedBox(width: 8),
+            if (member)
+              Text(t('✓ Member', '✓ عضو'), style: TextStyle(color: Brand.green, fontSize: 12, fontWeight: FontWeight.w900))
+            else
+              SizedBox(height: 32, child: ElevatedButton(
+                onPressed: _busy ? null : _join,
+                style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: Text(_busy ? '…' : t('Join', 'ادخل'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12.5)))),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// صفحة "كل الليجز": بحث + نوع + ترتيب بالعدد، 20 كل مرة.
+class _LeagueDirectoryPage extends StatefulWidget {
+  final bool isArabic;
+  final List<Map<String, dynamic>> categories;
+  const _LeagueDirectoryPage({required this.isArabic, required this.categories});
+  @override
+  State<_LeagueDirectoryPage> createState() => _LeagueDirectoryPageState();
+}
+
+class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
+  final _q = TextEditingController();
+  final _scroll = ScrollController();
+  final List<Map<String, dynamic>> _items = [];
+  String? _cat;
+  bool _loading = true, _more = false, _loadingMore = false, _error = false;
+  int _total = 0, _req = 0;
+  Timer? _debounce;
+  String t(String en, String ar) => widget.isArabic ? ar : en;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_more && !_loadingMore && _scroll.position.pixels > _scroll.position.maxScrollExtent - 300) _fetch(more: true);
+    });
+    _fetch();
+  }
+
+  @override
+  void dispose() { _debounce?.cancel(); _q.dispose(); _scroll.dispose(); super.dispose(); }
+
+  Future<void> _fetch({bool more = false}) async {
+    final req = ++_req;
+    setState(() { if (more) { _loadingMore = true; } else { _loading = _items.isEmpty; _error = false; } });
+    try {
+      final r = Map<String, dynamic>.from(await _sb.rpc('league_directory', params: {'p': {
+        'q': _q.text.trim(), if (_cat != null) 'category': _cat, 'offset': more ? _items.length : 0, 'limit': 20,
+      }}) as Map);
+      if (!mounted || req != _req) return;
+      final list = ((r['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      setState(() {
+        if (!more) _items.clear();
+        _items.addAll(list);
+        _total = (r['total'] as num?)?.toInt() ?? 0;
+        _more = r['has_more'] == true;
+        _loading = false; _loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted && req == _req) setState(() { _loading = false; _loadingMore = false; _error = !more; });
+    }
+  }
+
+  void _onSearch(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () => _fetch());
+  }
+
+  String _catName(dynamic key) {
+    final c = widget.categories.cast<Map<String, dynamic>?>().firstWhere((x) => x?['key'] == key, orElse: () => null);
+    if (c == null) return t('General', 'عامة');
+    return widget.isArabic ? '${c['ar']}' : '${c['en']}';
+  }
+
+  void _open(String id) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+      _LeaguePage(leagueId: id, isArabic: widget.isArabic, categories: widget.categories)));
+
+  Widget _chip(String? key, String label) {
+    final on = _cat == key;
+    return Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: GestureDetector(
+      onTap: () { setState(() => _cat = key); _fetch(); },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(color: on ? Colors.white : cardBg, borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: on ? Colors.white : line)),
+        child: Text(label, style: TextStyle(color: on ? Colors.black : Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w800))),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: widget.isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: bg,
+        body: SafeArea(child: Column(children: [
+          Padding(padding: const EdgeInsets.fromLTRB(12, 8, 16, 0), child: Row(children: [
+            IconButton(onPressed: () => Navigator.pop(context),
+              style: IconButton.styleFrom(backgroundColor: cardBg, side: const BorderSide(color: line)),
+              icon: const Icon(Icons.arrow_back, color: Colors.white)),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t('All leagues', 'كل الليجز'), style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+              Text(t('Biggest first', 'الأكبر عدد الأول'), style: const TextStyle(color: muted, fontSize: 12)),
+            ])),
+          ])),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: TextField(
+            controller: _q, onChanged: _onSearch, maxLength: 40,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(counterText: '', isDense: true, filled: true, fillColor: cardBg,
+              prefixIcon: const Icon(Icons.search_rounded, color: muted, size: 20),
+              hintText: t('Search by league name', 'دوّر باسم الليج'), hintStyle: const TextStyle(color: Colors.white24),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line))),
+          )),
+          SizedBox(height: 46, child: ListView(
+            scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+            children: [
+              _chip(null, t('All', 'الكل')),
+              for (final c in widget.categories) _chip('${c['key']}', '${c['icon']} ${widget.isArabic ? c['ar'] : c['en']}'),
+            ],
+          )),
+          Expanded(child: _loading
+            ? const Center(child: CircularProgressIndicator(color: brandRed))
+            : _error
+              ? Center(child: TextButton(onPressed: _fetch,
+                  child: Text(t('Could not load. Tap to retry.', 'مش قادرين نحمّل. دوس وجرّب تاني.'), style: const TextStyle(color: muted))))
+              : _items.isEmpty
+                ? Center(child: Text(t('No leagues found.', 'مفيش ليجز بالاسم ده.'), style: const TextStyle(color: muted)))
+                : RefreshIndicator(color: brandRed, onRefresh: () => _fetch(),
+                    child: ListView.builder(
+                      controller: _scroll, padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: _items.length + 1,
+                      itemBuilder: (_, i) {
+                        if (i == _items.length) {
+                          return Padding(padding: const EdgeInsets.all(12), child: Center(child: _loadingMore
+                            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: brandRed))
+                            : Text(t('$_total leagues', '$_total ليج'), style: const TextStyle(color: muted, fontSize: 12))));
+                        }
+                        final l = _items[i];
+                        return _DirLeagueCard(l: l, isArabic: widget.isArabic, catName: _catName(l['category']),
+                          onOpen: () => _open(l['league_id'] as String),
+                          onJoined: (id) { setState(() {}); _open(id); });
+                      },
+                    ))),
+        ])),
       ),
     );
   }
