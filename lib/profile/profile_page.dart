@@ -1097,6 +1097,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useRootNavigator: true,   // فوق شريط التابات، علشان زراير غيّر/شيل تبان
+      useSafeArea: true,
       builder: (ctx) => _ImageViewSheet(
         image: img, isAvatar: !isCover,
         onEdit:   () async { Navigator.pop(ctx); await _selectNewImage(isCover: isCover); },
@@ -1123,6 +1125,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useRootNavigator: true,   // فوق شريط التابات وتحت الستاتس بار
+      useSafeArea: true,
       builder: (_) => _EditProfileSheet(
         username: _username,
         displayName: _displayName, bio: _bio,
@@ -3475,9 +3479,10 @@ class _ImageViewSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final h      = MediaQuery.of(context).size.height;
-    final bottom = MediaQuery.of(context).padding.bottom;
-    final imgH   = h - 100 - bottom;
+    final mq     = MediaQuery.of(context);
+    final bottom = mq.padding.bottom;
+    final imgH   = (mq.size.height * 0.62).clamp(220.0, 760.0).toDouble();
+    final ar     = AppLang.isArabic;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Stack(children: [
         Container(height: imgH, width: double.infinity,
@@ -3504,11 +3509,11 @@ class _ImageViewSheet extends StatelessWidget {
         color: const Color(0xFF1A1A1A),
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottom),
         child: Row(children: [
-          Expanded(child: _btn(Icons.edit_outlined, 'Edit',
+          Expanded(child: _btn(Icons.edit_outlined, ar ? 'غيّر الصورة' : 'Change',
               const Color(0xFFFF0000), onEdit)),
           const SizedBox(width: 10),
-          Expanded(child: _btn(Icons.delete_outline, 'Remove',
-              Colors.white38, onRemove)),
+          Expanded(child: _btn(Icons.delete_outline, ar ? 'شيل الصورة' : 'Remove',
+              Colors.white70, onRemove)),
         ]),
       ),
     ]);
@@ -4142,8 +4147,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> with WidgetsBindin
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_s('Edit Profile', 'تعديل البروفايل'), style: const TextStyle(color: Colors.white,
-                    fontSize: 17, fontWeight: FontWeight.w800)),
+                Expanded(child: Text(_s('Edit Profile', 'تعديل البروفايل'), style: const TextStyle(color: Colors.white,
+                    fontSize: 17, fontWeight: FontWeight.w800))),
                 GestureDetector(
                   onTap: () => setState(() => _isArabic = !_isArabic),
                   child: Container(
@@ -4160,6 +4165,18 @@ class _EditProfileSheetState extends State<_EditProfileSheet> with WidgetsBindin
                       const SizedBox(width: 6),
                       const Icon(Icons.language, color: Colors.white70, size: 16),
                     ]),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // ✕ = اقفل من غير حفظ
+                InkWell(
+                  onTap: () => Navigator.of(context).pop(),
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 34, height: 34,
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24)),
+                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
                   ),
                 ),
               ],
