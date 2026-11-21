@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'ads/ad_widgets.dart';
+import 'ads/ad_takeover.dart' show showAdModal;
 import 'app_lang.dart';
 import 'brand.dart';
 import 'local_store.dart';
@@ -1158,16 +1159,10 @@ class _FancyPageState extends State<FancyPage> {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          backHeader(label: '', onBack: () => setState(() => step = 0)),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: Text(isArabic ? event.nameAr : event.nameEn,
-              style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900))),
-            _phasePill(phaseOf(event)),
-          ]),
-          // راعي الجولة دي: "الجولة برعاية X"
-          AdSlot('fantasy_round_title', eventId: event.eventId, padding: const EdgeInsets.only(top: 6),
-              prefixEn: 'Round presented by', prefixAr: 'الجولة برعاية'),
+          // سهم الرجوع + اسم الجولة + الساحة في سطر واحد (توفير مساحة: أول ماتش لازم يبان)
+          backHeader(label: '', onBack: () => setState(() => step = 0),
+              title: Text(isArabic ? event.nameAr : event.nameEn, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900))),
           const SizedBox(height: 10),
           _lobbyInfoCard(event),
           const SizedBox(height: 14),
@@ -1199,8 +1194,6 @@ class _FancyPageState extends State<FancyPage> {
           const SizedBox(height: 6),
           Expanded(child: ListView(padding: const EdgeInsets.only(bottom: 8),
             children: [
-              // بانر إعلان فوق الماتشات (لو فيه)
-              AdSlot('fantasy_lobby_banner', eventId: event.eventId, compact: true, padding: const EdgeInsets.only(top: 6, bottom: 4)),
               ...byDay.entries.expand((entry) => [
               Padding(padding: const EdgeInsets.only(bottom: 6, top: 6),
                 child: Text('${entry.key} · ${_fmtDate(entry.value.first.kickoffAt)}',
@@ -1310,10 +1303,15 @@ class _FancyPageState extends State<FancyPage> {
                    : t('The next round opens on Friday', 'الجولة الجاية بتفتح يوم الجمعة')),
     };
     const medals = {1: '🥇', 2: '🥈', 3: '🥉'};
+    const gold = Color(0xFFFFB300);
+    String place(int r) => isArabic
+        ? (const {1: 'الأول', 2: 'التاني', 3: 'التالت'}[r] ?? 'رقم $r')
+        : (const {1: '1st', 2: '2nd', 3: '3rd'}[r] ?? '${r}th');
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: c.withOpacity(0.35))),
-      child: Column(children: [
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.withOpacity(0.35))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // الديدلاين + حالة الجولة
         Row(children: [
           Icon(ic, color: c, size: 20),
           const SizedBox(width: 8),
@@ -1322,24 +1320,77 @@ class _FancyPageState extends State<FancyPage> {
                 fontWeight: FontWeight.w900, fontFeatures: const [FontFeature.tabularFigures()])),
             Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
           ])),
+          const SizedBox(width: 8),
+          _phasePill(ph),
         ]),
+        // الجوايز: كل مركز في سطر لوحده (أوضح)
         if (event.prizes.isNotEmpty) ...[
-          const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: line)),
+          const Padding(padding: EdgeInsets.symmetric(vertical: 9), child: Divider(height: 1, color: line)),
           Row(children: [
-            const Icon(Icons.emoji_events_rounded, color: Color(0xFFFFB300), size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-              for (final p in event.prizes) Padding(
-                padding: const EdgeInsetsDirectional.only(end: 12),
-                child: Text('${medals[p.rank] ?? '🏅'} ${p.text(isArabic)}',
-                  style: const TextStyle(color: Color(0xFFFFB300), fontSize: 13, fontWeight: FontWeight.w800))),
-            ]))),
+            const Icon(Icons.emoji_events_rounded, color: gold, size: 16),
+            const SizedBox(width: 6),
+            Text(t('PRIZES', 'الجوايز'), style: const TextStyle(color: gold, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
           ]),
-          // راعي الجوايز: "الجوايز مقدّمة من X"
-          AdSlot('fantasy_prize', eventId: event.eventId, padding: const EdgeInsets.only(top: 8),
-              prefixEn: 'Prizes by', prefixAr: 'الجوايز مقدّمة من'),
+          const SizedBox(height: 4),
+          for (final p in event.prizes)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2.5),
+              child: Row(children: [
+                SizedBox(width: 26, child: Text(medals[p.rank] ?? '🏅', style: const TextStyle(fontSize: 17))),
+                SizedBox(width: 50, child: Text(place(p.rank), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
+                Expanded(child: Text(p.text(isArabic), maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: p.rank == 1 ? gold : Colors.white, fontSize: p.rank == 1 ? 16 : 14.5, fontWeight: FontWeight.w900))),
+              ]),
+            ),
         ],
+        // راعي واحد بس للجولة (بيتحدّث لما الإعلانات تتحمّل)
+        ValueListenableBuilder<int>(
+          valueListenable: Ads.version,
+          builder: (_, __, ___) {
+            final sponsor = _roundSponsor(event);
+            if (sponsor == null) return const SizedBox.shrink();
+            return Column(mainAxisSize: MainAxisSize.min, children: [
+              const Padding(padding: EdgeInsets.only(top: 9, bottom: 8), child: Divider(height: 1, color: line)),
+              sponsor,
+            ]);
+          },
+        ),
       ]),
+    );
+  }
+
+  /// راعي الجولة: واحد بس على صفحة الجولة (الأونر، 21 نوفمبر).
+  /// بياخد أول حملة موجودة بالترتيب ده: بانر الجولة ← "الجولة برعاية" ← "الجوايز مقدّمة من".
+  /// الدوسة بتفتح كارت الإعلان الكبير (كام ثانية وبيتقفل، وفيه زرار اللينك).
+  Widget? _roundSponsor(FantasyEvent event) {
+    Ads.ensure();
+    AdItem? ad;
+    for (final pl in const ['fantasy_lobby_banner', 'fantasy_round_title', 'fantasy_prize']) {
+      ad = Ads.pick(pl, eventId: event.eventId);
+      if (ad != null) break;
+    }
+    if (ad == null) return null;
+    final a = ad;
+    final name = a.sponsorName ?? a.title ?? '';
+    return AdImpression(
+      ad: a,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => showAdModal(context, a),
+        child: Row(children: [
+          Flexible(child: Text(t('Round sponsored by', 'الجولة برعاية'), maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
+          const SizedBox(width: 8),
+          AdLogo(a, size: 22),
+          const SizedBox(width: 6),
+          Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900))),
+          const SizedBox(width: 6),
+          AdLabel(demo: a.demo, onDark: false),
+          const Spacer(),
+          const Icon(Icons.chevron_right_rounded, color: muted, size: 20),
+        ]),
+      ),
     );
   }
 
@@ -2043,12 +2094,12 @@ class _FancyPageState extends State<FancyPage> {
   // BACK HEADER
   // ─────────────────────────────────────────────────────────────────────────
   // العنوان بياخد المساحة لحد زراير (ع/EN و ؟) اللي فوق على اليمين وما يدخلش تحتهم
-  Widget backHeader({required String label, required VoidCallback onBack}) => Row(children: [
+  Widget backHeader({required String label, required VoidCallback onBack, Widget? title}) => Row(children: [
     IconButton(onPressed: onBack,
       style: IconButton.styleFrom(backgroundColor: cardBg, side: BorderSide(color: line)),
       icon: const Icon(Icons.arrow_back, color: Colors.white)),
     const SizedBox(width: 10),
-    Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+    Expanded(child: title ?? Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
       style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6))),
     // زرار واحد يرجّعك تختار الساحة
     GestureDetector(
