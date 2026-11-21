@@ -141,11 +141,8 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
             const SizedBox(width: 6),
             Text('$_topTotal', style: const TextStyle(color: muted, fontSize: 12)),
             const Spacer(),
-            GestureDetector(onTap: _openDirectory,
-              child: Text(t('See all ›', 'شوف الكل ›'), style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
+            _FilterMenu(value: _scope, items: _scopeItems(widget.isArabic), onChanged: _setScope),
           ]),
-          const SizedBox(height: 8),
-          _ScopeChips(isArabic: widget.isArabic, value: _scope, onChanged: _setScope),
           const SizedBox(height: 10),
           if (_topLoading)
             const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 22, height: 22,
@@ -1209,18 +1206,6 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
   void _open(String id) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
       _LeaguePage(leagueId: id, isArabic: widget.isArabic, categories: widget.categories)));
 
-  Widget _chip(String? key, String label) {
-    final on = _cat == key;
-    return Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: GestureDetector(
-      onTap: () { setState(() => _cat = key); _fetch(); },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(color: on ? Colors.white : cardBg, borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: on ? Colors.white : line)),
-        child: Text(label, style: TextStyle(color: on ? Colors.black : Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w800))),
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -1247,15 +1232,17 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line)),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: line))),
           )),
-          Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: _ScopeChips(isArabic: widget.isArabic, value: _scope, onChanged: (v) { setState(() => _scope = v); _fetch(); })),
-          SizedBox(height: 46, child: ListView(
-            scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
-            children: [
-              _chip(null, t('All', 'الكل')),
-              for (final c in widget.categories) _chip('${c['key']}', '${c['icon']} ${widget.isArabic ? c['ar'] : c['en']}'),
-            ],
-          )),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 2), child: Row(children: [
+            Expanded(child: _FilterMenu(value: _scope, items: _scopeItems(widget.isArabic), expand: true,
+              onChanged: (v) { setState(() => _scope = v); _fetch(); })),
+            const SizedBox(width: 8),
+            Expanded(child: _FilterMenu(value: _cat ?? '', expand: true,
+              items: [
+                ('', t('All types', 'كل الأنواع')),
+                for (final c in widget.categories) ('${c['key']}', '${c['icon']} ${widget.isArabic ? c['ar'] : c['en']}'),
+              ],
+              onChanged: (v) { setState(() => _cat = v.isEmpty ? null : v); _fetch(); })),
+          ])),
           Expanded(child: _loading
             ? const Center(child: CircularProgressIndicator(color: brandRed))
             : _error
@@ -1298,37 +1285,54 @@ String _scopeEmpty(String scope, bool ar) {
 }
 
 /// فلتر "كل الليجز": الكل · ليجزي · اللي بتابعهم · متابعيني.
-class _ScopeChips extends StatelessWidget {
-  final bool isArabic;
+List<(String, String)> _scopeItems(bool ar) {
+  String t(String en, String a) => ar ? a : en;
+  return [
+    ('all', t('All leagues', 'كل الليجز')),
+    ('member', t("Leagues I'm in", 'ليجزي')),
+    ('following', t('People I follow', 'اللي بتابعهم')),
+    ('followers', t('My followers', 'متابعيني')),
+  ];
+}
+
+/// قايمة منسدلة صغيرة للفلاتر (زرار واحد + ▾).
+class _FilterMenu extends StatelessWidget {
   final String value;
+  final List<(String, String)> items;
   final ValueChanged<String> onChanged;
-  const _ScopeChips({required this.isArabic, required this.value, required this.onChanged});
+  final bool expand;
+  const _FilterMenu({required this.value, required this.items, required this.onChanged, this.expand = false});
 
   @override
   Widget build(BuildContext context) {
-    String t(String en, String ar) => isArabic ? ar : en;
-    final items = [
-      ('all', t('All', 'الكل')),
-      ('member', t("I'm in", 'ليجزي')),
-      ('following', t('People I follow', 'اللي بتابعهم')),
-      ('followers', t('My followers', 'متابعيني')),
-    ];
-    return SizedBox(height: 34, child: ListView(
-      scrollDirection: Axis.horizontal,
-      children: [
+    final current = items.firstWhere((e) => e.$1 == value, orElse: () => items.first).$2;
+    final active = value != items.first.$1;
+    return PopupMenuButton<String>(
+      initialValue: value,
+      onSelected: onChanged,
+      color: cardBg,
+      position: PopupMenuPosition.under,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: line)),
+      itemBuilder: (_) => [
         for (final (key, label) in items)
-          Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: GestureDetector(
-            onTap: () => onChanged(key),
-            child: Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: value == key ? brandRed : cardBg,
-                borderRadius: BorderRadius.circular(17),
-                border: Border.all(color: value == key ? brandRed : line)),
-              child: Text(label, style: TextStyle(color: value == key ? Colors.white : Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w800))),
-          )),
+          PopupMenuItem<String>(value: key, height: 42, child: Row(children: [
+            Expanded(child: Text(label, style: TextStyle(color: key == value ? Colors.white : Colors.white70,
+              fontSize: 13.5, fontWeight: key == value ? FontWeight.w900 : FontWeight.w600))),
+            if (key == value) const Icon(Icons.check_rounded, size: 18, color: brandRed),
+          ])),
       ],
-    ));
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: active ? brandRed : line)),
+        child: Row(mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min, children: [
+          Flexible(fit: expand ? FlexFit.tight : FlexFit.loose, child: Text(current, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
+          const SizedBox(width: 4),
+          const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: muted),
+        ]),
+      ),
+    );
   }
 }
