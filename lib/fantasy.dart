@@ -90,7 +90,7 @@ Widget _netImage(String url, {double? width, double? height, BoxFit fit = BoxFit
 /// Shirt photo on the pitch: decoded SMALL (a big photo decoded at full size ×11 cards = out of memory → crash).
 Widget _kitPhoto(String url, double w, double h, Widget fallback) {
   final px = (w * 3).round().clamp(96, 240).toInt();
-  return Image(image: ResizeImage(MediaCache.image(url), width: px, policy: ResizeImagePolicy.fit, allowUpscaling: false),
+  return Image(image: ResizeImage(MediaCache.image(url), width: px, allowUpscaling: false),
     width: w, height: h, fit: BoxFit.contain, gaplessPlayback: true,
     loadingBuilder: (_, child, progress) => progress == null ? child : fallback,
     errorBuilder: (_, __, ___) => fallback);
