@@ -66,6 +66,64 @@ jobs:
           flutter create . --platforms=android --org="$ORG" --project-name="$DART_PROJECT"
           rm -rf test
 
+      - name: Diagnostics channel (Android's last exit reasons → Dart)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          f = next(Path("android/app/src/main").rglob("MainActivity.kt"))
+          pkg = next(l for l in f.read_text().splitlines() if l.startswith("package "))
+          f.write_text(pkg + """
+
+          import android.app.ActivityManager
+          import android.content.Context
+          import android.os.Build
+          import android.util.Base64
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+
+          class MainActivity : FlutterActivity() {
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "bdgr/diag").setMethodCallHandler { call, result ->
+                      try {
+                          when (call.method) {
+                              "dir" -> result.success(filesDir.absolutePath)
+                              "lastExits" -> {
+                                  if (Build.VERSION.SDK_INT < 30) { result.success(null) } else {
+                                      val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                                      val out = ArrayList<Map<String, Any?>>()
+                                      for (e in am.getHistoricalProcessExitReasons(packageName, 0, 3)) {
+                                          var trace: String? = null
+                                          var b64 = false
+                                          try {
+                                              e.traceInputStream?.use { s ->
+                                                  val b = s.readBytes()
+                                                  val cut = if (b.size > 200000) b.copyOf(200000) else b
+                                                  if (e.reason == 5) { // REASON_CRASH_NATIVE = tombstone (binary)
+                                                      trace = Base64.encodeToString(cut, Base64.NO_WRAP); b64 = true
+                                                  } else {
+                                                      trace = String(cut, Charsets.UTF_8)
+                                                  }
+                                              }
+                                          } catch (_: Throwable) {}
+                                          out.add(mapOf("reason" to e.reason, "status" to e.status, "description" to e.description,
+                                              "ts" to e.timestamp, "importance" to e.importance, "pss" to e.pss, "rss" to e.rss,
+                                              "trace" to trace, "b64" to b64, "sdk" to Build.VERSION.SDK_INT))
+                                      }
+                                      result.success(out)
+                                  }
+                              }
+                              else -> result.notImplemented()
+                          }
+                      } catch (t: Throwable) { result.error("diag", t.toString(), null) }
+                  }
+              }
+          }
+          """)
+          print("MainActivity written:", f)
+          PY
+
       - name: Configure applicationId, name, permissions and deep link
         run: |
           python3 - <<'PY'

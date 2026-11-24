@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'diag.dart';
 
 bool _calm(BuildContext c) => MediaQuery.maybeOf(c)?.disableAnimations ?? false;
 
@@ -66,6 +67,7 @@ class _StadiumPitchState extends State<StadiumPitch> with SingleTickerProviderSt
       child: LayoutBuilder(builder: (context, cons) {
         final tf = widget.board != null ? 0.115 : 0.085;
         final g = _Geo(cons.maxWidth, cons.maxHeight, tf);
+        Diag.step('StadiumPitch ${cons.maxWidth.toStringAsFixed(0)}x${cons.maxHeight.toStringAsFixed(0)} rows=${widget.rowCount} board=${widget.board != null}');
         final n = widget.rowCount;
         final boardH = math.min(26.0, g.top - 10);
         // row centres in depth: a bit of room at the far end for the halfway line

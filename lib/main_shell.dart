@@ -1,5 +1,6 @@
 import 'competitions/teams/team_pages.dart' show TeamJoinPage, teamPageRoute;
 import 'package:flutter/material.dart';
+import 'diag.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -130,6 +131,7 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     // الويب: القايمة الجانبية بتاخد زرار الترس من الهوم بعد أول فريم
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() {}); });
+    Diag.sendPending();
     AppUsage.trackOpen(); // user_apps: اليوزر فتح التطبيق ده
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.addListener(_joinPendingLeague);

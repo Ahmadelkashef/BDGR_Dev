@@ -15,12 +15,14 @@ import 'auth/login_config.dart';
 import 'auth/video_preloader.dart';
 import 'brand.dart';
 import 'deep_links.dart';
+import 'diag.dart';
 import 'main_shell.dart';
 import 'push/push_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   PushService.registerBackgroundHandler();
+  unawaited(Diag.init());
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(

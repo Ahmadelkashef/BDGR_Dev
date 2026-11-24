@@ -16,6 +16,7 @@ import 'location_prompt.dart';
 import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
 import 'fantasy_stadium.dart';
+import 'diag.dart';
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -544,12 +545,14 @@ class _FancyPageState extends State<FancyPage> {
         res = await _sb.rpc('get_fantasy_players', params: {'p_event_id': eventId});
       }
       final list = res as List;
+      Diag.crumb('players loaded ${list.length}');
       setState(() {
         players = list.map((e) => FancyPlayer.fromJson(e as Map<String, dynamic>)).toList();
         _playersLoading = false;
       });
       squadTick.value++;
     } catch (e) {
+      Diag.crumb('players error $e');
       setState(() { _playersLoading = false; _playersError = e.toString(); });
       squadTick.value++;
     }
@@ -634,6 +637,7 @@ class _FancyPageState extends State<FancyPage> {
   // ARENA / SQUAD HELPERS
   // ─────────────────────────────────────────────────────────────────────────
   void enterArena(String value) {
+    Diag.crumb('enterArena $value event=${currentEvent?.eventId}');
     setState(() { arena = value; step = 1; clearSquad(); saved = false; _startCountdown(); });
     if (currentEvent != null) {
       _myRank = null;
@@ -1918,6 +1922,7 @@ class _FancyPageState extends State<FancyPage> {
   // PITCH
   // ─────────────────────────────────────────────────────────────────────────
   Widget buildPitch({bool readOnly = false}) {
+    Diag.step('buildPitch arena=$arena ro=$readOnly players=${pickedPlayers.length} f=$formation kits=${_kits.length}');
     final rows = <MapEntry<String, int>>[
       MapEntry('FWD', slotCount('FWD')), MapEntry('MID', slotCount('MID')),
       MapEntry('DEF', slotCount('DEF')), const MapEntry('GK', 1),
@@ -1984,6 +1989,7 @@ class _FancyPageState extends State<FancyPage> {
     final kit = p == null ? null : _kits[p.teamId];
     final shirtW = math.min(w * 0.80, shirtH * 1.05);
     final logo = p?.teamId == null ? null : teamLogos[p!.teamId];
+    Diag.step('card $pos ${p?.teamId} kit=${kit?.pattern}/${kit?.img != null} logo=$logo');
     final top = SizedBox(width: w, height: shirtH, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
       p == null
         ? KitShirt(c1: const Color(0x2EFFFFFF), c2: Colors.white70, pattern: 'ghost', width: shirtW)
