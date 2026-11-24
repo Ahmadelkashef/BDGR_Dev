@@ -87,6 +87,15 @@ Widget _netImage(String url, {double? width, double? height, BoxFit fit = BoxFit
     errorBuilder: (_, __, ___) => fallback ?? const SizedBox.shrink());
 }
 
+/// Shirt photo on the pitch: decoded SMALL (a big photo decoded at full size ×11 cards = out of memory → crash).
+Widget _kitPhoto(String url, double w, double h, Widget fallback) {
+  final px = (w * 3).round().clamp(96, 240).toInt();
+  return Image(image: ResizeImage(MediaCache.image(url), width: px, policy: ResizeImagePolicy.fit, allowUpscaling: false),
+    width: w, height: h, fit: BoxFit.contain, gaplessPlayback: true,
+    loadingBuilder: (_, child, progress) => progress == null ? child : fallback,
+    errorBuilder: (_, __, ___) => fallback);
+}
+
 // ─── Colors ───────────────────────────────────────────────────────────────
 const Color bg           = Brand.background;   // هوية BDGR
 const Color cardBg       = Color(0xFF1A1A1A);
@@ -1980,8 +1989,8 @@ class _FancyPageState extends State<FancyPage> {
         ? KitShirt(c1: const Color(0x2EFFFFFF), c2: Colors.white70, pattern: 'ghost', width: shirtW)
         : (kit?.img != null
             // real shirt photo (cached on the phone); drawn shirt while loading / on error
-            ? _netImage(kit!.img!, width: shirtW * 1.08, height: shirtH, fit: BoxFit.contain,
-                fallback: KitShirt(c1: kit.c1, c2: kit.c2, pattern: kit.pattern, width: shirtW))
+            ? _kitPhoto(kit!.img!, shirtW * 1.08, shirtH,
+                KitShirt(c1: kit.c1, c2: kit.c2, pattern: kit.pattern, width: shirtW))
             : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW)),
       if (p == null) Icon(Icons.add_rounded, color: Colors.white, size: shirtW * 0.42),
       if (logo != null) Positioned(bottom: 0, right: (w - shirtW) / 2 - 3,
