@@ -14,7 +14,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class Diag {
   static const _ch = MethodChannel('bdgr/diag');
-  static const build = 'diag-1';
+  static const build = 'diag-2';
   static File? _file;
   static bool _sent = false;
 

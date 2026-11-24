@@ -17,6 +17,7 @@ import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
 import 'fantasy_stadium.dart';
 import 'diag.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -95,6 +96,40 @@ Widget _kitPhoto(String url, double w, double h, Widget fallback) {
     width: w, height: h, fit: BoxFit.contain, gaplessPlayback: true,
     loadingBuilder: (_, child, progress) => progress == null ? child : fallback,
     errorBuilder: (_, __, ___) => fallback);
+}
+
+/// Team crest on the pitch cards. SVG crests are drawn WITHOUT their filters (blur etc.):
+/// the Man United crest's feGaussianBlur crashed the Samsung GPU driver (Vulkan) on the
+/// WORLD pitch (24 Nov, tombstone: SIGSEGV in 1.raster → vulkan.samsung.so).
+class _SafeCrest extends StatelessWidget {
+  final String url;
+  final double size;
+  const _SafeCrest(this.url, {required this.size});
+  static final Map<String, Future<String?>> _svgs = {};
+
+  static String _clean(String s) => s
+      .replaceAll(RegExp(r'<filter\b[\s\S]*?</filter>'), '')
+      .replaceAll(RegExp(r'<filter\b[^>]*/>'), '')
+      .replaceAll(RegExp(r'\sfilter="[^"]*"'), '')
+      .replaceAll(RegExp(r"\sfilter='[^']*'"), '')
+      .replaceAll(RegExp(r'filter\s*:\s*url\([^)]*\)\s*;?'), '');
+
+  static Future<String?> _load(String url) => _svgs[url] ??= () async {
+    try {
+      final f = await DefaultCacheManager().getSingleFile(url);   // cached on the phone
+      return _clean(await f.readAsString());
+    } catch (_) { return null; }
+  }();
+
+  @override
+  Widget build(BuildContext context) {
+    if (!url.toLowerCase().contains('.svg')) {
+      return _netImage(url, width: size, height: size, fit: BoxFit.contain, fallback: const SizedBox.shrink());
+    }
+    return FutureBuilder<String?>(future: _load(url), builder: (_, s) => s.data == null
+      ? const SizedBox.shrink()
+      : SvgPicture.string(s.data!, width: size, height: size, fit: BoxFit.contain));
+  }
 }
 
 // ─── Colors ───────────────────────────────────────────────────────────────
@@ -2003,7 +2038,7 @@ class _FancyPageState extends State<FancyPage> {
         child: Container(width: 17, height: 17, padding: const EdgeInsets.all(1.5),
           decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
             boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 3)]),
-          child: ClipOval(child: _netImage(logo, fit: BoxFit.contain, fallback: const SizedBox.shrink())))),
+          child: ClipOval(child: _SafeCrest(logo, size: 14)))),
       if (isCap) Positioned(top: -2, left: (w - shirtW) / 2 - 4,
         child: Container(width: 17, height: 17,
           decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 1)),

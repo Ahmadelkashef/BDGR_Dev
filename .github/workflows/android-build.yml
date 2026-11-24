@@ -219,6 +219,8 @@ jobs:
               '<meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_bdgr"/>\n'
               '        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/bdgr_red"/>\n'
               '        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="general"/>\n'
+              # Impeller on OpenGL ES, not Vulkan: the Samsung Vulkan driver crashed on the WORLD pitch (24 Nov)
+              '        <meta-data android:name="io.flutter.embedding.android.ImpellerBackend" android:value="opengles"/>\n'
               '        '
           )
           if "default_notification_icon" not in text:
