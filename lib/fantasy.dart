@@ -25,6 +25,7 @@ part 'fantasy_highlights.dart';
 part 'fantasy_players.dart';
 part 'fantasy_mystats.dart';
 part 'fantasy_matches.dart';
+part 'fantasy_builder_v2.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -439,6 +440,13 @@ class _FancyPageState extends State<FancyPage> {
     'MID': List.filled(5, null), 'FWD': List.filled(3, null),
   };
   FancyPlayer? captain;
+  // ── v2 step-by-step builder (branch fantasy-v2, fantasy_builder_v2.dart) ──
+  int _gStage = -1;                          // -1 start · 0 formation · 1 picking (an empty team only; else worked out)
+  final Map<String, GlobalKey> _slotKeys = {}; // 'DEF_2' → the slot on the pitch (flight target)
+  final Set<String> _flown = {};             // players that flew in (no extra drop-in on the slot)
+  String? _landedId;                         // last player that landed (landing ring)
+  bool _flying = false;
+  void _v2Set(VoidCallback f) => setState(f);
   bool saved     = false;
   bool _saving   = false;
   String? _saveError;
@@ -496,6 +504,7 @@ class _FancyPageState extends State<FancyPage> {
     } catch (_) {}
   }
   bool   get canSave => selectedCount == 11 && remaining >= 0 && !deadlinePassed && captain != null;
+  bool   get canSaveV2 => selectedCount == 11 && !deadlinePassed && captain != null; // v2: no budget
 
   // ─────────────────────────────────────────────────────────────────────────
   // LIFECYCLE
@@ -583,10 +592,10 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   // SAVE SQUAD
   // ─────────────────────────────────────────────────────────────────────────
-  Future<void> saveSquad() async {
-    if (!canSave) return;
+  Future<void> saveSquad({bool noBudget = false}) async {
+    if (!(noBudget ? canSaveV2 : canSave)) return;
     if (selectedCount < 11) { _showSnack(t('Select all 11 players.','اختار 11 لاعب.')); return; }
-    if (remaining < 0)      { _showSnack(t('Budget exceeded.','تجاوزت الميزانية.')); return; }
+    if (!noBudget && remaining < 0) { _showSnack(t('Budget exceeded.','تجاوزت الميزانية.')); return; }
     if (captain == null)    { _showSnack(t('Pick a captain.','اختار كابتن.')); return; }
 
     setState(() { _saving = true; _saveError = null; });
@@ -748,7 +757,7 @@ class _FancyPageState extends State<FancyPage> {
   }
 
   /// بيحط اللاعب في الفريق. بيرجع سبب الرفض، أو null لو اتحط
-  String? placePlayer(FancyPlayer p, {String? pos, int? index}) {
+  String? placePlayer(FancyPlayer p, {String? pos, int? index, bool noBudget = false}) {
     if (inSquad(p)) return t('Already in your team.', 'موجود في فريقك.');
     final slotPos = pos ?? p.position;
     if (slotPos != p.position) return t('Wrong position.', 'المركز مش مناسب.');
@@ -763,7 +772,7 @@ class _FancyPageState extends State<FancyPage> {
                'أماكن الـ ${p.position} مليانة. دوس على لاعب في الملعب علشان تبدّله.');
     }
     final current = squad[slotPos]![idx];
-    if (p.price > remaining + (current?.price ?? 0) + 1e-9) return t('Not enough budget.', 'الميزانية مش مكفية.');
+    if (!noBudget && p.price > remaining + (current?.price ?? 0) + 1e-9) return t('Not enough budget.', 'الميزانية مش مكفية.');
     final lim = maxPerTeam;
     if (lim != null && p.teamId != null) {
       final n = teamCount(p.teamId) - (current?.teamId == p.teamId ? 1 : 0);
@@ -953,7 +962,7 @@ class _FancyPageState extends State<FancyPage> {
             child: step == 0 ? buildArenaScreen()
                 : step == 1 ? buildLobbyScreen()
                 : (saved || phaseOf(currentEvent) != 'open') ? buildMySquadView()
-                : buildSquadScreen(),
+                : this.buildSquadScreenV2(), // v2 step-by-step builder (fantasy_builder_v2.dart)
           )),
           if (tourVisible) buildTourOverlay(),
           if (widget.showTopButtons) _buildTopButtons(),
@@ -1297,7 +1306,7 @@ class _FancyPageState extends State<FancyPage> {
               onPressed: () {
                 // مفتوحة: يبني فريقه. اتقفلت: يشوف فريقه للعرض بس، ولو ما لعبش يشوف الجولات الجاية
                 if (phaseOf(event) != 'open' && !saved) { _openUpcoming(); return; }
-                setState(() => step = 2);
+                setState(() { step = 2; _gStage = -1; _landedId = null; });
               },
               style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -1943,9 +1952,9 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   // PITCH
   // ─────────────────────────────────────────────────────────────────────────
-  Widget buildPitch({bool readOnly = false}) {
+  Widget buildPitch({bool readOnly = false, bool empty = false, String? target}) {
     Diag.step('buildPitch arena=$arena ro=$readOnly players=${pickedPlayers.length} f=$formation kits=${_kits.length}');
-    final rows = <MapEntry<String, int>>[
+    final rows = empty ? <MapEntry<String, int>>[] : <MapEntry<String, int>>[
       MapEntry('FWD', slotCount('FWD')), MapEntry('MID', slotCount('MID')),
       MapEntry('DEF', slotCount('DEF')), const MapEntry('GK', 1),
     ];
@@ -1966,7 +1975,7 @@ class _FancyPageState extends State<FancyPage> {
           final cardW = (w / 5 - 4).clamp(52.0, 70.0).toDouble();
           return Center(child: FittedBox(fit: BoxFit.scaleDown,
             child: SizedBox(width: w - 8, child: _positionRow(rows[i].key, rows[i].value, shirt, cardW, readOnly: readOnly,
-              start: rows.take(i).fold<int>(0, (a, r) => a + r.value)))));
+              start: rows.take(i).fold<int>(0, (a, r) => a + r.value), target: target))));
         });
     }));
   }
@@ -1990,20 +1999,26 @@ class _FancyPageState extends State<FancyPage> {
             AdLabel(demo: a.demo),
           ]))));
 
-  Widget _positionRow(String pos, int count, double avatar, double cardW, {bool readOnly = false, int start = 0}) => Row(
+  Widget _positionRow(String pos, int count, double avatar, double cardW, {bool readOnly = false, int start = 0, String? target}) => Row(
     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
     children: List.generate(count, (index) {
       final player = squad[pos]![index];
+      final card = _pitchCard(player, pos, cardW, avatar, start + index);
+      // v2 builder: the slot has a key (flight target); the next empty slots pulse; a landed player gets a ring
+      final slot = readOnly ? card : KeyedSubtree(key: _slotKeys.putIfAbsent('${pos}_$index', () => GlobalKey()),
+        child: player == null
+          ? (target == pos ? _TargetPulse(child: card) : Opacity(opacity: target == null ? 1 : 0.55, child: card))
+          : (player.id == _landedId ? _LandingRing(key: ValueKey('land_${player.id}'), child: card) : card));
       return Expanded(child: Center(child: DropIn(
         key: ValueKey('drop_${pos}_${index}_${player?.id}'),
-        enabled: player != null,
+        enabled: player != null && !_flown.contains(player.id),
         delay: Duration(milliseconds: 70 * index),
         child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: readOnly
           ? (player != null ? () => _openPlayerInfoDialog(player) : null)
-          : () => player == null ? _openPlayerPicker(pos, index) : _openPlayerDialog(pos, index),
-        child: _pitchCard(player, pos, cardW, avatar, start + index),
+          : (player == null ? null : () => _openPlayerDialog(pos, index)),
+        child: slot,
       ))));
     }));
 
@@ -2043,8 +2058,9 @@ class _FancyPageState extends State<FancyPage> {
         child: Text(p != null ? (isArabic ? p.nameAr : p.nameEn) : pos, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: TextStyle(color: p == null ? Colors.white70 : Colors.black, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1.1))),
       Container(height: 13, width: w, alignment: Alignment.center, color: const Color(0xF2141418),
-        child: Text(p == null ? '' : '${p.price.toStringAsFixed(1)}M',
-          style: const TextStyle(color: mint, fontSize: 9, fontWeight: FontWeight.w800, height: 1.1))),
+        // v2: no prices → the club name in the dark strip
+        child: Text(p == null ? '' : (isArabic ? p.teamNameAr : p.teamNameEn), maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: mint, fontSize: 8.5, fontWeight: FontWeight.w700, height: 1.1))),
     ])));
     return SizedBox(width: w, child: Column(mainAxisSize: MainAxisSize.min, children: [
       top,
@@ -2056,7 +2072,16 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   // PLAYER PICKER
   // ─────────────────────────────────────────────────────────────────────────
-  void _openPlayerPicker(String pos, int index) => _openPlayersPage(pos: pos, index: index);
+  // v2: "بدّل" = empty the spot, so that line opens again in the cards under the pitch
+  void _openPlayerPicker(String pos, int index) {
+    setState(() {
+      final cur = squad[pos]![index];
+      if (cur != null && captain == cur) captain = null;
+      squad[pos]![index] = null;
+      saved = false;
+    });
+    squadTick.value++;
+  }
 
   void _openPlayerInfoDialog(FancyPlayer player) {
     final isCap = captain == player;
@@ -2089,8 +2114,7 @@ class _FancyPageState extends State<FancyPage> {
                   Text('${isArabic ? player.teamNameAr : player.teamNameEn}  •  ${player.position}',
                     style: const TextStyle(color: muted, fontSize: 12)),
                   const SizedBox(height: 8),
-                  Text(_fmtVal(player.price),
-                    style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+                  const SizedBox.shrink(), // v2: no prices
                 ])),
             ])),
           Positioned(top: -14, right: -14, child: GestureDetector(onTap: () => Navigator.pop(dctx),
@@ -2135,8 +2159,7 @@ class _FancyPageState extends State<FancyPage> {
                     Text('${isArabic ? player.teamNameAr : player.teamNameEn}  •  ${player.position}',
                       style: const TextStyle(color: muted, fontSize: 12)),
                     const SizedBox(height: 6),
-                    Text(_fmtVal(player.price),
-                      style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+                    const SizedBox.shrink(), // v2: no prices
                     const SizedBox(height: 18),
                     Row(children: [
                       Expanded(child: SizedBox(height: 46, child: OutlinedButton.icon(

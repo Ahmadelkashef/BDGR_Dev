@@ -2,7 +2,7 @@ name: Android APK
 
 on:
   push:
-    branches: [ main, dev, animation ]
+    branches: [ main, dev, animation, fantasy-v2 ]
   workflow_dispatch:
 
 permissions:
