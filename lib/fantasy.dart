@@ -211,7 +211,8 @@ class FantasyEvent {
 class _Kit {
   final Color c1, c2;
   final String pattern;
-  const _Kit(this.c1, this.c2, this.pattern);
+  final String? img; // optional real shirt photo (outside https link); the drawn shirt is the fallback
+  const _Kit(this.c1, this.c2, this.pattern, [this.img]);
   static Color? _hex(dynamic v) {
     final m = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch('${v ?? ''}');
     return m == null ? null : Color(0xFF000000 | int.parse(m.group(1)!, radix: 16));
@@ -220,7 +221,8 @@ class _Kit {
     if (j is! Map) return null;
     final a = _hex(j['c1']), b = _hex(j['c2']);
     if (a == null || b == null) return null;
-    return _Kit(a, b, '${j['p'] ?? 'plain'}');
+    final img = '${j['img'] ?? ''}';
+    return _Kit(a, b, '${j['p'] ?? 'plain'}', img.startsWith('https://') ? img : null);
   }
 }
 
@@ -1976,7 +1978,11 @@ class _FancyPageState extends State<FancyPage> {
     final top = SizedBox(width: w, height: shirtH, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
       p == null
         ? KitShirt(c1: const Color(0x2EFFFFFF), c2: Colors.white70, pattern: 'ghost', width: shirtW)
-        : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW),
+        : (kit?.img != null
+            // real shirt photo (cached on the phone); drawn shirt while loading / on error
+            ? _netImage(kit!.img!, width: shirtW * 1.08, height: shirtH, fit: BoxFit.contain,
+                fallback: KitShirt(c1: kit.c1, c2: kit.c2, pattern: kit.pattern, width: shirtW))
+            : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW)),
       if (p == null) Icon(Icons.add_rounded, color: Colors.white, size: shirtW * 0.42),
       if (logo != null) Positioned(bottom: 0, right: (w - shirtW) / 2 - 3,
         child: Container(width: 17, height: 17, padding: const EdgeInsets.all(1.5),
