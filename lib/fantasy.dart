@@ -21,6 +21,7 @@ part 'fantasy_leagues.dart';
 part 'fantasy_highlights.dart';
 part 'fantasy_players.dart';
 part 'fantasy_mystats.dart';
+part 'fantasy_matches.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -105,6 +106,8 @@ class FantasyMatch {
   final String?  homeLogoUrl;
   final String   awayTeamId, awayNameEn, awayNameAr;
   final String?  awayLogoUrl;
+  final bool     finished;          // النتيجة اتدخلت من الداشبورد
+  final int?     homeScore, awayScore;
 
   FantasyMatch({
     required this.matchId, required this.kickoffAt,
@@ -112,6 +115,7 @@ class FantasyMatch {
     this.homeLogoUrl,
     required this.awayTeamId, required this.awayNameEn, required this.awayNameAr,
     this.awayLogoUrl,
+    this.finished = false, this.homeScore, this.awayScore,
   });
 
   factory FantasyMatch.fromJson(Map<String, dynamic> j) => FantasyMatch(
@@ -125,6 +129,9 @@ class FantasyMatch {
     awayNameEn:  (j['away'] as Map)['name_en'] as String,
     awayNameAr:  (j['away'] as Map)['name_ar'] as String,
     awayLogoUrl: (j['away'] as Map)['logo_url'] as String?,
+    finished:    j['finished'] == true,
+    homeScore:   (j['home_score'] as num?)?.toInt(),
+    awayScore:   (j['away_score'] as num?)?.toInt(),
   );
 }
 
@@ -1167,7 +1174,7 @@ class _FancyPageState extends State<FancyPage> {
           _lobbyInfoCard(event),
           const SizedBox(height: 14),
           Row(children: [
-            Expanded(child: Text(t('MATCHES THIS ROUND','ماتشات الجولة'),
+            Expanded(child: Text(t('MATCHES THIS ROUND','ماتشات الجولة'), maxLines: 1, overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.2, fontWeight: FontWeight.w800))),
             GestureDetector(
               onTap: () => _openPlayersPage(browse: true),
@@ -1176,6 +1183,17 @@ class _FancyPageState extends State<FancyPage> {
                 decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.white24)),
                 child: Text(t('👥 Players', '👥 اللاعيبة'),
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => openFixturesPage(context, type: event.fantasyType ?? 'WORLD'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white24)),
+                child: Text(t('📅 Results', '📅 النتايج'),
                   style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
               ),
             ),
@@ -1640,19 +1658,32 @@ class _FancyPageState extends State<FancyPage> {
         ])),
       ]));
 
-  Widget _matchCard(FantasyMatch match) => Container(
+  Widget _matchCard(FantasyMatch match) {
+    final started = DateTime.now().isAfter(match.kickoffAt);
+    return GestureDetector(
+    onTap: started ? () => openMatchSheet(context, match.matchId) : null,
+    child: Container(
     margin: const EdgeInsets.only(bottom: 8),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     decoration: BoxDecoration(color: const Color(0xFF141414), borderRadius: BorderRadius.circular(15), border: Border.all(color: line)),
     child: Row(children: [
       Expanded(child: _teamWidget(isArabic ? match.homeNameAr : match.homeNameEn, match.homeLogoUrl, true)),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('VS', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+        if (match.finished)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(8)),
+            child: Text('${match.homeScore ?? 0} - ${match.awayScore ?? 0}', textDirection: TextDirection.ltr,
+              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)))
+        else
+          const Text('VS', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
         const SizedBox(height: 4),
-        Text(_fmtTime(match.kickoffAt), style: const TextStyle(color: sage, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(match.finished ? t('Full time', 'انتهت') : (started ? t('Result soon', 'النتيجة قريب') : _fmtTime(match.kickoffAt)),
+          style: TextStyle(color: match.finished ? muted : sage, fontSize: 10, fontWeight: FontWeight.bold)),
       ])),
       Expanded(child: _teamWidget(isArabic ? match.awayNameAr : match.awayNameEn, match.awayLogoUrl, false)),
-    ]));
+    ])));
+  }
 
   Widget _teamWidget(String name, String? logoUrl, bool home) => Column(mainAxisSize: MainAxisSize.min, children: [
     Container(width: 40, height: 40,
