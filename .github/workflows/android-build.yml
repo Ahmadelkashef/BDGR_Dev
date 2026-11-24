@@ -2,7 +2,7 @@ name: Android APK
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main, dev, animation ]
   workflow_dispatch:
 
 permissions:
@@ -266,6 +266,8 @@ jobs:
   # من غيره البيلد بيتعمل بس من غير رفع.
   # ============================================================
   web:
+    # the live website is deployed only from main (test branches like `animation` build the APK only)
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     concurrency:
       group: web-deploy-${{ github.ref }}

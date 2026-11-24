@@ -15,6 +15,7 @@ import 'local_store.dart';
 import 'location_prompt.dart';
 import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
+import 'fantasy_stadium.dart';
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -535,7 +536,8 @@ class _FancyPageState extends State<FancyPage> {
         'p_slots':            slots,
       });
       setState(() { _saving = false; saved = true; });
-      _showSavedAd();
+      if (mounted) showStadiumConfetti(context);
+      Future.delayed(const Duration(milliseconds: 1200), () { if (mounted) _showSavedAd(); });
     } catch (e) {
       setState(() { _saving = false; _saveError = e.toString(); });
       _showSnack(_saveErrorText(e.toString()));
@@ -1876,30 +1878,24 @@ class _FancyPageState extends State<FancyPage> {
       MapEntry('FWD', slotCount('FWD')), MapEntry('MID', slotCount('MID')),
       MapEntry('DEF', slotCount('DEF')), const MapEntry('GK', 1),
     ];
-    return Container(
-      decoration: BoxDecoration(color: const Color(0xFF1D6345), borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF70A988), width: 1)),
-      child: ClipRRect(borderRadius: BorderRadius.circular(13),
-        child: LayoutBuilder(builder: (context, cons) {
-          final rowH   = cons.maxHeight / 4;
-          final avatar = (rowH - 34).clamp(30.0, 46.0).toDouble();
-          final cardW  = (cons.maxWidth / 5 - 2).clamp(50.0, 68.0).toDouble();
-          return Stack(fit: StackFit.expand, children: [
-            Positioned(bottom: -1, left: cons.maxWidth * 0.27, right: cons.maxWidth * 0.27, height: rowH * 0.62,
-              child: Container(decoration: BoxDecoration(border: Border.all(color: const Color(0xFF70A988), width: 1)))),
-            for (var k = 1; k < 4; k++)
-              Positioned(top: rowH * k, left: 0, right: 0, child: Container(height: 1, color: const Color(0xFF70A988))),
-            Column(children: rows.map((row) => SizedBox(height: rowH, child: Center(child: FittedBox(fit: BoxFit.scaleDown,
-              child: SizedBox(width: cons.maxWidth - 8, child: _positionRow(row.key, row.value, avatar, cardW, readOnly: readOnly)))))).toList()),
-          ]);
-        })));
+    // Stadium look (fantasy_stadium.dart): tilted pitch, far line smaller, crowd + floodlights.
+    return StadiumPitch(rowCount: rows.length, rowBuilder: (i, w, h) {
+      final avatar = (h - 34).clamp(30.0, 46.0).toDouble();
+      final cardW  = (w / 5 - 2).clamp(50.0, 68.0).toDouble();
+      return Center(child: FittedBox(fit: BoxFit.scaleDown,
+        child: SizedBox(width: w - 8, child: _positionRow(rows[i].key, rows[i].value, avatar, cardW, readOnly: readOnly))));
+    });
   }
 
   Widget _positionRow(String pos, int count, double avatar, double cardW, {bool readOnly = false}) => Row(
     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
     children: List.generate(count, (index) {
       final player = squad[pos]![index];
-      return Expanded(child: Center(child: GestureDetector(
+      return Expanded(child: Center(child: DropIn(
+        key: ValueKey('drop_${pos}_${index}_${player?.id}'),
+        enabled: player != null,
+        delay: Duration(milliseconds: 70 * index),
+        child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: readOnly
           ? (player != null ? () => _openPlayerInfoDialog(player) : null)
@@ -1916,12 +1912,12 @@ class _FancyPageState extends State<FancyPage> {
             Padding(padding: const EdgeInsets.only(top: 2),
               child: Text('${player.price.toStringAsFixed(1)}M', style: const TextStyle(color: mint, fontSize: 9, fontWeight: FontWeight.bold)))),
         ])),
-      )));
+      ))));
     }));
 
   Widget _playerAvatar(FancyPlayer? player, double size) {
     final isCap = player != null && captain == player;
-    return SizedBox(width: size, height: size,
+    final circle = SizedBox(width: size, height: size,
       child: Stack(clipBehavior: Clip.none, children: [
         Container(width: size, height: size,
           decoration: BoxDecoration(shape: BoxShape.circle,
@@ -1938,6 +1934,7 @@ class _FancyPageState extends State<FancyPage> {
             decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 1)),
             child: const Center(child: Text('C', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900, height: 1))))),
       ]));
+    return isCap ? CaptainShine(size: size, color: captainColor, child: circle) : circle;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
