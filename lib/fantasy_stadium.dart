@@ -367,9 +367,16 @@ class _ShirtPainter extends CustomPainter {
     final ghost = pattern == 'ghost';
     canvas.drawShadow(body, Colors.black, 3, false);
     canvas.drawPath(body, Paint()..color = c1);
+    final p2 = Paint()..color = c2;
+    if (pattern == 'sleeves') {
+      // Sleeves are drawn OUTSIDE the clip, as convex shapes that sit exactly on the shirt outline.
+      // The old version (a concave shape drawn inside clipPath) crashed the Samsung Vulkan GPU driver
+      // on the WORLD pitch (diag-3, 24 Nov: crash exactly when Arsenal's shirt was drawn).
+      canvas.drawPath(Path()..moveTo(12 * k, 45 * k)..lineTo(0, 33 * k)..lineTo(16 * k, 13 * k)..lineTo(23 * k, 10.55 * k)..lineTo(21 * k, 38 * k)..close(), p2);
+      canvas.drawPath(Path()..moveTo(88 * k, 45 * k)..lineTo(100 * k, 33 * k)..lineTo(84 * k, 13 * k)..lineTo(77 * k, 10.55 * k)..lineTo(79 * k, 38 * k)..close(), p2);
+    }
     canvas.save();
     canvas.clipPath(body);
-    final p2 = Paint()..color = c2;
     switch (pattern) {
       case 'stripes':
         for (var x = 27.0; x < 79; x += 13) { canvas.drawRect(Rect.fromLTWH(x * k, 0, 6.5 * k, s.height), p2); }
@@ -382,10 +389,6 @@ class _ShirtPainter extends CustomPainter {
         break;
       case 'sash':
         canvas.drawPath(Path()..moveTo(18 * k, 18 * k)..lineTo(34 * k, 14 * k)..lineTo(82 * k, 92 * k)..lineTo(66 * k, 96 * k)..close(), p2);
-        break;
-      case 'sleeves':
-        canvas.drawPath(Path()..moveTo(0, 33 * k)..lineTo(16 * k, 13 * k)..lineTo(26 * k, 10 * k)..lineTo(21 * k, 40 * k)..lineTo(12 * k, 45 * k)..close(), p2);
-        canvas.drawPath(Path()..moveTo(100 * k, 33 * k)..lineTo(84 * k, 13 * k)..lineTo(74 * k, 10 * k)..lineTo(79 * k, 40 * k)..lineTo(88 * k, 45 * k)..close(), p2);
         break;
     }
     // cloth light: lighter on the left, darker on the right

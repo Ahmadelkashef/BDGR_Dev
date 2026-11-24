@@ -1964,7 +1964,6 @@ class _FancyPageState extends State<FancyPage> {
     ];
     // Stadium look (fantasy_stadium.dart): tilted pitch, far line smaller, crowd + floodlights,
     // LED ad board on the far edge (placement fantasy_pitch_board, each ad for its own seconds).
-    if (arena == 'WORLD' && readOnly) Diag.startReveal(rows.fold<int>(0, (a, r) => a + r.value));
     return ValueListenableBuilder<int>(valueListenable: Diag.stage, builder: (context, _, __) =>
       ValueListenableBuilder<int>(valueListenable: Ads.version, builder: (context, _, __) {
       final ads = Ads.candidates('fantasy_pitch_board', eventId: currentEvent?.eventId);
