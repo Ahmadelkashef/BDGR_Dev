@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'ads/ad_widgets.dart';
 import 'ads/ad_takeover.dart' show showAdModal, onAdBannerTap;
 import 'app_lang.dart';
@@ -17,7 +16,7 @@ import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
 import 'fantasy_stadium.dart';
 import 'diag.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'safe_svg.dart';
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -80,8 +79,9 @@ String _fmtBudget(double val) {
 Widget _netImage(String url, {double? width, double? height, BoxFit fit = BoxFit.cover, Widget? fallback}) {
   final isSvg = url.toLowerCase().contains('.svg');
   if (isSvg) {
-    return SvgPicture.network(url, width: width, height: height, fit: fit,
-      placeholderBuilder: (_) => fallback ?? const SizedBox.shrink());
+    // safe: gradients without colours (Man United crest) crashed the engine, see safe_svg.dart
+    return SafeSvgNet(url, width: width, height: height, fit: fit,
+      placeholder: fallback ?? const SizedBox.shrink());
   }
   return Image(image: MediaCache.image(url), width: width, height: height, fit: fit,
     loadingBuilder: (_, child, progress) =>
@@ -98,38 +98,14 @@ Widget _kitPhoto(String url, double w, double h, Widget fallback) {
     errorBuilder: (_, __, ___) => fallback);
 }
 
-/// Team crest on the pitch cards. SVG crests are drawn WITHOUT their filters (blur etc.):
-/// the Man United crest's feGaussianBlur crashed the Samsung GPU driver (Vulkan) on the
-/// WORLD pitch (24 Nov, tombstone: SIGSEGV in 1.raster → vulkan.samsung.so).
+/// Team crest on the pitch cards (same safe SVG path as everywhere: safe_svg.dart).
 class _SafeCrest extends StatelessWidget {
   final String url;
   final double size;
   const _SafeCrest(this.url, {required this.size});
-  static final Map<String, Future<String?>> _svgs = {};
-
-  static String _clean(String s) => s
-      .replaceAll(RegExp(r'<filter\b[\s\S]*?</filter>'), '')
-      .replaceAll(RegExp(r'<filter\b[^>]*/>'), '')
-      .replaceAll(RegExp(r'\sfilter="[^"]*"'), '')
-      .replaceAll(RegExp(r"\sfilter='[^']*'"), '')
-      .replaceAll(RegExp(r'filter\s*:\s*url\([^)]*\)\s*;?'), '');
-
-  static Future<String?> _load(String url) => _svgs[url] ??= () async {
-    try {
-      final f = await DefaultCacheManager().getSingleFile(url);   // cached on the phone
-      return _clean(await f.readAsString());
-    } catch (_) { return null; }
-  }();
-
   @override
-  Widget build(BuildContext context) {
-    if (!url.toLowerCase().contains('.svg')) {
-      return _netImage(url, width: size, height: size, fit: BoxFit.contain, fallback: const SizedBox.shrink());
-    }
-    return FutureBuilder<String?>(future: _load(url), builder: (_, s) => s.data == null
-      ? const SizedBox.shrink()
-      : SvgPicture.string(s.data!, width: size, height: size, fit: BoxFit.contain));
-  }
+  Widget build(BuildContext context) =>
+      _netImage(url, width: size, height: size, fit: BoxFit.contain, fallback: const SizedBox.shrink());
 }
 
 // ─── Colors ───────────────────────────────────────────────────────────────
