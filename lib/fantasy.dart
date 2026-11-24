@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'ads/ad_widgets.dart';
-import 'ads/ad_takeover.dart' show showAdModal;
+import 'ads/ad_takeover.dart' show showAdModal, onAdBannerTap;
 import 'app_lang.dart';
 import 'brand.dart';
 import 'local_store.dart';
@@ -205,6 +205,22 @@ class FantasyEvent {
       fantasyType:  j['fantasy_type'] as String?,
       maxPerTeam:   (j['max_per_team'] as num?)?.toInt(),
     );
+  }
+}
+
+class _Kit {
+  final Color c1, c2;
+  final String pattern;
+  const _Kit(this.c1, this.c2, this.pattern);
+  static Color? _hex(dynamic v) {
+    final m = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch('${v ?? ''}');
+    return m == null ? null : Color(0xFF000000 | int.parse(m.group(1)!, radix: 16));
+  }
+  static _Kit? fromJson(dynamic j) {
+    if (j is! Map) return null;
+    final a = _hex(j['c1']), b = _hex(j['c2']);
+    if (a == null || b == null) return null;
+    return _Kit(a, b, '${j['p'] ?? 'plain'}');
   }
 }
 
@@ -461,6 +477,23 @@ class _FancyPageState extends State<FancyPage> {
       if (mounted && !seen) setState(() => _showHelpHint = true);
     });
     _loadLobby();
+    _loadKits();
+  }
+
+  // ── team shirts on the pitch (fantasy_team_kits: tiny JSON, once per app run) ──
+  static Map<String, _Kit> _kits = {};
+  static bool _kitsLoaded = false;
+  Future<void> _loadKits() async {
+    if (_kitsLoaded) return;
+    try {
+      final r = await _sb.rpc('fantasy_team_kits');
+      final m = <String, _Kit>{};
+      if (r is Map) {
+        r.forEach((k, v) { final kit = _Kit.fromJson(v); if (kit != null) m['$k'] = kit; });
+      }
+      _kits = m; _kitsLoaded = true;
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   @override
@@ -1878,14 +1911,44 @@ class _FancyPageState extends State<FancyPage> {
       MapEntry('FWD', slotCount('FWD')), MapEntry('MID', slotCount('MID')),
       MapEntry('DEF', slotCount('DEF')), const MapEntry('GK', 1),
     ];
-    // Stadium look (fantasy_stadium.dart): tilted pitch, far line smaller, crowd + floodlights.
-    return StadiumPitch(rowCount: rows.length, rowBuilder: (i, w, h) {
-      final avatar = (h - 34).clamp(30.0, 46.0).toDouble();
-      final cardW  = (w / 5 - 2).clamp(50.0, 68.0).toDouble();
-      return Center(child: FittedBox(fit: BoxFit.scaleDown,
-        child: SizedBox(width: w - 8, child: _positionRow(rows[i].key, rows[i].value, avatar, cardW, readOnly: readOnly))));
+    // Stadium look (fantasy_stadium.dart): tilted pitch, far line smaller, crowd + floodlights,
+    // LED ad board on the far edge (placement fantasy_pitch_board, each ad for its own seconds).
+    return ValueListenableBuilder<int>(valueListenable: Ads.version, builder: (context, _, __) {
+      final ads = Ads.candidates('fantasy_pitch_board', eventId: currentEvent?.eventId);
+      return StadiumPitch(
+        rowCount: rows.length,
+        board: ads.isEmpty ? null : LedBoard(
+          key: ValueKey(ads.map((a) => a.id).join('|')),
+          count: ads.length,
+          secondsOf: (i) => ads[i].boardS ?? 8,
+          itemBuilder: (c, i) => _boardItem(ads[i])),
+        rowBuilder: (i, w, h) {
+          final shirt = (h - 36).clamp(28.0, 50.0).toDouble();
+          final cardW = (w / 5 - 4).clamp(52.0, 70.0).toDouble();
+          return Center(child: FittedBox(fit: BoxFit.scaleDown,
+            child: SizedBox(width: w - 8, child: _positionRow(rows[i].key, rows[i].value, shirt, cardW, readOnly: readOnly))));
+        });
     });
   }
+
+  Widget _boardItem(AdItem a) => AdImpression(ad: a, child: GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: () => onAdBannerTap(context, a),
+    child: (a.template == 'banner' && a.media != null)
+      ? Stack(fit: StackFit.expand, children: [
+          AdMedia(a),
+          Positioned(right: 3, top: 0, bottom: 0, child: Center(child: AdLabel(demo: a.demo))),
+        ])
+      : Container(color: a.bg ?? Colors.black, padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(children: [
+            const Spacer(),
+            AdLogo(a, size: 16),
+            const SizedBox(width: 7),
+            Flexible(flex: 6, child: Text(a.displayName.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: a.fg ?? Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900, letterSpacing: 2))),
+            const Spacer(),
+            AdLabel(demo: a.demo),
+          ]))));
 
   Widget _positionRow(String pos, int count, double avatar, double cardW, {bool readOnly = false}) => Row(
     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1900,41 +1963,45 @@ class _FancyPageState extends State<FancyPage> {
         onTap: readOnly
           ? (player != null ? () => _openPlayerInfoDialog(player) : null)
           : () => player == null ? _openPlayerPicker(pos, index) : _openPlayerDialog(pos, index),
-        child: SizedBox(width: cardW, child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _playerAvatar(player, avatar),
-          const SizedBox(height: 4),
-          Container(width: cardW, padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-            decoration: BoxDecoration(color: const Color(0xE6000000), borderRadius: BorderRadius.circular(5)),
-            child: Text(player != null ? (isArabic ? player.nameAr : player.nameEn) : pos,
-              maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700))),
-          SizedBox(height: 12, child: player == null ? null :
-            Padding(padding: const EdgeInsets.only(top: 2),
-              child: Text('${player.price.toStringAsFixed(1)}M', style: const TextStyle(color: mint, fontSize: 9, fontWeight: FontWeight.bold)))),
-        ])),
+        child: _pitchCard(player, pos, cardW, avatar),
       ))));
     }));
 
-  Widget _playerAvatar(FancyPlayer? player, double size) {
-    final isCap = player != null && captain == player;
-    final circle = SizedBox(width: size, height: size,
-      child: Stack(clipBehavior: Clip.none, children: [
-        Container(width: size, height: size,
-          decoration: BoxDecoration(shape: BoxShape.circle,
-            color: player == null ? const Color(0x55000000) : const Color(0xFFE8E8E8),
-            border: Border.all(color: player == null ? const Color(0xCCFFFFFF) : (isCap ? captainColor : mint), width: isCap ? 2.2 : 1.5)),
-          child: player == null
-            ? Icon(Icons.add, color: Colors.white, size: size * 0.55)
-            : ClipOval(child: player.photoUrl != null
-                ? _netImage(player.photoUrl!, width: size, height: size, fit: BoxFit.cover,
-                    fallback: Icon(Icons.person, color: const Color(0xFF333333), size: size * 0.6))
-                : Icon(Icons.person, color: const Color(0xFF333333), size: size * 0.6))),
-        if (isCap) Positioned(top: -4, right: -4,
-          child: Container(width: 18, height: 18,
-            decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 1)),
-            child: const Center(child: Text('C', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900, height: 1))))),
-      ]));
-    return isCap ? CaptainShine(size: size, color: captainColor, child: circle) : circle;
+  /// FPL-style card: team shirt (drawn) + name strip + price strip. Photo shows in the player dialog.
+  Widget _pitchCard(FancyPlayer? p, String pos, double w, double shirtH) {
+    final isCap = p != null && captain == p;
+    final kit = p == null ? null : _kits[p.teamId];
+    final shirtW = math.min(w * 0.80, shirtH * 1.05);
+    final logo = p?.teamId == null ? null : teamLogos[p!.teamId];
+    final top = SizedBox(width: w, height: shirtH, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+      p == null
+        ? KitShirt(c1: const Color(0x2EFFFFFF), c2: Colors.white70, pattern: 'ghost', width: shirtW)
+        : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW),
+      if (p == null) Icon(Icons.add_rounded, color: Colors.white, size: shirtW * 0.42),
+      if (logo != null) Positioned(bottom: 0, right: (w - shirtW) / 2 - 3,
+        child: Container(width: 17, height: 17, padding: const EdgeInsets.all(1.5),
+          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+            boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 3)]),
+          child: ClipOval(child: _netImage(logo, fit: BoxFit.contain, fallback: const SizedBox.shrink())))),
+      if (isCap) Positioned(top: -2, left: (w - shirtW) / 2 - 4,
+        child: Container(width: 17, height: 17,
+          decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 1)),
+          child: const Center(child: Text('C', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900, height: 1))))),
+    ]));
+    final strips = ClipRRect(borderRadius: BorderRadius.circular(5), child: SizedBox(width: w, height: 28, child: Column(children: [
+      Container(height: 15, width: w, alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 3),
+        color: p == null ? const Color(0xD9000000) : Colors.white,
+        child: Text(p != null ? (isArabic ? p.nameAr : p.nameEn) : pos, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: p == null ? Colors.white70 : Colors.black, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1.1))),
+      Container(height: 13, width: w, alignment: Alignment.center, color: const Color(0xF2141418),
+        child: Text(p == null ? '' : '${p.price.toStringAsFixed(1)}M',
+          style: const TextStyle(color: mint, fontSize: 9, fontWeight: FontWeight.w800, height: 1.1))),
+    ])));
+    return SizedBox(width: w, child: Column(mainAxisSize: MainAxisSize.min, children: [
+      top,
+      const SizedBox(height: 3),
+      isCap ? CaptainShine(size: w, height: 28, radius: 5, color: captainColor, child: strips) : strips,
+    ]));
   }
 
   // ─────────────────────────────────────────────────────────────────────────

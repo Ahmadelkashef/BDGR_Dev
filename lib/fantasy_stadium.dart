@@ -5,6 +5,7 @@
 // - CaptainShine: a turning gold ring around the captain.
 // - showStadiumConfetti: confetti over the screen after saving the team.
 // Phones with "remove animations" on (accessibility) get the still version.
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,8 +15,8 @@ bool _calm(BuildContext c) => MediaQuery.maybeOf(c)?.disableAnimations ?? false;
 // ── geometry shared by the painters and the player rows ─────────────────────
 class _Geo {
   final double w, h, top, topW, botW;
-  _Geo(this.w, this.h)
-      : top = h * 0.085,
+  _Geo(this.w, this.h, [double topFrac = 0.085])
+      : top = h * topFrac,
         topW = w * 0.70,
         botW = w * 1.02;
   double get cx => w / 2;
@@ -34,7 +35,9 @@ class _Geo {
 class StadiumPitch extends StatefulWidget {
   final int rowCount;
   final Widget Function(int row, double width, double height) rowBuilder;
-  const StadiumPitch({super.key, required this.rowCount, required this.rowBuilder});
+  /// LED ad board on the far edge of the pitch (null = no board)
+  final Widget? board;
+  const StadiumPitch({super.key, required this.rowCount, required this.rowBuilder, this.board});
   @override
   State<StadiumPitch> createState() => _StadiumPitchState();
 }
@@ -61,14 +64,19 @@ class _StadiumPitchState extends State<StadiumPitch> with SingleTickerProviderSt
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: LayoutBuilder(builder: (context, cons) {
-        final g = _Geo(cons.maxWidth, cons.maxHeight);
+        final tf = widget.board != null ? 0.115 : 0.085;
+        final g = _Geo(cons.maxWidth, cons.maxHeight, tf);
         final n = widget.rowCount;
+        final boardH = math.min(26.0, g.top - 10);
         // row centres in depth: a bit of room at the far end for the halfway line
         final ts = List<double>.generate(n, (i) => n == 1 ? 0.6 : 0.14 + 0.76 * i / (n - 1));
         final baseH = g.pitchH / n;
         return Stack(fit: StackFit.expand, children: [
-          RepaintBoundary(child: CustomPaint(painter: _StandsPainter(_amb))),
-          RepaintBoundary(child: CustomPaint(painter: _GrassPainter())),
+          RepaintBoundary(child: CustomPaint(painter: _StandsPainter(_amb, tf))),
+          RepaintBoundary(child: CustomPaint(painter: _GrassPainter(tf))),
+          if (widget.board != null && boardH >= 14)
+            Positioned(left: g.cx - g.topW * 0.53, width: g.topW * 1.06, top: g.top - boardH - 3, height: boardH,
+              child: widget.board!),
           for (var i = 0; i < n; i++)
             _row(g, i, ts[i], baseH),
         ]);
@@ -93,14 +101,17 @@ class _StadiumPitchState extends State<StadiumPitch> with SingleTickerProviderSt
 // ── stands: dark tiers, crowd dots, camera flashes, two floodlights ─────────
 class _StandsPainter extends CustomPainter {
   final Animation<double> a;
-  _StandsPainter(this.a) : super(repaint: a);
+  final double tf;
+  _StandsPainter(this.a, this.tf) : super(repaint: a);
   static final _dots = <_Dot>[];
+  static double _tf = 0;
 
   void _seed(Size s) {
-    if (_dots.isNotEmpty && _dots.first.w == s.width && _dots.first.h == s.height) return;
+    if (_dots.isNotEmpty && _dots.first.w == s.width && _dots.first.h == s.height && _tf == tf) return;
     _dots.clear();
+    _tf = tf;
     final r = math.Random(7);
-    final g = _Geo(s.width, s.height);
+    final g = _Geo(s.width, s.height, tf);
     for (var k = 0; k < 420; k++) {
       final x = r.nextDouble() * s.width;
       final y = r.nextDouble() * s.height;
@@ -119,7 +130,7 @@ class _StandsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size s) {
     _seed(s);
-    final g = _Geo(s.width, s.height);
+    final g = _Geo(s.width, s.height, tf);
     canvas.drawRect(Offset.zero & s, Paint()
       ..shader = const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
           colors: [Color(0xFF050505), Color(0xFF101418), Color(0xFF0B0E10)]).createShader(Offset.zero & s));
@@ -169,9 +180,11 @@ class _Dot {
 
 // ── the grass: tilted trapezoid, mowing stripes, white lines ───────────────
 class _GrassPainter extends CustomPainter {
+  final double tf;
+  _GrassPainter(this.tf);
   @override
   void paint(Canvas canvas, Size s) {
-    final g = _Geo(s.width, s.height);
+    final g = _Geo(s.width, s.height, tf);
     Path quad(double t0, double t1) => Path()
       ..moveTo(g.p(-1, t0).dx, g.p(-1, t0).dy)
       ..lineTo(g.p(1, t0).dx, g.p(1, t0).dy)
@@ -268,12 +281,13 @@ class _DropInState extends State<DropIn> with SingleTickerProviderStateMixin {
     });
 }
 
-// ── turning gold ring around the captain ────────────────────────────────────
+// ── turning gold ring around the captain (circle, or a rounded card when [radius] is set) ──
 class CaptainShine extends StatefulWidget {
   final double size;
+  final double? height, radius;
   final Color color;
   final Widget child;
-  const CaptainShine({super.key, required this.size, required this.color, required this.child});
+  const CaptainShine({super.key, required this.size, required this.color, required this.child, this.height, this.radius});
   @override
   State<CaptainShine> createState() => _CaptainShineState();
 }
@@ -293,21 +307,175 @@ class _CaptainShineState extends State<CaptainShine> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final s = widget.size;
-    return SizedBox(width: s, height: s, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-      Positioned(left: -4, top: -4, right: -4, bottom: -4,
+    final w = widget.size, h = widget.height ?? widget.size;
+    final r = widget.radius;
+    return SizedBox(width: w, height: h, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+      Positioned(left: -3, top: -3, right: -3, bottom: -3,
         child: IgnorePointer(child: AnimatedBuilder(animation: _c, builder: (_, __) {
           final glow = 0.35 + 0.25 * math.sin(_c.value * 2 * math.pi);
-          return Transform.rotate(angle: _c.value * 2 * math.pi, child: Container(
-            decoration: BoxDecoration(shape: BoxShape.circle,
-              gradient: SweepGradient(colors: [
-                widget.color.withOpacity(0), widget.color, Colors.white, widget.color, widget.color.withOpacity(0),
-              ], stops: const [0.0, 0.35, 0.5, 0.65, 1.0]),
-              boxShadow: [BoxShadow(color: widget.color.withOpacity(glow), blurRadius: 12, spreadRadius: 1)])));
+          return Container(
+            decoration: BoxDecoration(
+              shape: r == null ? BoxShape.circle : BoxShape.rectangle,
+              borderRadius: r == null ? null : BorderRadius.circular(r + 3),
+              gradient: SweepGradient(
+                transform: GradientRotation(_c.value * 2 * math.pi),
+                colors: [widget.color.withOpacity(0.15), widget.color, Colors.white, widget.color, widget.color.withOpacity(0.15)],
+                stops: const [0.0, 0.35, 0.5, 0.65, 1.0]),
+              boxShadow: [BoxShadow(color: widget.color.withOpacity(glow), blurRadius: 12, spreadRadius: 1)]));
         }))),
       widget.child,
     ]));
   }
+}
+
+// ── team shirt drawn in code (zero files): colours + pattern from `fantasy_team_kits` ──
+class KitShirt extends StatelessWidget {
+  final Color c1, c2;
+  final String pattern;   // plain | stripes | hoops | halves | sash | sleeves | ghost
+  final double width;
+  const KitShirt({super.key, required this.c1, required this.c2, this.pattern = 'plain', required this.width});
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size(width, width * 0.96), painter: _ShirtPainter(c1, c2, pattern));
+}
+
+class _ShirtPainter extends CustomPainter {
+  final Color c1, c2;
+  final String pattern;
+  _ShirtPainter(this.c1, this.c2, this.pattern);
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final k = s.width / 100;
+    Offset o(double x, double y) => Offset(x * k, y * k);
+    final body = Path()
+      ..moveTo(36 * k, 6 * k)
+      ..quadraticBezierTo(50 * k, 18 * k, 64 * k, 6 * k)
+      ..lineTo(84 * k, 13 * k)
+      ..lineTo(100 * k, 33 * k)
+      ..lineTo(88 * k, 45 * k)
+      ..lineTo(79 * k, 38 * k)
+      ..lineTo(79 * k, 94 * k)
+      ..quadraticBezierTo(50 * k, 97 * k, 21 * k, 94 * k)
+      ..lineTo(21 * k, 38 * k)
+      ..lineTo(12 * k, 45 * k)
+      ..lineTo(0, 33 * k)
+      ..lineTo(16 * k, 13 * k)
+      ..close();
+    final ghost = pattern == 'ghost';
+    canvas.drawShadow(body, Colors.black, 3, false);
+    canvas.drawPath(body, Paint()..color = c1);
+    canvas.save();
+    canvas.clipPath(body);
+    final p2 = Paint()..color = c2;
+    switch (pattern) {
+      case 'stripes':
+        for (var x = 27.0; x < 79; x += 13) { canvas.drawRect(Rect.fromLTWH(x * k, 0, 6.5 * k, s.height), p2); }
+        break;
+      case 'hoops':
+        for (var y = 30.0; y < 96; y += 18) { canvas.drawRect(Rect.fromLTWH(0, y * k, s.width, 8 * k), p2); }
+        break;
+      case 'halves':
+        canvas.drawRect(Rect.fromLTWH(50 * k, 0, 50 * k, s.height), p2);
+        break;
+      case 'sash':
+        canvas.drawPath(Path()..moveTo(18 * k, 18 * k)..lineTo(34 * k, 14 * k)..lineTo(82 * k, 92 * k)..lineTo(66 * k, 96 * k)..close(), p2);
+        break;
+      case 'sleeves':
+        canvas.drawPath(Path()..moveTo(0, 33 * k)..lineTo(16 * k, 13 * k)..lineTo(26 * k, 10 * k)..lineTo(21 * k, 40 * k)..lineTo(12 * k, 45 * k)..close(), p2);
+        canvas.drawPath(Path()..moveTo(100 * k, 33 * k)..lineTo(84 * k, 13 * k)..lineTo(74 * k, 10 * k)..lineTo(79 * k, 40 * k)..lineTo(88 * k, 45 * k)..close(), p2);
+        break;
+    }
+    // cloth light: lighter on the left, darker on the right
+    canvas.drawRect(Offset.zero & s, Paint()
+      ..shader = LinearGradient(colors: [Colors.white.withOpacity(0.18), Colors.transparent, Colors.black.withOpacity(0.22)],
+          stops: const [0.0, 0.45, 1.0]).createShader(Offset.zero & s));
+    canvas.restore();
+    final trim = Paint()..color = (ghost ? Colors.white54 : c2)..style = PaintingStyle.stroke..strokeWidth = 2.2 * k;
+    // collar + cuffs
+    canvas.drawPath(Path()..moveTo(36 * k, 6 * k)..quadraticBezierTo(50 * k, 18 * k, 64 * k, 6 * k), trim..strokeWidth = 3.2 * k);
+    canvas.drawLine(o(0.8, 34), o(12.5, 45.5), trim..strokeWidth = 2.4 * k);
+    canvas.drawLine(o(99.2, 34), o(87.5, 45.5), trim);
+    canvas.drawPath(body, Paint()
+      ..color = ghost ? Colors.white38 : Colors.black.withOpacity(0.28)
+      ..style = PaintingStyle.stroke..strokeWidth = (ghost ? 1.4 : 1) * k);
+  }
+
+  @override
+  bool shouldRepaint(_ShirtPainter o) => o.c1 != c1 || o.c2 != c2 || o.pattern != pattern;
+}
+
+// ── LED board: shows [count] items one after another, each for its own seconds ──
+class LedBoard extends StatefulWidget {
+  final int count;
+  final Widget Function(BuildContext context, int i) itemBuilder;
+  final int Function(int i) secondsOf;
+  const LedBoard({super.key, required this.count, required this.itemBuilder, required this.secondsOf});
+  @override
+  State<LedBoard> createState() => _LedBoardState();
+}
+
+class _LedBoardState extends State<LedBoard> {
+  int _i = 0;
+  Timer? _t;
+
+  @override
+  void initState() { super.initState(); _schedule(); }
+
+  @override
+  void didUpdateWidget(LedBoard old) {
+    super.didUpdateWidget(old);
+    if (_i >= widget.count) _i = 0;
+    if (old.count != widget.count) _schedule();
+  }
+
+  void _schedule() {
+    _t?.cancel();
+    if (widget.count < 2) return;
+    _t = Timer(Duration(seconds: widget.secondsOf(_i).clamp(3, 600).toInt()), () {
+      if (!mounted) return;
+      setState(() => _i = (_i + 1) % widget.count);
+      _schedule();
+    });
+  }
+
+  @override
+  void dispose() { _t?.cancel(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.count == 0) return const SizedBox.shrink();
+    return DecoratedBox(
+      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: const Color(0xFF2A2A2A)),
+        boxShadow: const [BoxShadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 3))]),
+      child: ClipRRect(borderRadius: BorderRadius.circular(3), child: Stack(fit: StackFit.expand, children: [
+        AnimatedSwitcher(
+          duration: Duration(milliseconds: _calm(context) ? 0 : 650),
+          switchInCurve: Curves.easeOutCubic, switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, a) => ClipRect(child: SlideTransition(
+            position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(a),
+            child: FadeTransition(opacity: a, child: child))),
+          child: KeyedSubtree(key: ValueKey(_i), child: widget.itemBuilder(context, _i))),
+        // LED dot grid on top: looks like a stadium screen
+        const IgnorePointer(child: CustomPaint(painter: _LedGridPainter())),
+      ])),
+    );
+  }
+}
+
+class _LedGridPainter extends CustomPainter {
+  const _LedGridPainter();
+  @override
+  void paint(Canvas canvas, Size s) {
+    final p = Paint()..color = Colors.black.withOpacity(0.28);
+    for (var y = 0.0; y < s.height; y += 2.5) { canvas.drawRect(Rect.fromLTWH(0, y, s.width, 0.8), p); }
+    canvas.drawRect(Offset.zero & s, Paint()
+      ..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          colors: [Colors.white.withOpacity(0.10), Colors.transparent]).createShader(Offset.zero & s));
+  }
+  @override
+  bool shouldRepaint(_LedGridPainter o) => false;
 }
 
 // ── confetti after the team is saved ───────────────────────────────────────

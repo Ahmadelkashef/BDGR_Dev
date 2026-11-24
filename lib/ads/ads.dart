@@ -18,6 +18,8 @@ class AdItem {
   final Color? bg, fg;
   final int weight, priority;
   final int? durationS;
+  /// لوحة الملعب (fantasy_pitch_board): الإعلان بيفضل كام ثانية قبل اللي بعده
+  final int? boardS;
   /// takeover: ✕ بتظهر بعد كام ثانية (0 = على طول) — الباقة البريميوم بتاخد 2
   final int? closeAfterS;
   /// takeover بريميوم: صفحة تفاصيل جوه التطبيق قبل اللينك
@@ -29,7 +31,7 @@ class AdItem {
     required this.id, required this.campaignId, required this.placement, required this.template,
     required this.lang, this.title, this.body, this.cta, this.media, this.poster, this.linkType,
     this.link, this.sponsorName, this.sponsorLogo, this.bg, this.fg, this.weight = 1,
-    this.priority = 0, this.durationS, this.closeAfterS, this.details, this.demo = false, this.sports, this.eventIds,
+    this.priority = 0, this.durationS, this.boardS, this.closeAfterS, this.details, this.demo = false, this.sports, this.eventIds,
   });
 
   static Color? _color(dynamic v) {
@@ -58,7 +60,7 @@ class AdItem {
       sponsorName: sp['name']?.toString(), sponsorLogo: (sp['logo']?.toString().isEmpty ?? true) ? null : sp['logo'].toString(),
       bg: _color(j['bg']), fg: _color(j['fg']),
       weight: (j['weight'] as num?)?.toInt() ?? 1, priority: (j['priority'] as num?)?.toInt() ?? 0,
-      durationS: (j['duration_s'] as num?)?.toInt(), demo: j['demo'] == true,
+      durationS: (j['duration_s'] as num?)?.toInt(), boardS: (j['board_s'] as num?)?.toInt(), demo: j['demo'] == true,
       closeAfterS: (j['close_after_s'] as num?)?.toInt(), details: s('details'),
       sports: _list(j['sports']), eventIds: _list(j['event_ids']),
     );
