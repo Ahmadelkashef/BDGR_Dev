@@ -8,13 +8,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class Diag {
   static const _ch = MethodChannel('bdgr/diag');
-  static const build = 'diag-2';
+  static const build = 'diag-3';
   static File? _file;
   static bool _sent = false;
 
@@ -53,6 +54,33 @@ class Diag {
       f.writeAsStringSync('${DateTime.now().toIso8601String().substring(11, 23)} $s\n',
           mode: FileMode.append, flush: true);
     } catch (_) {}
+  }
+
+  // ── step-by-step reveal of the WORLD pitch (diag-3): find which piece crashes the GPU ──
+  // stage 0 = pitch only; then per card k: k*3+1 shirt, k*3+2 name/price strips, k*3+3 crest.
+  static final stage = ValueNotifier<int>(999);
+  static final cardInfo = <int, String>{};
+  static bool _revealRan = false;
+  static void startReveal(int cards) {
+    if (kIsWeb || _revealRan) return;
+    _revealRan = true;
+    stage.value = 0;
+    crumb('REVEAL start cards=$cards (stage 0 = pitch only)');
+    () async {
+      const parts = ['shirt', 'strips', 'crest'];
+      for (var s = 1; s <= cards * 3; s++) {
+        await SchedulerBinding.instance.endOfFrame;
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        crumb('ok stage ${s - 1}');
+        final k = (s - 1) ~/ 3;
+        crumb('DRAW stage $s card#$k ${parts[(s - 1) % 3]} ${cardInfo[k] ?? ''}');
+        stage.value = s;
+      }
+      await SchedulerBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      crumb('REVEAL done, all drawn OK');
+      stage.value = 999;
+    }();
   }
 
   static String _last = '';

@@ -1964,7 +1964,9 @@ class _FancyPageState extends State<FancyPage> {
     ];
     // Stadium look (fantasy_stadium.dart): tilted pitch, far line smaller, crowd + floodlights,
     // LED ad board on the far edge (placement fantasy_pitch_board, each ad for its own seconds).
-    return ValueListenableBuilder<int>(valueListenable: Ads.version, builder: (context, _, __) {
+    if (arena == 'WORLD' && readOnly) Diag.startReveal(rows.fold<int>(0, (a, r) => a + r.value));
+    return ValueListenableBuilder<int>(valueListenable: Diag.stage, builder: (context, _, __) =>
+      ValueListenableBuilder<int>(valueListenable: Ads.version, builder: (context, _, __) {
       final ads = Ads.candidates('fantasy_pitch_board', eventId: currentEvent?.eventId);
       return StadiumPitch(
         rowCount: rows.length,
@@ -1977,9 +1979,10 @@ class _FancyPageState extends State<FancyPage> {
           final shirt = (h - 36).clamp(28.0, 50.0).toDouble();
           final cardW = (w / 5 - 4).clamp(52.0, 70.0).toDouble();
           return Center(child: FittedBox(fit: BoxFit.scaleDown,
-            child: SizedBox(width: w - 8, child: _positionRow(rows[i].key, rows[i].value, shirt, cardW, readOnly: readOnly))));
+            child: SizedBox(width: w - 8, child: _positionRow(rows[i].key, rows[i].value, shirt, cardW, readOnly: readOnly,
+              start: rows.take(i).fold<int>(0, (a, r) => a + r.value)))));
         });
-    });
+    }));
   }
 
   Widget _boardItem(AdItem a) => AdImpression(ad: a, child: GestureDetector(
@@ -2001,7 +2004,7 @@ class _FancyPageState extends State<FancyPage> {
             AdLabel(demo: a.demo),
           ]))));
 
-  Widget _positionRow(String pos, int count, double avatar, double cardW, {bool readOnly = false}) => Row(
+  Widget _positionRow(String pos, int count, double avatar, double cardW, {bool readOnly = false, int start = 0}) => Row(
     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
     children: List.generate(count, (index) {
       final player = squad[pos]![index];
@@ -2014,19 +2017,23 @@ class _FancyPageState extends State<FancyPage> {
         onTap: readOnly
           ? (player != null ? () => _openPlayerInfoDialog(player) : null)
           : () => player == null ? _openPlayerPicker(pos, index) : _openPlayerDialog(pos, index),
-        child: _pitchCard(player, pos, cardW, avatar),
+        child: _pitchCard(player, pos, cardW, avatar, start + index),
       ))));
     }));
 
   /// FPL-style card: team shirt (drawn) + name strip + price strip. Photo shows in the player dialog.
-  Widget _pitchCard(FancyPlayer? p, String pos, double w, double shirtH) {
+  Widget _pitchCard(FancyPlayer? p, String pos, double w, double shirtH, [int gi = 0]) {
+    // diag-3: show the pieces of card #gi one at a time (Diag.stage 999 = everything)
+    final st = Diag.stage.value;
+    final showShirt = st >= gi * 3 + 1, showStrips = st >= gi * 3 + 2, showCrest = st >= gi * 3 + 3;
+    Diag.cardInfo[gi] = '$pos ${p?.teamId}';
     final isCap = p != null && captain == p;
     final kit = p == null ? null : _kits[p.teamId];
     final shirtW = math.min(w * 0.80, shirtH * 1.05);
     final logo = p?.teamId == null ? null : teamLogos[p!.teamId];
     Diag.step('card $pos ${p?.teamId} kit=${kit?.pattern}/${kit?.img != null} logo=$logo');
     final top = SizedBox(width: w, height: shirtH, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-      p == null
+      if (!showShirt) const SizedBox.shrink() else p == null
         ? KitShirt(c1: const Color(0x2EFFFFFF), c2: Colors.white70, pattern: 'ghost', width: shirtW)
         : (kit?.img != null
             // real shirt photo (cached on the phone); drawn shirt while loading / on error
@@ -2034,12 +2041,12 @@ class _FancyPageState extends State<FancyPage> {
                 KitShirt(c1: kit.c1, c2: kit.c2, pattern: kit.pattern, width: shirtW))
             : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW)),
       if (p == null) Icon(Icons.add_rounded, color: Colors.white, size: shirtW * 0.42),
-      if (logo != null) Positioned(bottom: 0, right: (w - shirtW) / 2 - 3,
+      if (logo != null && showCrest) Positioned(bottom: 0, right: (w - shirtW) / 2 - 3,
         child: Container(width: 17, height: 17, padding: const EdgeInsets.all(1.5),
           decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
             boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 3)]),
           child: ClipOval(child: _SafeCrest(logo, size: 14)))),
-      if (isCap) Positioned(top: -2, left: (w - shirtW) / 2 - 4,
+      if (isCap && showShirt) Positioned(top: -2, left: (w - shirtW) / 2 - 4,
         child: Container(width: 17, height: 17,
           decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 1)),
           child: const Center(child: Text('C', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900, height: 1))))),
@@ -2056,7 +2063,7 @@ class _FancyPageState extends State<FancyPage> {
     return SizedBox(width: w, child: Column(mainAxisSize: MainAxisSize.min, children: [
       top,
       const SizedBox(height: 3),
-      isCap ? CaptainShine(size: w, height: 28, radius: 5, color: captainColor, child: strips) : strips,
+      !showStrips ? SizedBox(width: w, height: 28) : isCap ? CaptainShine(size: w, height: 28, radius: 5, color: captainColor, child: strips) : strips,
     ]));
   }
 
