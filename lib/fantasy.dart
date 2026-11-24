@@ -17,6 +17,7 @@ import 'profile/visitor_profile_sheet.dart';
 import 'fantasy_stadium.dart';
 import 'diag.dart';
 import 'safe_svg.dart';
+import 'team_initials_crest.dart';
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -96,6 +97,16 @@ Widget _kitPhoto(String url, double w, double h, Widget fallback) {
     width: w, height: h, fit: BoxFit.contain, gaplessPlayback: true,
     loadingBuilder: (_, child, progress) => progress == null ? child : fallback,
     errorBuilder: (_, __, ___) => fallback);
+}
+
+/// Player photo in the player dialogs. No photo (or it fails) → the team shirt
+/// (shirt photo, else the drawn shirt), like on the pitch (owner, 24 Nov). Never a big grey person icon.
+Widget _playerShirtHero(FancyPlayer p, {double shirtW = 120, Color bg = const Color(0xFF1B1B20)}) {
+  final kit = _FancyPageState._kits[p.teamId];
+  final drawn = KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white,
+      pattern: kit?.pattern ?? 'plain', width: shirtW);
+  return Container(color: bg, alignment: Alignment.center,
+    child: kit?.img != null ? _kitPhoto(kit!.img!, shirtW * 1.25, shirtW * 1.25, drawn) : drawn);
 }
 
 /// Team crest on the pitch cards (same safe SVG path as everywhere: safe_svg.dart).
@@ -1728,7 +1739,7 @@ class _FancyPageState extends State<FancyPage> {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     decoration: BoxDecoration(color: const Color(0xFF141414), borderRadius: BorderRadius.circular(15), border: Border.all(color: line)),
     child: Row(children: [
-      Expanded(child: _teamWidget(isArabic ? match.homeNameAr : match.homeNameEn, match.homeLogoUrl, true)),
+      Expanded(child: _teamWidget(isArabic ? match.homeNameAr : match.homeNameEn, match.homeLogoUrl, true, match.homeNameEn)),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Column(mainAxisSize: MainAxisSize.min, children: [
         if (match.finished)
           Container(
@@ -1742,18 +1753,18 @@ class _FancyPageState extends State<FancyPage> {
         Text(match.finished ? t('Full time', 'انتهت') : (started ? t('Result soon', 'النتيجة قريب') : _fmtTime(match.kickoffAt)),
           style: TextStyle(color: match.finished ? muted : sage, fontSize: 10, fontWeight: FontWeight.bold)),
       ])),
-      Expanded(child: _teamWidget(isArabic ? match.awayNameAr : match.awayNameEn, match.awayLogoUrl, false)),
+      Expanded(child: _teamWidget(isArabic ? match.awayNameAr : match.awayNameEn, match.awayLogoUrl, false, match.awayNameEn)),
     ])));
   }
 
-  Widget _teamWidget(String name, String? logoUrl, bool home) => Column(mainAxisSize: MainAxisSize.min, children: [
+  Widget _teamWidget(String name, String? logoUrl, bool home, [String? nameEn]) => Column(mainAxisSize: MainAxisSize.min, children: [
     Container(width: 40, height: 40,
       decoration: BoxDecoration(color: const Color(0xFF242424), borderRadius: BorderRadius.circular(12)),
-      child: logoUrl != null
+      child: logoUrl != null && logoUrl.isNotEmpty
         ? ClipRRect(borderRadius: BorderRadius.circular(10),
             child: _netImage(logoUrl, fit: BoxFit.contain,
-              fallback: Icon(home ? Icons.shield : Icons.sports_soccer, color: sage, size: 23)))
-        : Icon(home ? Icons.shield : Icons.sports_soccer, color: sage, size: 23)),
+              fallback: Center(child: TeamInitialsCrest(name: nameEn ?? name, size: 30))))
+        : Center(child: TeamInitialsCrest(name: nameEn ?? name, size: 30))),
     const SizedBox(height: 6),
     Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
       style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
@@ -2058,11 +2069,11 @@ class _FancyPageState extends State<FancyPage> {
             decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(22), border: Border.all(color: line)),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                child: AspectRatio(aspectRatio: 3/4,
-                  child: (player.fullImageUrl ?? player.photoUrl) != null
-                    ? _netImage((player.fullImageUrl ?? player.photoUrl)!, fit: BoxFit.cover,
-                        fallback: Container(color: surface2, child: const Icon(Icons.person, color: mint, size: 80)))
-                    : Container(color: surface2, child: const Icon(Icons.person, color: mint, size: 80)))),
+                child: (player.fullImageUrl ?? player.photoUrl) != null
+                  ? AspectRatio(aspectRatio: 3/4,
+                      child: _netImage((player.fullImageUrl ?? player.photoUrl)!, fit: BoxFit.cover,
+                        fallback: _playerShirtHero(player)))
+                  : SizedBox(height: 190, width: double.infinity, child: _playerShirtHero(player))),
               if (isCap) Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 6),
                 color: captainColor.withOpacity(0.15),
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -2102,13 +2113,11 @@ class _FancyPageState extends State<FancyPage> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 // ── full card image (3/4) ──
                 ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                  child: AspectRatio(aspectRatio: 3/4,
-                    child: (player.fullImageUrl ?? player.photoUrl) != null
-                      ? _netImage((player.fullImageUrl ?? player.photoUrl)!, fit: BoxFit.cover,
-                          fallback: Container(color: surface2,
-                            child: const Icon(Icons.person, color: mint, size: 80)))
-                      : Container(color: surface2,
-                          child: const Icon(Icons.person, color: mint, size: 80)))),
+                  child: (player.fullImageUrl ?? player.photoUrl) != null
+                    ? AspectRatio(aspectRatio: 3/4,
+                        child: _netImage((player.fullImageUrl ?? player.photoUrl)!, fit: BoxFit.cover,
+                          fallback: _playerShirtHero(player)))
+                    : SizedBox(height: 190, width: double.infinity, child: _playerShirtHero(player))),
                 // ── captain ring ──
                 if (isCap) Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 6),
                   color: captainColor.withOpacity(0.15),

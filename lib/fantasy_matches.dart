@@ -16,9 +16,11 @@ String _teamName(dynamic t) {
 
 Widget _crest(dynamic t, {double size = 30}) {
   final logo = t is Map ? t['logo'] as String? : null;
+  final en = t is Map ? (t['name_en'] ?? t['name_ar']) as String? : null;
+  final fb = TeamInitialsCrest(name: en, size: size);
   return SizedBox(width: size, height: size, child: logo != null && logo.isNotEmpty
-      ? _netImage(logo, fit: BoxFit.contain, fallback: Icon(Icons.shield, color: muted, size: size * 0.8))
-      : Icon(Icons.shield, color: muted, size: size * 0.8));
+      ? _netImage(logo, fit: BoxFit.contain, fallback: fb)
+      : fb);
 }
 
 String _dayTitle(DateTime d) {

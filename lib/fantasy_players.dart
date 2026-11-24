@@ -374,8 +374,8 @@ class _PlayerCardState extends State<_PlayerCard> {
         SizedBox(height: 190, child: Stack(fit: StackFit.expand, children: [
           ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             child: Container(color: const Color(0xFF202020), child: img != null
-              ? _netImage(img, fit: BoxFit.contain, fallback: const Icon(Icons.person, color: Colors.white24, size: 90))
-              : const Icon(Icons.person, color: Colors.white24, size: 90))),
+              ? _netImage(img, fit: BoxFit.contain, fallback: Align(alignment: const Alignment(0, -0.4), child: SizedBox(height: 130, child: _playerShirtHero(p, shirtW: 96, bg: Colors.transparent))))
+              : Align(alignment: const Alignment(0, -0.4), child: SizedBox(height: 130, child: _playerShirtHero(p, shirtW: 96, bg: Colors.transparent))))),
           const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [Colors.transparent, Color(0xF00D0D0D)], stops: [0.45, 1]))),
