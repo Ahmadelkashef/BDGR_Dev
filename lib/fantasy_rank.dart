@@ -23,6 +23,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   String _period = 'round';          // round | month | season
   String? _key;                      // رقم الجولة / 2026-10 / 2026-27
   String _scope = 'all';             // all | governorate | city | league
+  String _mode = 'normal';           // normal (11) | draft (7) — leagues use normal only
   String? _leagueId;
 
   Map<String, dynamic>? _periods;
@@ -90,7 +91,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
     final tok = ++_token;
     setState(() { if (more) { _loadingMore = true; } else { _loading = true; _error = null; _showRest = false; } });
     try {
-      final r = Map<String, dynamic>.from(await _sb.rpc('fantasy_leaderboard', params: {
+      final r = Map<String, dynamic>.from(await _sb.rpc(_mode == 'draft' ? 'fantasy_leaderboard_draft' : 'fantasy_leaderboard', params: {
         'p_type': _type, 'p_period': _period, 'p_key': _key, 'p_scope': _scope,
         'p_league_id': _scope == 'league' ? _leagueId : null,
         'p_limit': 10, 'p_offset': more ? _rows.length : 0,
@@ -153,7 +154,16 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
           child: Row(children: [
             Expanded(child: _periodButton()),
-            if (widget.leagueId == null) ...[const SizedBox(width: 8), _scopeButton()],
+            if (widget.leagueId == null) ...[
+              const SizedBox(width: 8),
+              _FilterMenu(value: _mode,
+                items: [('normal', t('⚽ Normal', '⚽ نورمال')), ('draft', t('🎯 Draft', '🎯 درافت'))],
+                onChanged: (v) {
+                  if (v == _mode) return;
+                  setState(() { _mode = v; if (_scope == 'league') { _scope = 'all'; _leagueId = null; } });
+                  _loadBoard();
+                }),
+              const SizedBox(width: 8), _scopeButton()],
           ]),
         ))),
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(12, 2, 12, 6), child: _typeSwitcher())),
@@ -578,7 +588,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => _UserSquadPage(
         userId: '${r['user_id']}', userName: '${r['name']}', eventId: ev, roundName: _periodTitle,
         username: r['username']?.toString(), avatarUrl: r['avatar']?.toString(),
-        rank: (r['rank'] as num?)?.toInt(), points: r['points'], isArabic: widget.isArabic)));
+        rank: (r['rank'] as num?)?.toInt(), points: r['points'], isArabic: widget.isArabic, draft: _mode == 'draft')));
     } else {
       _openVisitorProfile(context, userId: '${r['user_id']}', username: '${r['username'] ?? ''}',
           displayName: '${r['name']}', avatarUrl: r['avatar']?.toString());

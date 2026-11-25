@@ -207,8 +207,9 @@ class FantasyEvent {
   final String?       fantasyType;
   /// أقصى عدد لاعيبة من نفس الفريق (null = من غير حد)
   final int?          maxPerTeam;
-  /// 'classic' (11 + captain) | 'draft7' (7 spots, no captain, "surprise" × surpriseMult)
-  final String        mode;
+  /// the draft (a SECOND squad: 7 spots, no captain, "surprise" × surpriseMult) is open in this round
+  final bool          draftOn;
+  final int           draftMaxPerTeam;
   final double        surpriseMult;
 
   FantasyEvent({
@@ -217,7 +218,7 @@ class FantasyEvent {
     this.phase = 'open', this.prizes = const [],
     required this.deadlineAt, required this.startAt,
     required this.playerBudget, required this.matches, required this.teamPool,
-    this.fantasyType, this.maxPerTeam, this.mode = 'classic', this.surpriseMult = 2,
+    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2,
   });
 
   factory FantasyEvent.fromJson(Map<String, dynamic> j) {
@@ -240,7 +241,8 @@ class FantasyEvent {
       teamPool:     rawPool.map((e) => e.toString()).toList(),
       fantasyType:  j['fantasy_type'] as String?,
       maxPerTeam:   (j['max_per_team'] as num?)?.toInt(),
-      mode:         (j['mode'] as String?) ?? 'classic',
+      draftOn:      j['draft_on'] == true,
+      draftMaxPerTeam: (j['draft_max_per_team'] as num?)?.toInt() ?? 4,
       surpriseMult: ((j['surprise_mult'] ?? 2) as num).toDouble(),
     );
   }
@@ -277,13 +279,14 @@ class FancyPlayer {
   final String? exactPos;      // Transfermarkt position: GK CB LB RB DM CM AM LM RM LW RW SS CF
   final String? imageUrl;      // full image only (no headshot fallback) → v2 card picture
   final bool    surprise;      // draft rounds: "surprise" player → points × the event's surpriseMult
+  final num?    draftPct;      // % of draft squads that picked him (shown after the deadline)
 
   FancyPlayer({
     required this.id, required this.nameEn, required this.nameAr,
     required this.position, required this.teamNameEn, required this.teamNameAr,
     required this.price, this.photoUrl, this.fullImageUrl, this.ownership,
     this.teamId, this.lastPts = 0, this.totalPts = 0, this.played = 0,
-    this.marketValue, this.exactPos, this.imageUrl, this.surprise = false,
+    this.marketValue, this.exactPos, this.imageUrl, this.surprise = false, this.draftPct,
   });
 
   /// نقط لكل مليون (أحسن قيمة)
@@ -294,7 +297,7 @@ class FancyPlayer {
     id: id, nameEn: nameEn, nameAr: nameAr, position: position, teamNameEn: teamNameEn, teamNameAr: teamNameAr,
     price: p, photoUrl: photoUrl, fullImageUrl: fullImageUrl, ownership: ownership,
     teamId: teamId, lastPts: lastPts, totalPts: totalPts, played: played,
-    marketValue: marketValue, exactPos: exactPos, imageUrl: imageUrl, surprise: surprise);
+    marketValue: marketValue, exactPos: exactPos, imageUrl: imageUrl, surprise: surprise, draftPct: draftPct);
 
   factory FancyPlayer.fromJson(Map<String, dynamic> j) => FancyPlayer(
     id:           j['player_id'] as String,
@@ -315,6 +318,7 @@ class FancyPlayer {
     exactPos:     j['exact_position'] as String?,
     imageUrl:     j['image_url'] as String?,
     surprise:     j['surprise'] == true,
+    draftPct:     j['draft_pct'] as num?,
   );
 }
 
@@ -461,6 +465,13 @@ class _FancyPageState extends State<FancyPage> {
   final Set<String> _flown = {};             // players that flew in (no extra drop-in on the slot)
   String? _landedId;                         // last player that landed (landing ring)
   bool _flying = false;
+  bool _draftView = false;                   // showing / building the DRAFT squad (second squad) of this round
+  // draft "duel" picker: holder vs rival, the winner stays (fantasy_builder_v2.dart)
+  String? _duelKey;
+  List<FancyPlayer> _duelQueue = [];
+  FancyPlayer? _duelHold, _duelRival;
+  int _duelTotal = 0;
+  BuildContext? _duelHoldCtx;               // the holder card (flight start)
   String _layout = '4-3-3';                  // v2 midfield layout: 4-1-4-1 | 4-2-3-1 | 4-3-3 (server formation stays 4-5-1)
   void _v2Set(VoidCallback f) => setState(f);
   bool saved     = false;
@@ -522,7 +533,7 @@ class _FancyPageState extends State<FancyPage> {
   bool   get canSave => selectedCount == 11 && remaining >= 0 && !deadlinePassed && captain != null;
   bool   get canSaveV2 => selectedCount == squadSize && !deadlinePassed && (isDraft || captain != null); // v2: no budget
   /// draft-7 round (owner 25 Nov): 7 spots, no captain, "surprise" players score × surpriseMult
-  bool   get isDraft => currentEvent?.mode == 'draft7';
+  bool   get isDraft => _draftView && (currentEvent?.draftOn ?? false);
   int    get squadSize => isDraft ? 7 : 11;
   /// the server formation the v2 builder saves
   String get v2Formation => isDraft ? '2-3-1' : '4-5-1';
@@ -652,12 +663,16 @@ class _FancyPageState extends State<FancyPage> {
           if (p != null) slots.add({'position': pos, 'slot_index': i, 'player_id': p.id});
         }
       }
-      await _sb.rpc('save_fantasy_squad', params: {
-        'p_event_id':         currentEvent!.eventId,
-        'p_formation':        formation,
-        'p_captain_player_id': isDraft ? null : captain!.id,
-        'p_slots':            slots,
-      });
+      if (isDraft) {
+        await _sb.rpc('save_fantasy_draft', params: {'p_event_id': currentEvent!.eventId, 'p_slots': slots});
+      } else {
+        await _sb.rpc('save_fantasy_squad', params: {
+          'p_event_id':         currentEvent!.eventId,
+          'p_formation':        formation,
+          'p_captain_player_id': captain!.id,
+          'p_slots':            slots,
+        });
+      }
       setState(() { _saving = false; saved = true; });
       if (mounted) showStadiumConfetti(context);
       Future.delayed(const Duration(milliseconds: 1200), () { if (mounted) _showSavedAd(); });
@@ -698,6 +713,7 @@ class _FancyPageState extends State<FancyPage> {
 
   /// رسالة واضحة لكل سبب رفض من السيرفر (السيرفر هو اللي بيقرر)
   String _saveErrorText(String err) {
+    if (err.contains('draft_closed'))       return t('The draft is closed in this round.', 'الدرافت مقفول في الجولة دي.');
     if (err.contains('event_closed'))       return t('This round is closed. The deadline has passed.', 'الجولة اتقفلت، الديدلاين عدّى.');
     if (err.contains('budget_exceeded'))    return t('Budget exceeded.', 'تجاوزت الميزانية.');
     if (err.contains('formation_mismatch')) return t('Your players don\'t match the formation.', 'اللاعيبة مش مطابقة للتشكيل.');
@@ -714,7 +730,7 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   void enterArena(String value) {
     Diag.crumb('enterArena $value event=${currentEvent?.eventId}');
-    setState(() { arena = value; step = 1; clearSquad(); saved = false; _startCountdown(); });
+    setState(() { arena = value; step = 1; clearSquad(); saved = false; _draftView = false; _duelKey = null; _startCountdown(); });
     if (currentEvent != null) {
       _myRank = null;
       _loadPlayers(currentEvent!.eventId);
@@ -725,7 +741,9 @@ class _FancyPageState extends State<FancyPage> {
 
   Future<void> _loadSavedSquad(String eventId) async {
     try {
-      final res = await _sb.rpc('get_my_fantasy_squad', params: {'p_event_id': eventId});
+      final draft = isDraft;
+      final res = await _sb.rpc(draft ? 'get_my_fantasy_draft' : 'get_my_fantasy_squad', params: {'p_event_id': eventId});
+      if (draft != isDraft) return;   // the user switched normal / draft meanwhile
       // الدالة بترجع object (مش list) — نقبل الشكلين
       final Map<String, dynamic>? data = res is Map
           ? Map<String, dynamic>.from(res)
@@ -741,7 +759,7 @@ class _FancyPageState extends State<FancyPage> {
       // انتظر اللاعبين يتحملوا
       var tries = 0;
       while ((players.isEmpty || _playersLoading) && tries < 80) { await Future.delayed(const Duration(milliseconds: 150)); tries++; }
-      if (!mounted) return;
+      if (!mounted || draft != isDraft) return;
       setState(() {
         formation = fmt;
         clearSquad();
@@ -789,7 +807,7 @@ class _FancyPageState extends State<FancyPage> {
   /// بيتغير كل ما الفريق أو قايمة اللاعيبة تتغير (علشان شاشة اللاعيبة تتحدّث)
   final ValueNotifier<int> squadTick = ValueNotifier(0);
 
-  int? get maxPerTeam => currentEvent?.maxPerTeam ?? (arena == 'WORLD' ? 3 : null);
+  int? get maxPerTeam => isDraft ? currentEvent?.draftMaxPerTeam : (currentEvent?.maxPerTeam ?? (arena == 'WORLD' ? 3 : null));
   bool inSquad(FancyPlayer p) => pickedPlayers.any((c) => c.id == p.id);
   int teamCount(String? teamId) => teamId == null ? 0 : pickedPlayers.where((c) => c.teamId == teamId).length;
 
@@ -1948,6 +1966,7 @@ class _FancyPageState extends State<FancyPage> {
           label: isArabic ? currentEvent?.nameAr ?? '' : currentEvent?.nameEn ?? '',
           onBack: () => setState(() => step = 1)),
         const SizedBox(height: 10),
+        if (currentEvent?.draftOn == true) ...[this.draftModeSwitch(), const SizedBox(height: 10)],
         if (phaseOf(currentEvent) != 'open')
           // اتقفلت: مفيش تعديل خالص
           Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -3141,8 +3160,9 @@ class _UserSquadPage extends StatefulWidget {
   final int? rank;
   final dynamic points;
   final bool isArabic;
+  final bool draft;   // the user's DRAFT squad (second squad)
   const _UserSquadPage({required this.userId, required this.userName, required this.eventId,
-    required this.roundName, this.username, this.avatarUrl, this.rank, this.points, required this.isArabic});
+    required this.roundName, this.username, this.avatarUrl, this.rank, this.points, required this.isArabic, this.draft = false});
   @override
   State<_UserSquadPage> createState() => _UserSquadPageState();
 }
@@ -3159,17 +3179,19 @@ class _UserSquadPageState extends State<_UserSquadPage> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await _sb.rpc('get_user_squad_public', params: {
-        'p_target_user_id': widget.userId,
-        'p_event_id': widget.eventId,
-      });
+      final data = widget.draft
+        ? await _sb.rpc('get_user_draft_public', params: {'p_event_id': widget.eventId, 'p_user_id': widget.userId})
+        : await _sb.rpc('get_user_squad_public', params: {
+            'p_target_user_id': widget.userId,
+            'p_event_id': widget.eventId,
+          });
       if (!mounted) return;
       setState(() { _squad = data as Map<String, dynamic>?; _loading = false; });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString().contains('deadline_not_passed')
+        _error = (e.toString().contains('deadline_not_passed') || e.toString().contains('not_yet'))
             ? t('Squad visible after deadline.', 'التشكيلة بتظهر بعد الديدلاين.')
             : t('Failed to load squad.', 'فشل تحميل التشكيلة.');
       });

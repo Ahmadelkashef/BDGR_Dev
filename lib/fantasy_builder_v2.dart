@@ -174,6 +174,7 @@ extension _BuilderV2 on _FancyPageState {
             label: isArabic ? currentEvent?.nameAr ?? '' : currentEvent?.nameEn ?? '',
             onBack: () => _v2Set(() { step = 1; saved = false; _gStage = -1; })),
           const SizedBox(height: 8),
+          if (currentEvent?.draftOn == true) ...[draftModeSwitch(), const SizedBox(height: 8)],
           _v2InfoRow(stage),
         ])),
         Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -220,7 +221,7 @@ extension _BuilderV2 on _FancyPageState {
       {required bool readOnly, required bool isTarget, required bool dim}) {
     final player = squad[pos]![idx];
     final base = _pitchCard(player, _v2SlotCode(pos, idx), cardW, shirt, gi);
-    final pct = (isDraft && player != null && deadlinePassed) ? player.ownership : null;
+    final pct = (isDraft && player != null && deadlinePassed) ? player.draftPct : null;
     final card = (!isDraft || player == null || (!player.surprise && pct == null)) ? base
       : Stack(clipBehavior: Clip.none, children: [
           base,
@@ -288,7 +289,7 @@ extension _BuilderV2 on _FancyPageState {
           child: Text(t('Start over', 'ابدأ من الأول'), style: const TextStyle(color: brandRed, fontWeight: FontWeight.w900))),
       ])).then((ok) {
       if (ok != true || !mounted) return;
-      _v2Set(() { clearSquad(); _flown.clear(); _landedId = null; _gStage = isDraft ? 1 : 0; saved = false; formation = v2Formation; });
+      _v2Set(() { clearSquad(); _flown.clear(); _landedId = null; _duelKey = null; _gStage = isDraft ? 1 : 0; saved = false; formation = v2Formation; });
       squadTick.value++;
     });
   }
@@ -338,7 +339,7 @@ extension _BuilderV2 on _FancyPageState {
       final s = next ?? ('GK', 0);
       title = _v2SlotTitle(s.$1, s.$2);
       sub = '${selectedCount + 1} / $squadSize';
-      body = _v2PlayerCards(s.$1, s.$2);
+      body = isDraft ? _d7Duel(s.$1, s.$2) : _v2PlayerCards(s.$1, s.$2);
     }
     return Container(
       width: double.infinity,
@@ -574,6 +575,130 @@ extension _BuilderV2 on _FancyPageState {
       case 'MID': return t('Midfielder', 'وسط');
       default:    return t('Forward', 'مهاجم');
     }
+  }
+
+  // ── NORMAL 11 / DRAFT 7 switch (only when the draft is open in this round) ──
+  Widget draftModeSwitch() {
+    Widget seg(bool draft, String label) {
+      final on = _draftView == draft;
+      return Expanded(child: GestureDetector(
+        onTap: on ? null : () => _setDraftView(draft),
+        child: AnimatedContainer(duration: const Duration(milliseconds: 180), height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: on ? brandRed : Colors.transparent, borderRadius: BorderRadius.circular(9)),
+          child: Text(label, maxLines: 1, style: TextStyle(color: on ? Colors.white : muted, fontSize: 13, fontWeight: FontWeight.w900)))));
+    }
+    return Container(padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: line)),
+      child: Row(children: [seg(false, t('⚽ Normal 11', '⚽ نورمال 11')), seg(true, t('🎯 Draft 7', '🎯 درافت 7'))]));
+  }
+
+  /// switch between the normal squad and the draft squad of this round (each saved on its own)
+  void _setDraftView(bool draft) {
+    final ev = currentEvent;
+    if (ev == null || _flying) return;
+    _v2Set(() {
+      _draftView = draft;
+      clearSquad();
+      saved = false; step = 2; _gStage = -1;
+      _flown.clear(); _landedId = null; _duelKey = null;
+      formation = v2Formation;
+    });
+    squadTick.value++;
+    _loadSavedSquad(ev.eventId);
+  }
+
+  // ── DRAFT duel picker: holder vs rival, tap the one you want, the winner stays ──
+  // Rivals come in random order; "that's him" locks the holder early. The last one standing flies to the pitch.
+  Widget _d7Duel(String pos, int idx) {
+    if (_playersLoading) {
+      return const SizedBox(height: 236, child: Center(child: CircularProgressIndicator(color: muted, strokeWidth: 2)));
+    }
+    if (_playersError != null && players.isEmpty) return _v2PlayerCards(pos, idx);   // same retry UI
+    final key = '${currentEvent?.eventId}_${pos}_$idx';
+    if (_duelKey != key) {
+      final lim = maxPerTeam;
+      final list = players.where((p) => _v2Fits(p, pos, idx) && !inSquad(p)
+          && !(lim != null && p.teamId != null && teamCount(p.teamId) >= lim)).toList()..shuffle();
+      _duelKey = key;
+      _duelTotal = list.length;
+      _duelHold = list.isEmpty ? null : list[0];
+      _duelRival = list.length > 1 ? list[1] : null;
+      _duelQueue = list.length > 2 ? list.sublist(2) : [];
+    }
+    final hold = _duelHold;
+    if (hold == null) {
+      return SizedBox(height: 236, child: Center(child: Text(t('No players for this spot.', 'مفيش لعيبة للمكان ده.'),
+        style: const TextStyle(color: muted, fontSize: 13))));
+    }
+    final rival = _duelRival;
+    final left = _duelQueue.length + (rival == null ? 0 : 1);
+    Widget tag(String text, Color c) => Padding(padding: const EdgeInsets.only(bottom: 6),
+      child: Text(text, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.4)));
+    Widget swap(Widget child, String id) => AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutBack, switchOutCurve: Curves.easeIn,
+      transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: 0.85, end: 1.0).animate(a), child: c)),
+      child: KeyedSubtree(key: ValueKey(id), child: child));
+    return SizedBox(height: 236, child: Column(children: [
+      Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Column(mainAxisSize: MainAxisSize.min, children: [
+          tag(t('YOUR PICK', 'اختيارك'), brandRed),
+          swap(Builder(builder: (cctx) {
+            _duelHoldCtx = cctx;
+            return GestureDetector(
+              onTap: () => rival == null ? _v2Fly(cctx, hold, pos, idx) : _duelNext(keepHold: true),
+              child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: brandRed, width: 2)),
+                child: _v2CardFace(hold)));
+          }), 'h_${hold.id}'),
+        ]),
+        if (rival != null) ...[
+          Padding(padding: const EdgeInsets.fromLTRB(10, 0, 10, 74), child: Container(width: 34, height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: Colors.black, shape: BoxShape.circle, border: Border.all(color: Colors.white24)),
+            child: const Text('VS', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900)))),
+          Column(mainAxisSize: MainAxisSize.min, children: [
+            tag(t('CHALLENGER', 'المنافس'), muted),
+            swap(GestureDetector(onTap: () => _duelNext(keepHold: false), child: _v2CardFace(rival)), 'r_${rival.id}'),
+          ]),
+        ],
+      ])),
+      const SizedBox(height: 8),
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
+        Expanded(child: Text(
+          rival == null ? t('Last one standing', 'ده آخر واحد فضل')
+            : t('$left challengers left · tap who you want', 'باقي $left منافس · دوس على اللي عايزه'),
+          style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
+        Builder(builder: (bctx) => TextButton(
+          onPressed: _flying ? null : () => _duelLock(pos, idx),
+          style: TextButton.styleFrom(foregroundColor: Colors.white, backgroundColor: brandRed,
+            padding: const EdgeInsets.symmetric(horizontal: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          child: Text(rival == null ? t('Pick him ✓', 'اختاره ✓') : t('That\'s him ✓', 'خلاص، هو ده ✓'),
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12.5)))),
+      ])),
+    ]));
+  }
+
+  /// next rival: keepHold = the holder won; else the rival takes his place
+  void _duelNext({required bool keepHold}) {
+    if (_flying) return;
+    HapticFeedback.selectionClick();
+    _v2Set(() {
+      if (!keepHold && _duelRival != null) _duelHold = _duelRival;
+      _duelRival = _duelQueue.isEmpty ? null : _duelQueue.removeAt(0);
+    });
+  }
+
+  /// lock the holder → it flies to its spot (from the holder card on screen)
+  void _duelLock(String pos, int idx) {
+    final hold = _duelHold;
+    if (hold == null) return;
+    final ctx = _duelHoldCtx;
+    if (ctx != null && ctx.mounted) { _v2Fly(ctx, hold, pos, idx); return; }
+    final err = placePlayer(hold, pos: pos, index: idx, noBudget: true);
+    if (err != null) { _showSnack(err); return; }
+    _v2Set(() { _flown.add(hold.id); _landedId = hold.id; });
   }
 
   /// "2" / "1.5" (the surprise multiplier from the DB)
