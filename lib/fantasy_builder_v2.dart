@@ -16,6 +16,13 @@ part of 'fantasy.dart';
 
 const List<String> _kV2Layouts = ['4-1-4-1', '4-2-3-1', '4-3-3'];
 
+// ── DRAFT 7 (owner 25 Nov, event mode 'draft7', server formation '2-3-1') ──
+// GK0 · DEF0 = full back (RB/LB) · DEF1 = CB · MID0 = midfielder (DM/CM/AM) · MID1 = RW (RW/RM) · MID2 = LW (LW/LM)
+// · FWD0 = striker (CF/SS). No captain. A "surprise" player (players.fantasy_surprise) scores × surpriseMult.
+const List<(String, int)> _kD7Order = [
+  ('GK', 0), ('DEF', 0), ('DEF', 1), ('MID', 0), ('MID', 1), ('MID', 2), ('FWD', 0),
+];
+
 /// pick order: (squad position, index)
 const List<(String, int)> _kV2Order = [
   ('GK', 0), ('DEF', 0), ('DEF', 1), ('DEF', 2), ('DEF', 3),
@@ -26,6 +33,14 @@ extension _BuilderV2 on _FancyPageState {
   // ── slot rules ──────────────────────────────────────────────────────────────
   /// exact positions a slot takes (depends on the midfield layout for MID0..2)
   Set<String> _v2Accepts(String pos, int idx) {
+    if (isDraft) {
+      switch (pos) {
+        case 'GK': return const {'GK'};
+        case 'DEF': return idx == 0 ? const {'RB', 'LB'} : const {'CB'};
+        case 'FWD': return const {'CF', 'SS'};
+      }
+      return idx == 0 ? const {'DM', 'CM', 'AM'} : idx == 1 ? const {'RW', 'RM'} : const {'LW', 'LM'};
+    }
     switch (pos) {
       case 'GK': return const {'GK'};
       case 'DEF': return idx == 0 ? const {'RB'} : idx == 3 ? const {'LB'} : const {'CB'};
@@ -47,6 +62,14 @@ extension _BuilderV2 on _FancyPageState {
 
   /// short code shown on an empty pitch spot
   String _v2SlotCode(String pos, int idx) {
+    if (isDraft) {
+      switch (pos) {
+        case 'GK': return 'GK';
+        case 'DEF': return idx == 0 ? 'FB' : 'CB';
+        case 'FWD': return 'CF';
+      }
+      return idx == 0 ? 'MID' : idx == 1 ? 'RW' : 'LW';
+    }
     final a = _v2Accepts(pos, idx);
     if (pos == 'GK') return 'GK';
     if (pos == 'FWD') return 'CF';
@@ -59,6 +82,15 @@ extension _BuilderV2 on _FancyPageState {
 
   /// what the user picks now ("pick the right back" …)
   String _v2SlotTitle(String pos, int idx) {
+    if (isDraft) {
+      switch (pos) {
+        case 'GK': return t('Pick your goalkeeper', 'اختار الحارس');
+        case 'DEF': return idx == 0 ? t('Pick a full back (right or left)', 'اختار الظهير (يمين أو شمال)') : t('Pick your centre back', 'اختار قلب الدفاع');
+        case 'FWD': return t('Pick your striker', 'اختار المهاجم');
+      }
+      return idx == 0 ? t('Pick your midfielder', 'اختار لاعب نص الملعب')
+        : idx == 1 ? t('Pick your right winger', 'اختار الجناح اليمين') : t('Pick your left winger', 'اختار الجناح الشمال');
+    }
     switch (pos) {
       case 'GK': return t('Pick your goalkeeper', 'اختار الحارس');
       case 'FWD': return t('Pick your striker', 'اختار رأس الحربة');
@@ -76,17 +108,29 @@ extension _BuilderV2 on _FancyPageState {
   }
 
   /// next empty slot in pick order; null = 11 picked
+  List<(String, int)> get _v2Order => isDraft ? _kD7Order : _kV2Order;
+
   (String, int)? get _v2NextSlot {
-    for (final s in _kV2Order) {
+    for (final s in _v2Order) {
       if (squad[s.$1]![s.$2] == null) return s;
     }
     return null;
   }
 
-  int get _v2Stage => selectedCount == 11 ? 2 : selectedCount > 0 ? 1 : _gStage;
+  int get _v2Stage => selectedCount == squadSize ? 2 : selectedCount > 0 ? 1 : _gStage;
 
   /// pitch rows, far (top) → near (bottom); each row left → right on screen
   List<List<(String, int)>> get _v2Rows {
+    if (isDraft) {
+      // the full back stands on his own side (a left back on the left), the CB next to him
+      final lb = squad['DEF']![0]?.exactPos == 'LB';
+      return [
+        [('FWD', 0)],
+        [('MID', 2), ('MID', 0), ('MID', 1)],
+        lb ? [('DEF', 0), ('DEF', 1)] : [('DEF', 1), ('DEF', 0)],
+        [('GK', 0)],
+      ];
+    }
     const def = [('DEF', 3), ('DEF', 2), ('DEF', 1), ('DEF', 0)];
     const gk = [('GK', 0)];
     switch (_layout) {
@@ -114,10 +158,10 @@ extension _BuilderV2 on _FancyPageState {
   // ── screen ──────────────────────────────────────────────────────────────────
   Widget buildSquadScreenV2() {
     // an old squad (another formation) can't be shown in the fixed shape → start over
-    if (formation != '4-5-1' && selectedCount > 0) {
+    if (formation != v2Formation && selectedCount > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || formation == '4-5-1') return;
-        _v2Set(() { clearSquad(); formation = '4-5-1'; _gStage = -1; _flown.clear(); _landedId = null; });
+        if (!mounted || formation == v2Formation) return;
+        _v2Set(() { clearSquad(); formation = v2Formation; _gStage = -1; _flown.clear(); _landedId = null; });
         squadTick.value++;
       });
     }
@@ -175,7 +219,18 @@ extension _BuilderV2 on _FancyPageState {
   Widget _v2Cell(String pos, int idx, double cardW, double shirt, int gi,
       {required bool readOnly, required bool isTarget, required bool dim}) {
     final player = squad[pos]![idx];
-    final card = _pitchCard(player, _v2SlotCode(pos, idx), cardW, shirt, gi);
+    final base = _pitchCard(player, _v2SlotCode(pos, idx), cardW, shirt, gi);
+    final pct = (isDraft && player != null && deadlinePassed) ? player.ownership : null;
+    final card = (!isDraft || player == null || (!player.surprise && pct == null)) ? base
+      : Stack(clipBehavior: Clip.none, children: [
+          base,
+          if (player.surprise) Positioned(right: -2, top: -4, child: _surpriseBadge()),
+          if (pct != null) Positioned(left: -2, top: -4, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+            decoration: BoxDecoration(color: const Color(0xE6000000), borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white24, width: 0.8)),
+            child: Text('${pct.round()}%', style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900, height: 1.1)))),
+        ]);
     final slot = readOnly ? card : KeyedSubtree(key: _slotKeys.putIfAbsent('${pos}_$idx', () => GlobalKey()),
       child: player == null
         ? (isTarget ? _TargetPulse(child: card) : Opacity(opacity: dim ? 0.55 : 1, child: card))
@@ -195,11 +250,11 @@ extension _BuilderV2 on _FancyPageState {
   Widget _v2InfoRow(int stage) => Row(children: [
     Expanded(child: _v2Pill(Icons.timer_outlined, countdownText, alert: deadlinePassed)),
     const SizedBox(width: 8),
-    _v2Pill(Icons.people_alt_outlined, '$selectedCount / 11'),
+    _v2Pill(Icons.people_alt_outlined, '$selectedCount / $squadSize'),
     if (stage >= 1) ...[
       const SizedBox(width: 8),
       GestureDetector(onTap: _v2Restart,
-        child: _v2Pill(Icons.grid_view_rounded, _layout, trailing: Icons.refresh_rounded)),
+        child: _v2Pill(Icons.grid_view_rounded, isDraft ? t('Draft 7', 'درافت 7') : _layout, trailing: Icons.refresh_rounded)),
     ],
   ]);
 
@@ -222,8 +277,9 @@ extension _BuilderV2 on _FancyPageState {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: line)),
       title: Text(t('Start over?', 'تبدأ من الأول؟'),
         style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
-      content: Text(t('Your picks will be cleared so you can choose a new shape.',
-                      'هنشيل اللعيبة اللي اخترتهم علشان تختار شكل جديد.'),
+      content: Text(isDraft
+          ? t('Your picks will be cleared so you can pick again.', 'هنشيل اللعيبة اللي اخترتهم علشان تختار من الأول.')
+          : t('Your picks will be cleared so you can choose a new shape.', 'هنشيل اللعيبة اللي اخترتهم علشان تختار شكل جديد.'),
         style: const TextStyle(color: muted, fontSize: 13.5, height: 1.4)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(d, false),
@@ -232,7 +288,7 @@ extension _BuilderV2 on _FancyPageState {
           child: Text(t('Start over', 'ابدأ من الأول'), style: const TextStyle(color: brandRed, fontWeight: FontWeight.w900))),
       ])).then((ok) {
       if (ok != true || !mounted) return;
-      _v2Set(() { clearSquad(); _flown.clear(); _landedId = null; _gStage = 0; saved = false; formation = '4-5-1'; });
+      _v2Set(() { clearSquad(); _flown.clear(); _landedId = null; _gStage = isDraft ? 1 : 0; saved = false; formation = v2Formation; });
       squadTick.value++;
     });
   }
@@ -244,12 +300,15 @@ extension _BuilderV2 on _FancyPageState {
         style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900,
           shadows: [Shadow(color: Colors.black, blurRadius: 10)])),
       const SizedBox(height: 6),
-      Text(t('Shape, then goalkeeper, defence, midfield and attack.',
-             'الشكل، وبعدين الحارس، الدفاع، الوسط، الهجوم.'), textAlign: TextAlign.center,
+      Text(isDraft
+          ? t('7 picks: goalkeeper, full back, centre back, midfielder, two wingers and a striker. 🎲 Surprise players score double.',
+              '7 اختيارات: حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم. 🎲 المفاجأة نقطه بتتضاعف.')
+          : t('Shape, then goalkeeper, defence, midfield and attack.',
+              'الشكل، وبعدين الحارس، الدفاع، الوسط، الهجوم.'), textAlign: TextAlign.center,
         style: const TextStyle(color: Color(0xFFDADADA), fontSize: 12.5, height: 1.4,
           shadows: [Shadow(color: Colors.black, blurRadius: 8)])),
       const SizedBox(height: 22),
-      _StartButton(label: t('START', 'ابدأ'), onTap: () => _v2Set(() { _gStage = 0; formation = '4-5-1'; })),
+      _StartButton(label: t('START', 'ابدأ'), onTap: () => _v2Set(() { _gStage = isDraft ? 1 : 0; formation = v2Formation; })),
     ])));
 
   // ── bottom panel ────────────────────────────────────────────────────────────
@@ -259,6 +318,14 @@ extension _BuilderV2 on _FancyPageState {
       title = t('Pick your shape', 'اختار الشكل');
       body = _v2Layouts();
       action = _v2Button(t('Next: goalkeeper', 'يلا نختار الحارس'), () => _v2Set(() { _gStage = 1; formation = '4-5-1'; }));
+    } else if (stage == 2 && isDraft) {
+      title = t('Your team is ready', 'فريقك جاهز');
+      final sur = pickedPlayers.where((p) => p.surprise).length;
+      sub = sur == 0 ? null : t('$sur surprise ×${_multText()}', '$sur مفاجأة ×${_multText()}');
+      body = _v2CaptainCards(pickOnly: true);
+      action = _v2Button(
+        deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين') : t('SAVE TEAM', 'حفظ الفريق'),
+        canSaveV2 && !_saving ? _v2Save : null, busy: _saving);
     } else if (stage == 2) {
       title = t('Pick your captain', 'اختار الكابتن');
       sub = t('double points', 'نقطه × 2');
@@ -270,7 +337,7 @@ extension _BuilderV2 on _FancyPageState {
     } else {
       final s = next ?? ('GK', 0);
       title = _v2SlotTitle(s.$1, s.$2);
-      sub = '${selectedCount + 1} / 11';
+      sub = '${selectedCount + 1} / $squadSize';
       body = _v2PlayerCards(s.$1, s.$2);
     }
     return Container(
@@ -396,8 +463,8 @@ extension _BuilderV2 on _FancyPageState {
       }));
   }
 
-  Widget _v2CaptainCards() {
-    final picked = [for (final s in _kV2Order) if (squad[s.$1]![s.$2] != null) squad[s.$1]![s.$2]!];
+  Widget _v2CaptainCards({bool pickOnly = false}) {
+    final picked = [for (final s in _v2Order) if (squad[s.$1]![s.$2] != null) squad[s.$1]![s.$2]!];
     return SizedBox(height: 176, child: ListView.separated(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -405,6 +472,7 @@ extension _BuilderV2 on _FancyPageState {
       separatorBuilder: (_, __) => const SizedBox(width: 10),
       itemBuilder: (_, i) {
         final p = picked[i];
+        if (pickOnly) return _v2CardFace(p);
         return GestureDetector(
           onTap: () => _v2Set(() { captain = p; saved = false; }),
           child: _v2CardFace(p, captainOn: captain?.id == p.id));
@@ -459,6 +527,7 @@ extension _BuilderV2 on _FancyPageState {
             decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle,
               boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 3)]),
             child: ClipOval(child: _SafeCrest(logo, size: 18)))),
+          if (isDraft && p.surprise) Positioned(right: 6, top: 6, child: _surpriseBadge(big: true)),
           if (captainOn) Positioned(right: 6, top: 6, child: Container(width: 22, height: 22,
             decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black)),
             child: const Center(child: Text('C', style: TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w900, height: 1))))),
@@ -506,6 +575,21 @@ extension _BuilderV2 on _FancyPageState {
       default:    return t('Forward', 'مهاجم');
     }
   }
+
+  /// "2" / "1.5" (the surprise multiplier from the DB)
+  String _multText() {
+    final m = currentEvent?.surpriseMult ?? 2;
+    return m == m.roundToDouble() ? m.toStringAsFixed(0) : m.toString();
+  }
+
+  /// red "🎲 ×2" pill on surprise players (draft rounds)
+  Widget _surpriseBadge({bool big = false}) => Container(
+    padding: EdgeInsets.symmetric(horizontal: big ? 7 : 4, vertical: big ? 3 : 1.5),
+    decoration: BoxDecoration(color: const Color(0xFFE53935), borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.white, width: big ? 1.2 : 0.8),
+      boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 3)]),
+    child: Text('${big ? '🎲 ' : ''}×${_multText()}',
+      style: TextStyle(color: Colors.white, fontSize: big ? 11 : 8.5, fontWeight: FontWeight.w900, height: 1.1)));
 
   // ── the flight: card → its spot on the pitch ────────────────────────────────
   void _v2Fly(BuildContext cardCtx, FancyPlayer p, String pos, int idx) {

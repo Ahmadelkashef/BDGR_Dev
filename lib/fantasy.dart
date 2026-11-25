@@ -207,6 +207,9 @@ class FantasyEvent {
   final String?       fantasyType;
   /// أقصى عدد لاعيبة من نفس الفريق (null = من غير حد)
   final int?          maxPerTeam;
+  /// 'classic' (11 + captain) | 'draft7' (7 spots, no captain, "surprise" × surpriseMult)
+  final String        mode;
+  final double        surpriseMult;
 
   FantasyEvent({
     required this.eventId, required this.eventCode,
@@ -214,7 +217,7 @@ class FantasyEvent {
     this.phase = 'open', this.prizes = const [],
     required this.deadlineAt, required this.startAt,
     required this.playerBudget, required this.matches, required this.teamPool,
-    this.fantasyType, this.maxPerTeam,
+    this.fantasyType, this.maxPerTeam, this.mode = 'classic', this.surpriseMult = 2,
   });
 
   factory FantasyEvent.fromJson(Map<String, dynamic> j) {
@@ -237,6 +240,8 @@ class FantasyEvent {
       teamPool:     rawPool.map((e) => e.toString()).toList(),
       fantasyType:  j['fantasy_type'] as String?,
       maxPerTeam:   (j['max_per_team'] as num?)?.toInt(),
+      mode:         (j['mode'] as String?) ?? 'classic',
+      surpriseMult: ((j['surprise_mult'] ?? 2) as num).toDouble(),
     );
   }
 }
@@ -271,13 +276,14 @@ class FancyPlayer {
   final double? marketValue;   // € (player_seasons.market_value_euro), null = unknown
   final String? exactPos;      // Transfermarkt position: GK CB LB RB DM CM AM LM RM LW RW SS CF
   final String? imageUrl;      // full image only (no headshot fallback) → v2 card picture
+  final bool    surprise;      // draft rounds: "surprise" player → points × the event's surpriseMult
 
   FancyPlayer({
     required this.id, required this.nameEn, required this.nameAr,
     required this.position, required this.teamNameEn, required this.teamNameAr,
     required this.price, this.photoUrl, this.fullImageUrl, this.ownership,
     this.teamId, this.lastPts = 0, this.totalPts = 0, this.played = 0,
-    this.marketValue, this.exactPos, this.imageUrl,
+    this.marketValue, this.exactPos, this.imageUrl, this.surprise = false,
   });
 
   /// نقط لكل مليون (أحسن قيمة)
@@ -288,7 +294,7 @@ class FancyPlayer {
     id: id, nameEn: nameEn, nameAr: nameAr, position: position, teamNameEn: teamNameEn, teamNameAr: teamNameAr,
     price: p, photoUrl: photoUrl, fullImageUrl: fullImageUrl, ownership: ownership,
     teamId: teamId, lastPts: lastPts, totalPts: totalPts, played: played,
-    marketValue: marketValue, exactPos: exactPos, imageUrl: imageUrl);
+    marketValue: marketValue, exactPos: exactPos, imageUrl: imageUrl, surprise: surprise);
 
   factory FancyPlayer.fromJson(Map<String, dynamic> j) => FancyPlayer(
     id:           j['player_id'] as String,
@@ -308,6 +314,7 @@ class FancyPlayer {
     marketValue:  (j['market_value_euro'] as num?)?.toDouble(),
     exactPos:     j['exact_position'] as String?,
     imageUrl:     j['image_url'] as String?,
+    surprise:     j['surprise'] == true,
   );
 }
 
@@ -513,7 +520,12 @@ class _FancyPageState extends State<FancyPage> {
     } catch (_) {}
   }
   bool   get canSave => selectedCount == 11 && remaining >= 0 && !deadlinePassed && captain != null;
-  bool   get canSaveV2 => selectedCount == 11 && !deadlinePassed && captain != null; // v2: no budget
+  bool   get canSaveV2 => selectedCount == squadSize && !deadlinePassed && (isDraft || captain != null); // v2: no budget
+  /// draft-7 round (owner 25 Nov): 7 spots, no captain, "surprise" players score × surpriseMult
+  bool   get isDraft => currentEvent?.mode == 'draft7';
+  int    get squadSize => isDraft ? 7 : 11;
+  /// the server formation the v2 builder saves
+  String get v2Formation => isDraft ? '2-3-1' : '4-5-1';
 
   // ─────────────────────────────────────────────────────────────────────────
   // LIFECYCLE
@@ -627,9 +639,9 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> saveSquad({bool noBudget = false}) async {
     if (!(noBudget ? canSaveV2 : canSave)) return;
-    if (selectedCount < 11) { _showSnack(t('Select all 11 players.','اختار 11 لاعب.')); return; }
+    if (selectedCount < squadSize) { _showSnack(t('Select all $squadSize players.','اختار $squadSize لاعيبة.')); return; }
     if (!noBudget && remaining < 0) { _showSnack(t('Budget exceeded.','تجاوزت الميزانية.')); return; }
-    if (captain == null)    { _showSnack(t('Pick a captain.','اختار كابتن.')); return; }
+    if (captain == null && !isDraft) { _showSnack(t('Pick a captain.','اختار كابتن.')); return; }
 
     setState(() { _saving = true; _saveError = null; });
     try {
@@ -643,7 +655,7 @@ class _FancyPageState extends State<FancyPage> {
       await _sb.rpc('save_fantasy_squad', params: {
         'p_event_id':         currentEvent!.eventId,
         'p_formation':        formation,
-        'p_captain_player_id': captain!.id,
+        'p_captain_player_id': isDraft ? null : captain!.id,
         'p_slots':            slots,
       });
       setState(() { _saving = false; saved = true; });
@@ -689,7 +701,7 @@ class _FancyPageState extends State<FancyPage> {
     if (err.contains('event_closed'))       return t('This round is closed. The deadline has passed.', 'الجولة اتقفلت، الديدلاين عدّى.');
     if (err.contains('budget_exceeded'))    return t('Budget exceeded.', 'تجاوزت الميزانية.');
     if (err.contains('formation_mismatch')) return t('Your players don\'t match the formation.', 'اللاعيبة مش مطابقة للتشكيل.');
-    if (err.contains('invalid_squad_size')) return t('Pick 11 different players.', 'اختار 11 لاعب مختلفين.');
+    if (err.contains('invalid_squad_size')) return t('Pick $squadSize different players.', 'اختار $squadSize لاعيبة مختلفين.');
     if (err.contains('invalid_player'))     return t('One of the players is not available in this round. Refresh and try again.', 'فيه لاعب مش متاح في الجولة دي. حدّث وجرّب تاني.');
     if (err.contains('invalid_captain'))    return t('Pick a captain from your team.', 'اختار كابتن من فريقك.');
     if (err.contains('team_limit'))         return t('Max ${currentEvent?.maxPerTeam ?? 3} players from the same team.', 'أقصى ${currentEvent?.maxPerTeam ?? 3} لاعيبة من نفس الفريق.');
@@ -1963,23 +1975,27 @@ class _FancyPageState extends State<FancyPage> {
         if (phaseOf(currentEvent) == 'open') ...[
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: () => showTieBreakSheet(context, isArabic, period: 'round'),
+            onTap: isDraft ? null : () => showTieBreakSheet(context, isArabic, period: 'round'),
             child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(color: const Color(0xFF221B0A), borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0x66FFB300))),
               child: Row(children: [
                 const Text('⚖️', style: TextStyle(fontSize: 16)), const SizedBox(width: 8),
                 Expanded(child: Text(
-                  t('Tied on points? More money left wins, then captain points, then who saved first.',
-                    'لو اتعادلت في النقط: الفلوس المتبقية الأكتر تكسب، بعدها نقط الكابتن، بعدها اللي حفظ الأول.'),
+                  isDraft
+                    ? t('Tied on points? Whoever saved first wins.', 'لو اتعادلت في النقط: اللي حفظ الأول يكسب.')
+                    : t('Tied on points? More money left wins, then captain points, then who saved first.',
+                        'لو اتعادلت في النقط: الفلوس المتبقية الأكتر تكسب، بعدها نقط الكابتن، بعدها اللي حفظ الأول.'),
                   style: const TextStyle(color: Colors.white, fontSize: 12.5, height: 1.35))),
-                const SizedBox(width: 6),
-                Text(t('Details', 'التفاصيل'), style: const TextStyle(color: Color(0xFFFFB300), fontSize: 12, fontWeight: FontWeight.w800)),
+                if (!isDraft) ...[
+                  const SizedBox(width: 6),
+                  Text(t('Details', 'التفاصيل'), style: const TextStyle(color: Color(0xFFFFB300), fontSize: 12, fontWeight: FontWeight.w800)),
+                ],
               ])),
           ),
         ],
       ])),
-      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: formation == '4-5-1' ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
+      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: (formation == '4-5-1' || formation == '2-3-1') ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
     ]);
   });
 

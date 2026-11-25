@@ -140,7 +140,7 @@ class _PlayersPageState extends State<_PlayersPage> {
           if (!widget.browse) ...[
             _pill('💰 ${_fmtBudget(budget)}', budget < 0 ? Colors.redAccent : Colors.white),
             const SizedBox(width: 6),
-            _pill('${h.selectedCount}/11', h.selectedCount == 11 ? const Color(0xFF4CD964) : Colors.white),
+            _pill('${h.selectedCount}/${h.squadSize}', h.selectedCount == h.squadSize ? const Color(0xFF4CD964) : Colors.white),
           ],
         ]),
         const SizedBox(height: 6),
