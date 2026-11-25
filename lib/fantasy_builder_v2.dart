@@ -625,6 +625,7 @@ extension _BuilderV2 on _FancyPageState {
       _duelHold = list.isEmpty ? null : list[0];
       _duelRival = list.length > 1 ? list[1] : null;
       _duelQueue = list.length > 2 ? list.sublist(2) : [];
+      _duelHist.clear();
     }
     final hold = _duelHold;
     if (hold == null) {
@@ -670,6 +671,12 @@ extension _BuilderV2 on _FancyPageState {
           rival == null ? t('Last one standing', 'ده آخر واحد فضل')
             : t('$left challengers left · tap who you want', 'باقي $left منافس · دوس على اللي عايزه'),
           style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
+        if (_duelHist.isNotEmpty) Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: OutlinedButton(
+          onPressed: _flying ? null : _duelUndo,
+          style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38),
+            padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(0, 36),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          child: Text(t('↶ Undo', '↶ رجوع'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)))),
         Builder(builder: (bctx) => TextButton(
           onPressed: _flying ? null : () => _duelLock(pos, idx),
           style: TextButton.styleFrom(foregroundColor: Colors.white, backgroundColor: brandRed,
@@ -685,8 +692,21 @@ extension _BuilderV2 on _FancyPageState {
     if (_flying) return;
     HapticFeedback.selectionClick();
     _v2Set(() {
+      _duelHist.add([_duelHold, _duelRival, List<FancyPlayer>.of(_duelQueue)]);
       if (!keepHold && _duelRival != null) _duelHold = _duelRival;
       _duelRival = _duelQueue.isEmpty ? null : _duelQueue.removeAt(0);
+    });
+  }
+
+  /// undo the last tap: the same two cards come back
+  void _duelUndo() {
+    if (_flying || _duelHist.isEmpty) return;
+    HapticFeedback.selectionClick();
+    _v2Set(() {
+      final h = _duelHist.removeLast();
+      _duelHold = h[0] as FancyPlayer?;
+      _duelRival = h[1] as FancyPlayer?;
+      _duelQueue = h[2] as List<FancyPlayer>;
     });
   }
 

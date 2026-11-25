@@ -471,6 +471,7 @@ class _FancyPageState extends State<FancyPage> {
   List<FancyPlayer> _duelQueue = [];
   FancyPlayer? _duelHold, _duelRival;
   int _duelTotal = 0;
+  final List<List<Object?>> _duelHist = [];  // undo: [hold, rival, queue] before each tap
   BuildContext? _duelHoldCtx;               // the holder card (flight start)
   String _layout = '4-3-3';                  // v2 midfield layout: 4-1-4-1 | 4-2-3-1 | 4-3-3 (server formation stays 4-5-1)
   void _v2Set(VoidCallback f) => setState(f);
