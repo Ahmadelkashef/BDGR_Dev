@@ -54,6 +54,16 @@ class LocalStore {
   }
 
   /// علامات بسيطة (مثلاً: النصيحة دي اتشافت قبل كده)
+  static Future<String?> getStr(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('str_$key');
+  }
+
+  static Future<void> setStr(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('str_$key', value);
+  }
+
   static Future<bool> getFlag(String key) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('flag_$key') ?? false;

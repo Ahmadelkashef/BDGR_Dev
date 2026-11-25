@@ -268,12 +268,16 @@ class FancyPlayer {
   final String? teamId;
   final num     lastPts, totalPts;
   final int     played;
+  final double? marketValue;   // € (player_seasons.market_value_euro), null = unknown
+  final String? exactPos;      // Transfermarkt position: GK CB LB RB DM CM AM LM RM LW RW SS CF
+  final String? imageUrl;      // full image only (no headshot fallback) → v2 card picture
 
   FancyPlayer({
     required this.id, required this.nameEn, required this.nameAr,
     required this.position, required this.teamNameEn, required this.teamNameAr,
     required this.price, this.photoUrl, this.fullImageUrl, this.ownership,
     this.teamId, this.lastPts = 0, this.totalPts = 0, this.played = 0,
+    this.marketValue, this.exactPos, this.imageUrl,
   });
 
   /// نقط لكل مليون (أحسن قيمة)
@@ -283,7 +287,8 @@ class FancyPlayer {
   FancyPlayer withPrice(double p) => FancyPlayer(
     id: id, nameEn: nameEn, nameAr: nameAr, position: position, teamNameEn: teamNameEn, teamNameAr: teamNameAr,
     price: p, photoUrl: photoUrl, fullImageUrl: fullImageUrl, ownership: ownership,
-    teamId: teamId, lastPts: lastPts, totalPts: totalPts, played: played);
+    teamId: teamId, lastPts: lastPts, totalPts: totalPts, played: played,
+    marketValue: marketValue, exactPos: exactPos, imageUrl: imageUrl);
 
   factory FancyPlayer.fromJson(Map<String, dynamic> j) => FancyPlayer(
     id:           j['player_id'] as String,
@@ -300,6 +305,9 @@ class FancyPlayer {
     lastPts:      (j['last_pts'] as num?) ?? 0,
     totalPts:     (j['total_pts'] as num?) ?? 0,
     played:       (j['played'] as num?)?.toInt() ?? 0,
+    marketValue:  (j['market_value_euro'] as num?)?.toDouble(),
+    exactPos:     j['exact_position'] as String?,
+    imageUrl:     j['image_url'] as String?,
   );
 }
 
@@ -446,6 +454,7 @@ class _FancyPageState extends State<FancyPage> {
   final Set<String> _flown = {};             // players that flew in (no extra drop-in on the slot)
   String? _landedId;                         // last player that landed (landing ring)
   bool _flying = false;
+  String _layout = '4-3-3';                  // v2 midfield layout: 4-1-4-1 | 4-2-3-1 | 4-3-3 (server formation stays 4-5-1)
   void _v2Set(VoidCallback f) => setState(f);
   bool saved     = false;
   bool _saving   = false;
@@ -521,6 +530,25 @@ class _FancyPageState extends State<FancyPage> {
     });
     _loadLobby();
     _loadKits();
+    _loadAppConfig();
+  }
+
+  // ── v2: EUR→EGP rate + card picture mode (fantasy_app_config, changed in the DB, no build) ──
+  static double _eurEgp = 55;
+  static String _cardImage = 'photo';
+  static bool _cfgLoaded = false;
+  Future<void> _loadAppConfig() async {
+    if (_cfgLoaded) return;
+    try {
+      final r = await _sb.rpc('fantasy_app_config');
+      if (r is Map) {
+        final rate = (r['eur_egp_rate'] as num?)?.toDouble();
+        if (rate != null && rate > 0) _eurEgp = rate;
+        _cardImage = r['card_image'] == 'shirt' ? 'shirt' : 'photo';
+      }
+      _cfgLoaded = true;
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   // ── team shirts on the pitch (fantasy_team_kits: tiny JSON, once per app run) ──
@@ -719,6 +747,7 @@ class _FancyPageState extends State<FancyPage> {
         saved = true;
         step = 2;
       });
+      if (formation == '4-5-1') this._v2RestoreLayout(eventId);
     } catch (_) {}
   }
 
@@ -1945,7 +1974,7 @@ class _FancyPageState extends State<FancyPage> {
           ),
         ],
       ])),
-      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: buildPitch(readOnly: true))),
+      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: formation == '4-5-1' ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
     ]);
   });
 
@@ -2111,7 +2140,7 @@ class _FancyPageState extends State<FancyPage> {
                   Text(isArabic ? player.nameAr : player.nameEn, textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 4),
-                  Text('${isArabic ? player.teamNameAr : player.teamNameEn}  •  ${player.position}',
+                  Text('${isArabic ? player.teamNameAr : player.teamNameEn}  •  ${this._v2PosLabel(player)}',
                     style: const TextStyle(color: muted, fontSize: 12)),
                   const SizedBox(height: 8),
                   const SizedBox.shrink(), // v2: no prices
@@ -2156,7 +2185,7 @@ class _FancyPageState extends State<FancyPage> {
                     Text(isArabic ? player.nameAr : player.nameEn, textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 4),
-                    Text('${isArabic ? player.teamNameAr : player.teamNameEn}  •  ${player.position}',
+                    Text('${isArabic ? player.teamNameAr : player.teamNameEn}  •  ${this._v2PosLabel(player)}',
                       style: const TextStyle(color: muted, fontSize: 12)),
                     const SizedBox(height: 6),
                     const SizedBox.shrink(), // v2: no prices
