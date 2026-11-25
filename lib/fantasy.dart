@@ -18,6 +18,7 @@ import 'fantasy_stadium.dart';
 import 'diag.dart';
 import 'safe_svg.dart';
 import 'team_initials_crest.dart';
+import 'social/comments_sheet.dart' show showCommentsSheet;
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -26,6 +27,7 @@ part 'fantasy_players.dart';
 part 'fantasy_mystats.dart';
 part 'fantasy_matches.dart';
 part 'fantasy_builder_v2.dart';
+part 'fantasy_social.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -2044,6 +2046,11 @@ class _FancyPageState extends State<FancyPage> {
           ),
         ],
         if (isDraft && _predMatches.isNotEmpty) ...[const SizedBox(height: 8), this.d7MyPredStrip()],
+        if (phaseOf(currentEvent) != 'open' && currentEvent != null && _sb.auth.currentUser != null) ...[
+          const SizedBox(height: 8),
+          SquadSocialBar(key: ValueKey('soc_${currentEvent!.eventId}_$isDraft'), eventId: currentEvent!.eventId,
+            userId: _sb.auth.currentUser!.id, draft: isDraft, isArabic: isArabic),
+        ],
       ])),
       Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: (formation == '4-5-1' || formation == '2-3-1') ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
     ]);
@@ -3289,6 +3296,9 @@ class _UserSquadPageState extends State<_UserSquadPage> {
               : _squad == null
                 ? Center(child: Text(t('No squad saved.','مفيش تشكيلة.'), style: const TextStyle(color: muted)))
                 : _buildPitch())),
+        if (_squad != null)
+          Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: SquadSocialBar(
+            eventId: widget.eventId, userId: widget.userId, draft: widget.draft, isArabic: widget.isArabic)),
         // go to profile
         Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 12), child: SizedBox(width: double.infinity, height: 50,
           child: ElevatedButton.icon(

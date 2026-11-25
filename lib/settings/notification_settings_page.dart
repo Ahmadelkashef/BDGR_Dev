@@ -88,7 +88,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   }
 
   // الأنواع اللي بتتبعت فعلًا دلوقتي. الباقي محفوظ وجاهز، وعليه علامة "قريب" لحد ما يتبني.
-  static const _live = {'fantasy_deadline', 'fantasy_results', 'marketing'};
+  static const _live = {'fantasy_deadline', 'fantasy_results', 'squad_social', 'marketing'};
 
   Widget _row(IconData icon, String key, String title, String desc) => SRow(
         icon: icon,
@@ -176,6 +176,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                   _t('Before the round closes, so you can set your squad.', 'قبل ما الجولة تقفل، علشان تظبط تشكيلتك.')),
               _row(Icons.leaderboard_outlined, 'fantasy_results', _t('Results & points', 'النتايج والنقط'),
                   _t('When the round results and your points are out.', 'لما نتايج الجولة ونقطك تنزل.')),
+              _row(Icons.local_fire_department_outlined, 'squad_social', _t('Reactions & comments on my squad', 'ريأكشن وكومنتات على تشكيلتي'),
+                  _t('When people react or comment on your squad.', 'لما حد يعمل ريأكشن أو يكتب كومنت على تشكيلتك.')),
               _row(Icons.price_change_outlined, 'price_changes', _t('Price changes', 'تغيير الأسعار'),
                   _t('When the price of a player in your squad changes.', 'لما سعر لاعب في تشكيلتك يتغير.')),
             ])],
