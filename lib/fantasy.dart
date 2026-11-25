@@ -536,6 +536,8 @@ class _FancyPageState extends State<FancyPage> {
   // ── v2: EUR→EGP rate + card picture mode (fantasy_app_config, changed in the DB, no build) ──
   static double _eurEgp = 55;
   static String _cardImage = 'photo';
+  static String _pitchImage = 'shirt';      // pitch spot picture: photo | shirt
+  static String _pitchName = 'short_club';  // pitch strips: split | full_club | short_club
   static bool _cfgLoaded = false;
   Future<void> _loadAppConfig() async {
     if (_cfgLoaded) return;
@@ -545,6 +547,9 @@ class _FancyPageState extends State<FancyPage> {
         final rate = (r['eur_egp_rate'] as num?)?.toDouble();
         if (rate != null && rate > 0) _eurEgp = rate;
         _cardImage = r['card_image'] == 'shirt' ? 'shirt' : 'photo';
+        _pitchImage = r['pitch_image'] == 'photo' ? 'photo' : 'shirt';
+        final pn = r['pitch_name'];
+        _pitchName = (pn == 'split' || pn == 'full_club') ? pn as String : 'short_club';
       }
       _cfgLoaded = true;
       if (mounted) setState(() {});
@@ -2051,6 +2056,24 @@ class _FancyPageState extends State<FancyPage> {
       ))));
     }));
 
+  /// pitch strips text, by app_settings.fantasy_pitch_name (no build):
+  /// split = first name / rest of the name · full_club = whole name / club · short_club = name cut with … / club
+  (String, String) _pitchLines(FancyPlayer p) {
+    final name = (isArabic ? p.nameAr : p.nameEn).trim();
+    final club = isArabic ? p.teamNameAr : p.teamNameEn;
+    if (_pitchName == 'split') {
+      final i = name.indexOf(' ');
+      if (i > 0) return (name.substring(0, i), name.substring(i + 1).trim());
+      return (name, club);
+    }
+    return (name, club);
+  }
+
+  /// one line: shrinks to fit (fit = true) or cuts with … (fit = false)
+  Widget _stripText(String s, {required bool fit, required TextStyle style}) => fit
+      ? FittedBox(fit: BoxFit.scaleDown, child: Text(s, maxLines: 1, style: style))
+      : Text(s, maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
+
   /// FPL-style card: team shirt (drawn) + name strip + price strip. Photo shows in the player dialog.
   Widget _pitchCard(FancyPlayer? p, String pos, double w, double shirtH, [int gi = 0]) {
     // diag-3: show the pieces of card #gi one at a time (Diag.stage 999 = everything)
@@ -2062,14 +2085,23 @@ class _FancyPageState extends State<FancyPage> {
     final shirtW = math.min(w * 0.80, shirtH * 1.05);
     final logo = p?.teamId == null ? null : teamLogos[p!.teamId];
     Diag.step('card $pos ${p?.teamId} kit=${kit?.pattern}/${kit?.img != null} logo=$logo');
-    final top = SizedBox(width: w, height: shirtH, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-      if (!showShirt) const SizedBox.shrink() else p == null
+    final Widget shirtPic = p == null
         ? KitShirt(c1: const Color(0x2EFFFFFF), c2: Colors.white70, pattern: 'ghost', width: shirtW)
         : (kit?.img != null
             // real shirt photo (cached on the phone); drawn shirt while loading / on error
             ? _kitPhoto(kit!.img!, shirtW * 1.08, shirtH,
                 KitShirt(c1: kit.c1, c2: kit.c2, pattern: kit.pattern, width: shirtW))
-            : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW)),
+            : KitShirt(c1: kit?.c1 ?? const Color(0xFF8A8F98), c2: kit?.c2 ?? Colors.white, pattern: kit?.pattern ?? 'plain', width: shirtW));
+    // app_settings.fantasy_pitch_image = photo → the player's picture on his spot (shirt if none / while loading / on error)
+    final pImg = (p == null || _pitchImage != 'photo') ? null : (p.imageUrl ?? p.fullImageUrl);
+    final Widget pic = (pImg == null || pImg.toLowerCase().contains('.svg')) ? shirtPic
+        : SizedBox(width: shirtH * 0.95, height: shirtH, child: ClipRRect(borderRadius: BorderRadius.circular(8),
+            child: Image(image: ResizeImage(MediaCache.image(pImg), width: 160, allowUpscaling: false),
+              fit: BoxFit.cover, alignment: Alignment.topCenter, gaplessPlayback: true,
+              loadingBuilder: (_, child, pr) => pr == null ? child : Center(child: shirtPic),
+              errorBuilder: (_, __, ___) => Center(child: shirtPic))));
+    final top = SizedBox(width: w, height: shirtH, child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+      if (!showShirt) const SizedBox.shrink() else pic,
       if (p == null) Icon(Icons.add_rounded, color: Colors.white, size: shirtW * 0.42),
       if (logo != null && showCrest) Positioned(bottom: 0, right: (w - shirtW) / 2 - 3,
         child: Container(width: 17, height: 17, padding: const EdgeInsets.all(1.5),
@@ -2081,15 +2113,17 @@ class _FancyPageState extends State<FancyPage> {
           decoration: BoxDecoration(color: captainColor, shape: BoxShape.circle, border: Border.all(color: Colors.black, width: 1)),
           child: const Center(child: Text('C', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900, height: 1))))),
     ]));
+    final lines = p == null ? ('', '') : _pitchLines(p);
     final strips = ClipRRect(borderRadius: BorderRadius.circular(5), child: SizedBox(width: w, height: 28, child: Column(children: [
       Container(height: 15, width: w, alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 3),
         color: p == null ? const Color(0xD9000000) : Colors.white,
-        child: Text(p != null ? (isArabic ? p.nameAr : p.nameEn) : pos, maxLines: 1, overflow: TextOverflow.ellipsis,
+        child: _stripText(p != null ? lines.$1 : pos, fit: p != null && _pitchName != 'short_club',
           style: TextStyle(color: p == null ? Colors.white70 : Colors.black, fontSize: 9.5, fontWeight: FontWeight.w800, height: 1.1))),
-      Container(height: 13, width: w, alignment: Alignment.center, color: const Color(0xF2141418),
-        // v2: no prices → the club name in the dark strip
-        child: Text(p == null ? '' : (isArabic ? p.teamNameAr : p.teamNameEn), maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: mint, fontSize: 8.5, fontWeight: FontWeight.w700, height: 1.1))),
+      Container(height: 13, width: w, alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 3),
+        color: const Color(0xF2141418),
+        // v2: no prices → the club name (or the rest of the name in "split") in the dark strip
+        child: _stripText(p == null ? '' : lines.$2, fit: _pitchName == 'split',
+          style: TextStyle(color: _pitchName == 'split' ? Colors.white : mint, fontSize: 8.5, fontWeight: FontWeight.w700, height: 1.1))),
     ])));
     return SizedBox(width: w, child: Column(mainAxisSize: MainAxisSize.min, children: [
       top,

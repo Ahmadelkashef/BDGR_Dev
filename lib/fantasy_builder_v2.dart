@@ -430,7 +430,7 @@ extension _BuilderV2 on _FancyPageState {
     return '${clean(n(v / 1e3))} ${t('k EGP', 'ألف ج')}';
   }
 
-  /// one card: picture (player photo or team shirt) + crest + exact position, name, club, market value
+  /// one card: picture (player photo or team shirt) + crest, full name (2 lines), club, market value
   Widget _v2CardFace(FancyPlayer p, {bool captainOn = false}) {
     final kit = _FancyPageState._kits[p.teamId];
     final logo = p.teamId == null ? null : teamLogos[p.teamId];
@@ -443,7 +443,7 @@ extension _BuilderV2 on _FancyPageState {
       decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14),
         border: Border.all(color: captainOn ? captainColor : line, width: captainOn ? 2 : 1)),
       child: Column(children: [
-        SizedBox(height: 104, width: 112, child: Stack(fit: StackFit.expand, children: [
+        SizedBox(height: 96, width: 112, child: Stack(fit: StackFit.expand, children: [
           DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [(kit?.c1 ?? const Color(0xFF8A8F98)).withOpacity(0.38), cardBg]))),
@@ -454,10 +454,6 @@ extension _BuilderV2 on _FancyPageState {
               loadingBuilder: (_, child, pr) => pr == null ? child : shirt,
               errorBuilder: (_, __, ___) => shirt)
           else shirt,
-          Positioned(left: 6, top: 6, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: const Color(0xCC000000), borderRadius: BorderRadius.circular(6)),
-            child: Text(_v2PosLabel(p), style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)))),
           if (logo != null) Positioned(left: 6, bottom: 5, child: Container(width: 22, height: 22,
             padding: const EdgeInsets.all(2),
             decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle,
@@ -469,8 +465,11 @@ extension _BuilderV2 on _FancyPageState {
         ])),
         Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 7),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(isArabic ? p.nameAr : p.nameEn, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w900, height: 1.2)),
+            // full name: up to 2 lines, a very long one shrinks a little
+            SizedBox(height: 28, width: double.infinity, child: FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.topStart,
+              child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 96),
+                child: Text(isArabic ? p.nameAr : p.nameEn, maxLines: 2,
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900, height: 1.15))))),
             const SizedBox(height: 1),
             Text(isArabic ? p.teamNameAr : p.teamNameEn, maxLines: 1, overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: muted, fontSize: 10.5, height: 1.2)),
