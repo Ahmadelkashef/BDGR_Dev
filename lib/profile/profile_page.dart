@@ -224,6 +224,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   // ── Profile data ──
   int?    _userId;
+  int     _cupTitles = 0;   // 🏆 كاس بادجر اللي كسبها
   String  _displayName    = '';
   String  _username       = '';
   String? _avatarUrl;
@@ -537,6 +538,15 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadCupTitles(int? id) async {
+    if (id == null) return;
+    try {
+      final r = await _sb.rpc('badger_cup_titles', params: {'p_user_id': id});
+      final n = (r as List?)?.length ?? 0;
+      if (mounted && n != _cupTitles) setState(() => _cupTitles = n);
+    } catch (_) {}
+  }
+
   Future<void> _loadProfile() async {
     if (await _checkBlocked()) return;
     await _loadVisitorContext();
@@ -554,6 +564,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       final d = res[0] as Map<String, dynamic>;
       final officialId = await OfficialAccount.load();
       if (!mounted) return;
+      _loadCupTitles((d['user_id'] as num?)?.toInt());
       setState(() {
         _userId         = (d['user_id'] as num?)?.toInt();
         _isOfficial     = officialId != null && _userId == officialId;
@@ -1476,6 +1487,20 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             ]),
             if (_username.isNotEmpty)
               Text('@$_username', style: const TextStyle(color: _kGray, fontSize: 13)),
+            if (_cupTitles > 0) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0x29FFB300),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0x8CFFB300)),
+                ),
+                child: Text(
+                  AppLang.t('🏆 Badger Cup champion', '🏆 بطل كاس بادجر') + (_cupTitles > 1 ? ' ×$_cupTitles' : ''),
+                  style: const TextStyle(color: Color(0xFFFFB300), fontSize: 12, fontWeight: FontWeight.w800)),
+              ),
+            ],
             if (_isOfficial) ...[
               const SizedBox(height: 6),
               Container(

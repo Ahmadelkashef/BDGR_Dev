@@ -28,6 +28,7 @@ part 'fantasy_mystats.dart';
 part 'fantasy_matches.dart';
 part 'fantasy_builder_v2.dart';
 part 'fantasy_social.dart';
+part 'fantasy_cup.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -1346,6 +1347,7 @@ class _FancyPageState extends State<FancyPage> {
                   style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900))),
           const SizedBox(height: 10),
           _lobbyInfoCard(event),
+          BadgerCupBanner(key: ValueKey('cup_${event.eventId}'), eventId: event.eventId, isArabic: isArabic),
           const SizedBox(height: 14),
           Row(children: [
             Expanded(child: Text(t('MATCHES THIS ROUND','ماتشات الجولة'), maxLines: 1, overflow: TextOverflow.ellipsis,
