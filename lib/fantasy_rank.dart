@@ -570,7 +570,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               if (r['tied'] == true) GestureDetector(
-                onTap: () => showTieBreakSheet(context, widget.isArabic, period: _period, tb: r['tb'] as Map?, name: me ? t('You', 'إنت') : '${r['name']}'),
+                onTap: () => showTieBreakSheet(context, widget.isArabic, period: _period, draft: _mode == 'draft', tb: r['tb'] as Map?, name: me ? t('You', 'إنت') : '${r['name']}'),
                 child: const Padding(padding: EdgeInsetsDirectional.only(end: 4), child: Icon(Icons.info_outline, color: _gold, size: 15))),
               Text('${r['points']}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
             ]),
@@ -687,13 +687,21 @@ class FantasyTieRules extends StatelessWidget {
   final String period;        // round | month | season
   final Map? tb;              // قيم الشخص (لو فاتحها من صف في الترتيب)
   final String? name;
-  const FantasyTieRules({super.key, required this.isArabic, this.period = 'round', this.tb, this.name});
+  final bool draft;           // draft squad: score predictions break the tie
+  const FantasyTieRules({super.key, required this.isArabic, this.period = 'round', this.tb, this.name, this.draft = false});
 
   String t(String en, String ar) => isArabic ? ar : en;
 
   @override
   Widget build(BuildContext context) {
-    final week = [
+    final week = draft ? [
+      ('🎯', t('More exact scores', 'نتايج مظبوطة أكتر'), t('Your score predictions that were exactly right.', 'توقعاتك اللي جت النتيجة بالظبط.'),
+        tb == null || tb!['exact'] == null ? null : '${tb!['exact']}'),
+      ('✅', t('More right results', 'فايز / تعادل صح أكتر'), t('You got the winner (or the draw) right, even if the score was not exact.', 'جبت الفايز أو التعادل صح، حتى لو النتيجة مش بالظبط.'),
+        tb == null || tb!['outcome'] == null ? null : '${tb!['outcome']}'),
+      ('⏱️', t('Saved earlier', 'حفظ التشكيلة بدري'), t('Your final squad was saved earlier (to the second).', 'آخر حفظ لتشكيلتك كان أبدر (بالثانية).'),
+        tb == null || tb!['saved_at'] == null ? null : _fmtTime(DateTime.tryParse('${tb!['saved_at']}')?.toLocal())),
+    ] : [
       ('💰', t('More money left', 'فلوس متبقية أكتر'), t('Same points with a cheaper squad = smarter team.', 'نفس النقط بفلوس أقل = فريق أذكى.'),
         tb == null || tb!['remaining'] == null ? null : '${tb!['remaining']}M'),
       ('©️', t('Higher captain points', 'نقط الكابتن أعلى'), t('Your captain scored more.', 'الكابتن بتاعك جاب نقط أكتر.'),
@@ -757,7 +765,7 @@ class FantasyTieRules extends StatelessWidget {
   String? _fmtDate(DateTime? d) => d == null ? null : '${d.day}/${d.month}/${d.year}';
 }
 
-Future<void> showTieBreakSheet(BuildContext context, bool isArabic, {String period = 'round', Map? tb, String? name}) {
+Future<void> showTieBreakSheet(BuildContext context, bool isArabic, {String period = 'round', Map? tb, String? name, bool draft = false}) {
   return showModalBottomSheet<void>(
     context: context, isScrollControlled: true, backgroundColor: bg,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -768,7 +776,7 @@ Future<void> showTieBreakSheet(BuildContext context, bool isArabic, {String peri
         const SizedBox(height: 12),
         Text(isArabic ? 'لو اتعادلت في النقط' : 'If points are tied', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
         const SizedBox(height: 12),
-        FantasyTieRules(isArabic: isArabic, period: period, tb: tb, name: name),
+        FantasyTieRules(isArabic: isArabic, period: period, tb: tb, name: name, draft: draft),
       ]),
     ),
   );

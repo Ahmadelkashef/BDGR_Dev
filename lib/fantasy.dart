@@ -211,6 +211,8 @@ class FantasyEvent {
   final bool          draftOn;
   final int           draftMaxPerTeam;
   final double        surpriseMult;
+  /// draft tie-break: the matches whose score users predict (chosen in the dashboard, max 2)
+  final List<String>  draftPredict;
 
   FantasyEvent({
     required this.eventId, required this.eventCode,
@@ -218,7 +220,7 @@ class FantasyEvent {
     this.phase = 'open', this.prizes = const [],
     required this.deadlineAt, required this.startAt,
     required this.playerBudget, required this.matches, required this.teamPool,
-    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2,
+    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2, this.draftPredict = const [],
   });
 
   factory FantasyEvent.fromJson(Map<String, dynamic> j) {
@@ -244,6 +246,7 @@ class FantasyEvent {
       draftOn:      j['draft_on'] == true,
       draftMaxPerTeam: (j['draft_max_per_team'] as num?)?.toInt() ?? 4,
       surpriseMult: ((j['surprise_mult'] ?? 2) as num).toDouble(),
+      draftPredict: ((j['draft_predict'] as List?) ?? []).map((e) => e.toString()).toList(),
     );
   }
 }
@@ -471,7 +474,17 @@ class _FancyPageState extends State<FancyPage> {
   List<FancyPlayer> _duelQueue = [];
   FancyPlayer? _duelHold, _duelRival;
   int _duelTotal = 0;
-  final List<List<Object?>> _duelHist = [];  // undo: [hold, rival, queue] before each tap
+  final List<List<Object?>> _duelHist = [];
+  /// draft score predictions (tie-break only): match id → [home, away] (null = not picked yet)
+  final Map<String, List<int?>> _preds = {};
+  List<FantasyMatch> get _predMatches {
+    final ev = currentEvent;
+    if (ev == null) return const [];
+    return [for (final id in ev.draftPredict) ...ev.matches.where((m) => m.matchId == id)];
+  }
+  bool get _predsDone => _predMatches.every((m) { final v = _preds[m.matchId]; return v != null && v[0] != null && v[1] != null; });
+  List<Map<String, dynamic>> get _predsPayload => [for (final m in _predMatches)
+    {'match_id': m.matchId, 'home': _preds[m.matchId]![0], 'away': _preds[m.matchId]![1]}];  // undo: [hold, rival, queue] before each tap
   BuildContext? _duelHoldCtx;               // the holder card (flight start)
   String _layout = '4-3-3';                  // v2 midfield layout: 4-1-4-1 | 4-2-3-1 | 4-3-3 (server formation stays 4-5-1)
   void _v2Set(VoidCallback f) => setState(f);
@@ -532,7 +545,7 @@ class _FancyPageState extends State<FancyPage> {
     } catch (_) {}
   }
   bool   get canSave => selectedCount == 11 && remaining >= 0 && !deadlinePassed && captain != null;
-  bool   get canSaveV2 => selectedCount == squadSize && !deadlinePassed && (isDraft || captain != null); // v2: no budget
+  bool   get canSaveV2 => selectedCount == squadSize && !deadlinePassed && (isDraft ? _predsDone : captain != null); // v2: no budget; draft needs the score predictions
   /// draft-7 round (owner 25 Nov): 7 spots, no captain, "surprise" players score × surpriseMult
   bool   get isDraft => _draftView && (currentEvent?.draftOn ?? false);
   int    get squadSize => isDraft ? 7 : 11;
@@ -666,6 +679,9 @@ class _FancyPageState extends State<FancyPage> {
       }
       if (isDraft) {
         await _sb.rpc('save_fantasy_draft', params: {'p_event_id': currentEvent!.eventId, 'p_slots': slots});
+        if (_predMatches.isNotEmpty) {
+          await _sb.rpc('save_draft_predictions', params: {'p_event_id': currentEvent!.eventId, 'p_preds': _predsPayload});
+        }
       } else {
         await _sb.rpc('save_fantasy_squad', params: {
           'p_event_id':         currentEvent!.eventId,
@@ -714,6 +730,9 @@ class _FancyPageState extends State<FancyPage> {
 
   /// رسالة واضحة لكل سبب رفض من السيرفر (السيرفر هو اللي بيقرر)
   String _saveErrorText(String err) {
+    if (err.contains('predictions_incomplete') || err.contains('no_predictions'))
+      return t('Score predictions changed. Refresh and predict again.', 'ماتشات التوقع اتغيّرت. حدّث وتوقّع تاني.');
+    if (err.contains('no_draft_squad'))     return t('Save your draft team first.', 'احفظ تشكيلة الدرافت الأول.');
     if (err.contains('draft_closed'))       return t('The draft is closed in this round.', 'الدرافت مقفول في الجولة دي.');
     if (err.contains('event_closed'))       return t('This round is closed. The deadline has passed.', 'الجولة اتقفلت، الديدلاين عدّى.');
     if (err.contains('budget_exceeded'))    return t('Budget exceeded.', 'تجاوزت الميزانية.');
@@ -721,7 +740,7 @@ class _FancyPageState extends State<FancyPage> {
     if (err.contains('invalid_squad_size')) return t('Pick $squadSize different players.', 'اختار $squadSize لاعيبة مختلفين.');
     if (err.contains('invalid_player'))     return t('One of the players is not available in this round. Refresh and try again.', 'فيه لاعب مش متاح في الجولة دي. حدّث وجرّب تاني.');
     if (err.contains('invalid_captain'))    return t('Pick a captain from your team.', 'اختار كابتن من فريقك.');
-    if (err.contains('team_limit'))         return t('Max ${currentEvent?.maxPerTeam ?? 3} players from the same team.', 'أقصى ${currentEvent?.maxPerTeam ?? 3} لاعيبة من نفس الفريق.');
+    if (err.contains('team_limit'))         return t('Max ${maxPerTeam ?? 3} players from the same team.', 'أقصى ${maxPerTeam ?? 3} لاعيبة من نفس الفريق.');
     if (err.contains('invalid_formation'))  return t('Pick a valid formation.', 'اختار تشكيل صحيح.');
     return t('Save failed. Try again.', 'فشل الحفظ. حاول تاني.');
   }
@@ -752,6 +771,13 @@ class _FancyPageState extends State<FancyPage> {
               ? Map<String, dynamic>.from(res.first as Map)
               : null;
       if (data == null) return;
+      if (draft) {
+        _preds.clear();
+        for (final x in (data['predictions'] as List?) ?? const []) {
+          final m = Map<String, dynamic>.from(x as Map);
+          _preds['${m['match_id']}'] = [(m['home'] as num?)?.toInt(), (m['away'] as num?)?.toInt()];
+        }
+      }
       final slots = (data['slots'] as List?) ?? [];
       if (slots.isEmpty) return;
       // ولوع التشكيلة
@@ -1995,7 +2021,7 @@ class _FancyPageState extends State<FancyPage> {
         if (phaseOf(currentEvent) == 'open') ...[
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: isDraft ? null : () => showTieBreakSheet(context, isArabic, period: 'round'),
+            onTap: () => showTieBreakSheet(context, isArabic, period: 'round', draft: isDraft),
             child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(color: const Color(0xFF221B0A), borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0x66FFB300))),
@@ -2003,17 +2029,21 @@ class _FancyPageState extends State<FancyPage> {
                 const Text('⚖️', style: TextStyle(fontSize: 16)), const SizedBox(width: 8),
                 Expanded(child: Text(
                   isDraft
-                    ? t('Tied on points? Whoever saved first wins.', 'لو اتعادلت في النقط: اللي حفظ الأول يكسب.')
+                    ? (_predMatches.isEmpty
+                        ? t('Tied on points? Whoever saved first wins.', 'لو اتعادلت في النقط: اللي حفظ الأول يكسب.')
+                        : t('Tied on points? More right score predictions wins, then who saved first.',
+                            'لو اتعادلت في النقط: اللي توقعاته للنتيجة أصح يكسب، بعدها اللي حفظ الأول.'))
                     : t('Tied on points? More money left wins, then captain points, then who saved first.',
                         'لو اتعادلت في النقط: الفلوس المتبقية الأكتر تكسب، بعدها نقط الكابتن، بعدها اللي حفظ الأول.'),
                   style: const TextStyle(color: Colors.white, fontSize: 12.5, height: 1.35))),
-                if (!isDraft) ...[
+                ...[
                   const SizedBox(width: 6),
                   Text(t('Details', 'التفاصيل'), style: const TextStyle(color: Color(0xFFFFB300), fontSize: 12, fontWeight: FontWeight.w800)),
                 ],
               ])),
           ),
         ],
+        if (isDraft && _predMatches.isNotEmpty) ...[const SizedBox(height: 8), this.d7MyPredStrip()],
       ])),
       Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: (formation == '4-5-1' || formation == '2-3-1') ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
     ]);
@@ -3239,6 +3269,10 @@ class _UserSquadPageState extends State<_UserSquadPage> {
         ])),
         const SizedBox(height: 6),
         _buildHeader(),
+        if (widget.draft && ((_squad?['predictions'] as List?)?.isNotEmpty ?? false))
+          Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: DraftPredictStrip(
+            isArabic: widget.isArabic, mine: false,
+            rows: [for (final x in (_squad!['predictions'] as List)) PredRow.fromPublic(Map<String, dynamic>.from(x as Map))])),
         const SizedBox(height: 10),
         // pitch
         Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),

@@ -320,12 +320,21 @@ extension _BuilderV2 on _FancyPageState {
       body = _v2Layouts();
       action = _v2Button(t('Next: goalkeeper', 'يلا نختار الحارس'), () => _v2Set(() { _gStage = 1; formation = '4-5-1'; }));
     } else if (stage == 2 && isDraft) {
-      title = t('Your team is ready', 'فريقك جاهز');
-      final sur = pickedPlayers.where((p) => p.surprise).length;
-      sub = sur == 0 ? null : t('$sur surprise ×${_multText()}', '$sur مفاجأة ×${_multText()}');
-      body = _v2CaptainCards(pickOnly: true);
+      final pm = _predMatches;
+      if (pm.isEmpty) {
+        title = t('Your team is ready', 'فريقك جاهز');
+        final sur = pickedPlayers.where((p) => p.surprise).length;
+        sub = sur == 0 ? null : t('$sur surprise ×${_multText()}', '$sur مفاجأة ×${_multText()}');
+        body = _v2CaptainCards(pickOnly: true);
+      } else {
+        // last step: predict the score(s) — tie-break only, no points
+        title = pm.length == 1 ? t('Predict the score', 'توقّع النتيجة') : t('Predict the scores', 'توقّع النتيجتين');
+        sub = t('tie-break only', 'لفك التعادل بس');
+        body = Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: _d7PredEditor(_preds, _v2Set));
+      }
       action = _v2Button(
-        deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين') : t('SAVE TEAM', 'حفظ الفريق'),
+        deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين')
+          : !_predsDone ? t('Predict the score first', 'توقّع النتيجة الأول') : t('SAVE TEAM', 'حفظ الفريق'),
         canSaveV2 && !_saving ? _v2Save : null, busy: _saving);
     } else if (stage == 2) {
       title = t('Pick your captain', 'اختار الكابتن');
@@ -721,6 +730,94 @@ extension _BuilderV2 on _FancyPageState {
     _v2Set(() { _flown.add(hold.id); _landedId = hold.id; });
   }
 
+  // ── draft score predictions (tie-break only) ────────────────────────────────
+  /// one row per chosen match: home crest+name · ▲N▼ - ▲N▼ · away name+crest (empty = "؟")
+  Widget _d7PredEditor(Map<String, List<int?>> vals, void Function(VoidCallback) set) {
+    Widget arrow(IconData i, VoidCallback f) => GestureDetector(behavior: HitTestBehavior.opaque,
+      onTap: () { HapticFeedback.selectionClick(); set(f); },
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1), child: Icon(i, color: Colors.white70, size: 22)));
+    Widget box(List<int?> v, int side) => Column(mainAxisSize: MainAxisSize.min, children: [
+      arrow(Icons.keyboard_arrow_up_rounded, () => v[side] = ((v[side] ?? -1) + 1).clamp(0, 15).toInt()),
+      Container(width: 40, height: 36, alignment: Alignment.center,
+        decoration: BoxDecoration(color: v[side] == null ? surface2 : const Color(0x26FF1A1A), borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: v[side] == null ? line : brandRed, width: 1.4)),
+        child: Text(v[side]?.toString() ?? '؟', style: TextStyle(color: v[side] == null ? muted : Colors.white,
+          fontSize: 18, fontWeight: FontWeight.w900))),
+      arrow(Icons.keyboard_arrow_down_rounded, () => v[side] = ((v[side] ?? 1) - 1).clamp(0, 15).toInt()),
+    ]);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      for (final m in _predMatches) Builder(builder: (_) {
+        final v = vals.putIfAbsent(m.matchId, () => [null, null]);
+        return Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(children: [
+          Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            Flexible(child: Text(isArabic ? m.homeNameAr : m.homeNameEn, maxLines: 2, textAlign: TextAlign.end,
+              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
+            const SizedBox(width: 6), predCrest(m.homeLogoUrl, m.homeNameEn, 26),
+          ])),
+          const SizedBox(width: 8), box(v, 0),
+          const Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Text('-', style: TextStyle(color: muted, fontSize: 18, fontWeight: FontWeight.w900))),
+          box(v, 1), const SizedBox(width: 8),
+          Expanded(child: Row(children: [
+            predCrest(m.awayLogoUrl, m.awayNameEn, 26), const SizedBox(width: 6),
+            Flexible(child: Text(isArabic ? m.awayNameAr : m.awayNameEn, maxLines: 2,
+              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
+          ])),
+        ]));
+      }),
+    ]);
+  }
+
+  /// "🎯 my predictions" under the my-squad header; before the deadline a tap edits them (saved_at stays the same)
+  Widget d7MyPredStrip() {
+    final rows = [for (final m in _predMatches) PredRow(
+      homeEn: m.homeNameEn, homeAr: m.homeNameAr, homeLogo: m.homeLogoUrl,
+      awayEn: m.awayNameEn, awayAr: m.awayNameAr, awayLogo: m.awayLogoUrl,
+      ph: _preds[m.matchId]?[0], pa: _preds[m.matchId]?[1],
+      hs: m.finished ? m.homeScore : null, as: m.finished ? m.awayScore : null)];
+    return DraftPredictStrip(rows: rows, isArabic: isArabic, mine: true,
+      onEdit: phaseOf(currentEvent) == 'open' ? _d7EditPreds : null);
+  }
+
+  Future<void> _d7EditPreds() async {
+    final ev = currentEvent;
+    if (ev == null) return;
+    final vals = {for (final m in _predMatches) m.matchId: List<int?>.of(_preds[m.matchId] ?? [null, null])};
+    var busy = false;
+    final ok = await showModalBottomSheet<bool>(
+      context: context, useRootNavigator: true, useSafeArea: true, isScrollControlled: true, backgroundColor: const Color(0xFF111114),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, ss) {
+        final done = vals.values.every((v) => v[0] != null && v[1] != null);
+        return Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          Text(t('🎯 Your score predictions', '🎯 توقعاتك للنتيجة'), style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(t('Tie-break only. Changing them does not change when you saved.', 'لفك التعادل بس. تعديلها مش بيغيّر وقت حفظ تشكيلتك.'),
+            textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 12)),
+          const SizedBox(height: 10),
+          _d7PredEditor(vals, ss),
+          const SizedBox(height: 12),
+          _v2Button(done ? t('SAVE', 'حفظ') : t('Predict the score first', 'توقّع النتيجة الأول'),
+            !done || busy ? null : () async {
+              ss(() => busy = true);
+              try {
+                await _sb.rpc('save_draft_predictions', params: {'p_event_id': ev.eventId,
+                  'p_preds': [for (final e in vals.entries) {'match_id': e.key, 'home': e.value[0], 'away': e.value[1]}]});
+                if (ctx.mounted) Navigator.of(ctx).pop(true);
+              } catch (e) {
+                ss(() => busy = false);
+                _showSnack(_saveErrorText(e.toString()));
+              }
+            }, busy: busy),
+        ]));
+      }));
+    if (ok == true && mounted) {
+      _v2Set(() { _preds..clear()..addAll(vals); });
+      _showSnack(t('Predictions saved ✓', 'التوقعات اتحفظت ✓'));
+    }
+  }
+
   /// "2" / "1.5" (the surprise multiplier from the DB)
   String _multText() {
     final m = currentEvent?.surpriseMult ?? 2;
@@ -904,4 +1001,86 @@ class _FlyingCardState extends State<_FlyingCard> with SingleTickerProviderState
           ]))),
       ]);
     })));
+}
+
+
+// ── draft score predictions: shared by my squad + another user's draft squad ──
+Widget predCrest(String? url, String nameEn, double size) {
+  final fb = TeamInitialsCrest(name: nameEn, size: size);
+  if (url == null || url.isEmpty) return SizedBox(width: size, height: size, child: fb);
+  return SizedBox(width: size, height: size, child: _netImage(url, width: size, height: size, fit: BoxFit.contain, fallback: fb));
+}
+
+class PredRow {
+  final String homeEn, homeAr, awayEn, awayAr;
+  final String? homeLogo, awayLogo;
+  final int? ph, pa, hs, as;   // predicted / real (real = null until the result)
+  const PredRow({required this.homeEn, required this.homeAr, this.homeLogo, required this.awayEn, required this.awayAr,
+    this.awayLogo, this.ph, this.pa, this.hs, this.as});
+  factory PredRow.fromPublic(Map<String, dynamic> j) {
+    final h = Map<String, dynamic>.from((j['home_team'] as Map?) ?? const {});
+    final a = Map<String, dynamic>.from((j['away_team'] as Map?) ?? const {});
+    return PredRow(homeEn: '${h['name_en'] ?? ''}', homeAr: '${h['name_ar'] ?? h['name_en'] ?? ''}', homeLogo: h['logo'] as String?,
+      awayEn: '${a['name_en'] ?? ''}', awayAr: '${a['name_ar'] ?? a['name_en'] ?? ''}', awayLogo: a['logo'] as String?,
+      ph: (j['home'] as num?)?.toInt(), pa: (j['away'] as num?)?.toInt(),
+      hs: (j['home_score'] as num?)?.toInt(), as: (j['away_score'] as num?)?.toInt());
+  }
+  /// 2 = exact, 1 = right winner/draw, 0 = wrong, null = no result yet / no prediction
+  int? get grade {
+    if (hs == null || as == null || ph == null || pa == null) return null;
+    if (ph == hs && pa == as) return 2;
+    return (ph! - pa!).sign == (hs! - as!).sign ? 1 : 0;
+  }
+}
+
+class DraftPredictStrip extends StatelessWidget {
+  final List<PredRow> rows;
+  final bool isArabic, mine;
+  final VoidCallback? onEdit;
+  const DraftPredictStrip({super.key, required this.rows, required this.isArabic, required this.mine, this.onEdit});
+  String t(String en, String ar) => isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget mark(int? g) => g == null ? const SizedBox(width: 18)
+      : SizedBox(width: 18, child: Text(g == 2 ? '🎯' : g == 1 ? '✅' : '✖️', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)));
+    return GestureDetector(onTap: onEdit, child: Container(
+      width: double.infinity, padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: line)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          Expanded(child: Text(mine ? t('🎯 My score predictions · tie-break', '🎯 توقعاتي · لفك التعادل')
+                                    : t('🎯 Score predictions · tie-break', '🎯 توقعاته · لفك التعادل'),
+            style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          if (onEdit != null) Text(t('Edit', 'تعديل'), style: const TextStyle(color: brandRed, fontSize: 11.5, fontWeight: FontWeight.w800)),
+        ]),
+        for (final r in rows) Padding(padding: const EdgeInsets.only(top: 6), child: Row(children: [
+          Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            Flexible(child: Text(isArabic ? r.homeAr : r.homeEn, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
+            const SizedBox(width: 5), predCrest(r.homeLogo, r.homeEn, 18),
+          ])),
+          Container(margin: const EdgeInsets.symmetric(horizontal: 8), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(7)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // home number sits on the home side (right in Arabic), like the names
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                for (final x in ['${r.ph ?? '؟'}', ' - ', '${r.pa ?? '؟'}'])
+                  Text(x, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+              ]),
+              if (r.hs != null && r.as != null) Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(t('FT ', 'النتيجة '), style: const TextStyle(color: muted, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                for (final x in ['${r.hs}', '-', '${r.as}'])
+                  Text(x, style: const TextStyle(color: muted, fontSize: 9.5, fontWeight: FontWeight.w700)),
+              ]),
+            ])),
+          Expanded(child: Row(children: [
+            predCrest(r.awayLogo, r.awayEn, 18), const SizedBox(width: 5),
+            Flexible(child: Text(isArabic ? r.awayAr : r.awayEn, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
+          ])),
+          mark(r.grade),
+        ])),
+      ])));
+  }
 }
