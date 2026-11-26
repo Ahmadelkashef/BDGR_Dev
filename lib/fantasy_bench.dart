@@ -65,8 +65,7 @@ extension _Bench on _FancyPageState {
     final ev = currentEvent;
     if (ev == null || !(_hasSquad || saved)) return;
     try {
-      await _sb.rpc('save_fantasy_draft_subs', params: {'p_event_id': ev.eventId, 'p_subs': _benchPayload});
-      _showSnack(t('Bench saved ✓', 'الاحتياطي اتحفظ ✓'));
+      await _sb.rpc('save_fantasy_draft_subs', params: {'p_event_id': ev.eventId, 'p_subs': _benchPayload});   // quiet on success
     } catch (e) {
       final s = e.toString();
       _showSnack(s.contains('team_limit') ? t('Max ${maxPerTeam ?? 4} players from the same club (bench included).', 'أقصى ${maxPerTeam ?? 4} من نفس النادي (مع الاحتياطي).')
@@ -75,50 +74,82 @@ extension _Bench on _FancyPageState {
     }
   }
 
-  /// the bench row: [GK] [1] [2] [3]
+  /// the bench row: [GK] [1] [2] [3] — photo, name, position; drag 1/2/3 onto each other to change the order
   Widget _benchRow({required bool editable, bool autoSave = false}) {
-    Widget chip(FancyPlayer? p, String code, VoidCallback? onTap) {
+    Widget face(FancyPlayer? p, String code, {bool hot = false, bool ghost = false}) {
       final empty = p == null;
-      return Expanded(child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          height: 54, margin: const EdgeInsets.symmetric(horizontal: 3),
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(color: empty ? Colors.transparent : cardBg, borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: empty ? Colors.white24 : line)),
-          child: Row(children: [
-            Container(width: 20, height: 20, alignment: Alignment.center,
-              decoration: BoxDecoration(color: code == 'GK' ? const Color(0xFF2E7D32) : surface2, shape: BoxShape.circle),
-              child: Text(code, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900))),
-            const SizedBox(width: 4),
-            Expanded(child: empty
-              ? Icon(Icons.add_rounded, color: editable ? Colors.white54 : Colors.white12, size: 20)
-              : Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(isArabic ? p.nameAr : p.nameEn, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800)),
-                  Text(_benchLineLabel(_benchLine(p)), maxLines: 1,
-                    style: const TextStyle(color: muted, fontSize: 9.5)),
-                ])),
-          ]))));
+      return AnimatedContainer(duration: const Duration(milliseconds: 150),
+        height: 96, margin: const EdgeInsets.symmetric(horizontal: 3),
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+        decoration: BoxDecoration(color: empty ? Colors.transparent : cardBg, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: hot ? brandRed : empty ? Colors.white24 : line, width: hot ? 1.6 : 1)),
+        child: Opacity(opacity: ghost ? 0.35 : 1, child: Stack(clipBehavior: Clip.none, children: [
+          Positioned.fill(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (empty)
+              Icon(Icons.add_rounded, color: editable ? Colors.white54 : Colors.white12, size: 26)
+            else ...[
+              this._sheetAvatar(p, 40),
+              const SizedBox(height: 4),
+              Text(isArabic ? p.nameAr : p.nameEn, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800, height: 1.1)),
+              Text(_benchLineLabel(_benchLine(p)), maxLines: 1, textAlign: TextAlign.center,
+                style: const TextStyle(color: muted, fontSize: 9.5, height: 1.2)),
+            ],
+          ])),
+          PositionedDirectional(start: 0, top: 0, child: Container(width: 18, height: 18, alignment: Alignment.center,
+            decoration: BoxDecoration(color: code == 'GK' ? const Color(0xFF2E7D32) : surface2, shape: BoxShape.circle),
+            child: Text(code, style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900)))),
+        ])));
     }
     void act(int i) {
       final p = i == 0 ? _benchGk : _benchOut[i - 1];
       if (!editable) { if (p != null) _openPlayerInfoDialog(p); return; }
       if (p == null) { _benchPick(i, autoSave: autoSave); } else { _benchMenu(i, autoSave: autoSave); }
     }
+    Future<void> swap(int a, int b) async {   // outfield indexes 0..2
+      if (a == b) return;
+      HapticFeedback.selectionClick();
+      _v2Set(() {
+        final x = _benchOut[a]; _benchOut[a] = _benchOut[b]; _benchOut[b] = x;
+        _benchCompact();
+        if (!autoSave) saved = false;
+      });
+      if (autoSave) await _benchSave();
+    }
+    Widget outChip(int k) {
+      final p = _benchOut[k];
+      final tile = GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => act(k + 1), child: face(p, '${k + 1}'));
+      if (!editable || p == null) return Expanded(child: tile);
+      return Expanded(child: DragTarget<int>(
+        onWillAcceptWithDetails: (d) => d.data != k,
+        onAcceptWithDetails: (d) => swap(d.data, k),
+        builder: (_, cand, __) {
+          final hot = cand.isNotEmpty;
+          return LayoutBuilder(builder: (_, cons) => LongPressDraggable<int>(
+            data: k,
+            delay: const Duration(milliseconds: 180),
+            hapticFeedbackOnStart: true,
+            feedback: Material(color: Colors.transparent, child: SizedBox(width: cons.maxWidth, child: face(p, '${k + 1}', hot: true))),
+            childWhenDragging: face(p, '${k + 1}', ghost: true),
+            child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => act(k + 1), child: face(p, '${k + 1}', hot: hot))));
+        }));
+    }
+    final filled = _benchOut.whereType<FancyPlayer>().length;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
         Text(t('BENCH', 'الاحتياطي'), style: const TextStyle(color: muted, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w900)),
         const SizedBox(width: 6),
-        Expanded(child: Text(t('optional · comes in if a starter does not play', 'اختياري · بينزل لو لاعب أساسي مالعبش'),
+        Expanded(child: Text(
+          editable && filled > 1
+            ? t('hold & drag to change the order', 'دوس مطوّل واسحب علشان تغيّر الترتيب')
+            : t('optional · comes in if a starter does not play', 'اختياري · بينزل لو لاعب أساسي مالعبش'),
           maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 10.5))),
         GestureDetector(onTap: _benchHelp, child: const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 16)),
       ]),
       const SizedBox(height: 6),
       Row(children: [
-        chip(_benchGk, 'GK', () => act(0)),
-        for (var i = 0; i < 3; i++) chip(_benchOut[i], '${i + 1}', () => act(i + 1)),
+        Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => act(0), child: face(_benchGk, 'GK'))),
+        for (var k = 0; k < 3; k++) outChip(k),
       ]),
     ]);
   }
@@ -178,9 +209,10 @@ extension _Bench on _FancyPageState {
         const SizedBox(height: 8),
         ListTile(leading: const Icon(Icons.swap_horiz_rounded, color: Colors.white), title: Text(t('Change', 'غيّره'), style: const TextStyle(color: Colors.white)),
           onTap: () => Navigator.pop(ctx, 'change')),
-        if (i > 1) ListTile(leading: const Icon(Icons.arrow_upward_rounded, color: Colors.white),
-          title: Text(t('Move up (comes in earlier)', 'قدّمه (ينزل بدري)'), style: const TextStyle(color: Colors.white)),
-          onTap: () => Navigator.pop(ctx, 'up')),
+        if (i > 0) for (var k = 1; k <= 3; k++)
+          if (k != i && _benchOut[k - 1] != null) ListTile(leading: const Icon(Icons.swap_vert_rounded, color: Colors.white),
+            title: Text(t('Swap with sub $k', 'بدّله مع احتياطي $k'), style: const TextStyle(color: Colors.white)),
+            onTap: () => Navigator.pop(ctx, 'swap$k')),
         ListTile(leading: const Icon(Icons.info_outline_rounded, color: Colors.white), title: Text(t('Player info', 'معلومات اللاعب'), style: const TextStyle(color: Colors.white)),
           onTap: () => Navigator.pop(ctx, 'info')),
         ListTile(leading: const Icon(Icons.remove_circle_outline_rounded, color: Color(0xFFFF5C5C)),
@@ -197,9 +229,10 @@ extension _Bench on _FancyPageState {
       _v2Set(() {
         if (a == 'remove') {
           if (i == 0) { _benchGk = null; } else { _benchOut[i - 1] = null; _benchCompact(); }
-        } else if (a == 'up' && i > 1) {
-          final x = _benchOut[i - 2];
-          _benchOut[i - 2] = _benchOut[i - 1];
+        } else if (a.startsWith('swap') && i > 0) {
+          final k = int.parse(a.substring(4)) - 1;
+          final x = _benchOut[k];
+          _benchOut[k] = _benchOut[i - 1];
           _benchOut[i - 1] = x;
         }
         if (!autoSave) saved = false;
