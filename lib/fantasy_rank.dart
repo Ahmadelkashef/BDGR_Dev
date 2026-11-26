@@ -440,13 +440,13 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
       Text(_periodTitle, style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w600)),
       const SizedBox(height: 18),
       // 3 · 2 · 1 left → right in both languages (the winner stands on the right, tallest)
-      SizedBox(height: 300, child: Directionality(textDirection: TextDirection.ltr, child: Row(
+      SizedBox(height: 350, child: Directionality(textDirection: TextDirection.ltr, child: Row(
         crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: _podiumSpot(at(2), 3, 118, prizeFor(3))),
-          const SizedBox(width: 14),
-          Expanded(child: _podiumSpot(at(1), 2, 150, prizeFor(2))),
-          const SizedBox(width: 14),
-          Expanded(child: _podiumSpot(at(0), 1, 186, prizeFor(1))),
+          Expanded(child: _podiumSpot(at(2), 3, 150, prizeFor(3))),
+          const SizedBox(width: 10),
+          Expanded(child: _podiumSpot(at(1), 2, 192, prizeFor(2))),
+          const SizedBox(width: 10),
+          Expanded(child: _podiumSpot(at(0), 1, 236, prizeFor(1))),
         ]))),
     ]);
   }
@@ -467,17 +467,17 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           style: const TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w600)),
         const SizedBox(height: 10),
         Container(
-          height: barH, width: double.infinity,
+          height: barH, width: 78,   // slim, tall bars (owner)
           decoration: BoxDecoration(
             color: first ? brandRed.withOpacity(0.16) : _bar,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: first ? brandRed.withOpacity(0.45) : _barLine)),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Text('$place', style: TextStyle(color: Colors.white, fontSize: first ? 34 : 28, fontWeight: FontWeight.w300, height: 1)),
             if (prize != null) ...[
               const SizedBox(height: 8),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: FittedBox(
-                child: Text(prize, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)))),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: FittedBox(
+                child: Text(prize, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700)))),
             ],
           ]),
         ),
