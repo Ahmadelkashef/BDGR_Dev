@@ -26,6 +26,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   // modes from the DB (fantasy_modes): draft → draft ranking · normal → normal · both → a menu
   String _mode = _FancyPageState._modes == 'normal' ? 'normal' : 'draft';
   String? _leagueId;
+  bool _showRest = false;   // places 4+ hidden until "Show 4 – 10"
   /// the server answers with its own mode: a round with no draft (e.g. Round 1) comes back as the normal ranking
   bool get _boardDraft => ((_board?['mode'] as String?) ?? _mode) == 'draft';
 
@@ -91,7 +92,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   Future<void> _loadBoard({bool more = false}) async {
     if (_key == null) { setState(() { _loading = false; _board = null; _rows = []; }); return; }
     final tok = ++_token;
-    setState(() { if (more) { _loadingMore = true; } else { _loading = true; _error = null; } });
+    setState(() { if (more) { _loadingMore = true; } else { _loading = true; _error = null; _showRest = false; } });
     try {
       final r = Map<String, dynamic>.from(await _sb.rpc(_mode == 'draft' ? 'fantasy_leaderboard_draft' : 'fantasy_leaderboard', params: {
         'p_type': _type, 'p_period': _period, 'p_key': _key, 'p_scope': _scope,
@@ -228,7 +229,10 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
           child: Text(t('Still running — points are added after each round finishes.', 'لسه شغال — النقط بتتضاف بعد ما كل جولة تخلص.'),
             style: const TextStyle(color: muted, fontSize: 12)))),
-      if (rest.isNotEmpty) SliverPadding(
+      // places 4+ stay hidden until asked: "Show 4 – 10", then 10 more each time
+      if (!_showRest && rest.isNotEmpty) _moreButton(t('Show 4 – ${rest.length + 3}', 'اعرض من 4 لـ ${rest.length + 3}'),
+        () => setState(() => _showRest = true)),
+      if (_showRest && rest.isNotEmpty) SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         sliver: SliverList.separated(
           itemCount: rest.length,
@@ -236,18 +240,22 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           itemBuilder: (_, i) => _row(rest[i]),
         ),
       ),
-      if (_rows.length < total)
-        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          child: Center(child: TextButton(
-            onPressed: _loadingMore ? null : () => _loadBoard(more: true),
-            style: TextButton.styleFrom(foregroundColor: Colors.white70, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF2A2D32)))),
-            child: _loadingMore
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: muted))
-              : Text(t('Show more', 'اعرض أكتر'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-          )))),
+      if (_showRest && _rows.length < total)
+        _moreButton(t('Show ${_rows.length + 1} – ${(_rows.length + 10).clamp(0, total)}', 'اعرض من ${_rows.length + 1} لـ ${(_rows.length + 10).clamp(0, total)}'),
+          _loadingMore ? null : () => _loadBoard(more: true), busy: _loadingMore),
     ];
   }
+
+  Widget _moreButton(String label, VoidCallback? onTap, {bool busy = false}) => SliverToBoxAdapter(child: Padding(
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+    child: Center(child: TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(foregroundColor: Colors.white70, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: const BorderSide(color: Color(0xFF2A2D32)))),
+      child: busy
+        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: muted))
+        : Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+    ))));
 
   // ─── controls ──────────────────────────────────────────────────────────
   String get _scopeLabel {
@@ -439,15 +447,15 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
       const SizedBox(height: 2),
       Text(_periodTitle, style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w600)),
       const SizedBox(height: 18),
-      // 3 · 2 · 1 left → right in both languages (the winner stands on the right, tallest)
-      SizedBox(height: 350, child: Directionality(textDirection: TextDirection.ltr, child: Row(
+      // 1 · 2 · 3 in reading order: English 1 on the left, Arabic 1 on the right
+      SizedBox(height: 350, child: Row(
         crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: _podiumSpot(at(2), 3, 150, prizeFor(3))),
+          Expanded(child: _podiumSpot(at(0), 1, 236, prizeFor(1))),
           const SizedBox(width: 10),
           Expanded(child: _podiumSpot(at(1), 2, 192, prizeFor(2))),
           const SizedBox(width: 10),
-          Expanded(child: _podiumSpot(at(0), 1, 236, prizeFor(1))),
-        ]))),
+          Expanded(child: _podiumSpot(at(2), 3, 150, prizeFor(3))),
+        ])),
     ]);
   }
 
