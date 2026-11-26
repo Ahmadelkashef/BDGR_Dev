@@ -265,8 +265,10 @@ class _Fan {
 /// slides up + fades in, [index] × [stepMs] after the page is ready (after the intro)
 class StaggerIn extends StatefulWidget {
   const StaggerIn({super.key, required this.child, this.index = 0, this.dy = 18, this.stepMs = 70,
-      this.delayMs = 0, this.durationMs = 460});
+      this.delayMs = 0, this.durationMs = 460, this.gate = true});
   final Widget child;
+  /// true = wait for the fantasy intro; false for pages pushed on top (they can open from a link)
+  final bool gate;
   final int index, stepMs, delayMs, durationMs;
   final double dy;
   @override
@@ -293,7 +295,7 @@ class _StaggerInState extends State<StaggerIn> with SingleTickerProviderStateMix
   void _kick() {
     if (!mounted || _timer != null || _c.value > 0 || _c.isAnimating) return;
     if (motionCalm(context)) { _c.value = 1; return; }
-    if (!FantasyMotion.ready.value) return;
+    if (widget.gate && !FantasyMotion.ready.value) return;
     final idx = widget.index.clamp(0, 12);
     _timer = Timer(Duration(milliseconds: widget.delayMs + idx * widget.stepMs), () { if (mounted) _c.forward(); });
   }
@@ -458,4 +460,37 @@ class _ShineSweepState extends State<ShineSweep> with SingleTickerProviderStateM
             stops: [0.30, 0.5, 0.70]))));
       })))),
   ]);
+}
+
+/// a soft border glow that breathes (to say "this spot is waiting for you")
+class GlowPulse extends StatefulWidget {
+  const GlowPulse({super.key, required this.child, this.color = const Color(0xFFFFB300), this.radius = 12, this.on = true});
+  final Widget child;
+  final Color color;
+  final double radius;
+  final bool on;
+  @override
+  State<GlowPulse> createState() => _GlowPulseState();
+}
+
+class _GlowPulseState extends State<GlowPulse> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1300));
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.on || motionCalm(context)) { _c.stop(); } else if (!_c.isAnimating) { _c.repeat(reverse: true); }
+  }
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.on) return widget.child;
+    return Stack(children: [
+      widget.child,
+      Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _c, builder: (_, __) => DecoratedBox(
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(widget.radius),
+          border: Border.all(color: widget.color.withOpacity(0.25 + 0.6 * _c.value), width: 1.4),
+          boxShadow: [BoxShadow(color: widget.color.withOpacity(0.18 * _c.value), blurRadius: 12)]))))),
+    ]);
+  }
 }

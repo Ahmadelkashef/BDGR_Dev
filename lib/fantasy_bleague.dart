@@ -153,8 +153,24 @@ class _BLeaguePage extends StatefulWidget {
   State<_BLeaguePage> createState() => _BLeaguePageState();
 }
 
+/// table first page kept on the phone (it only changes when a round is closed) → no DB call on every open
+class _BLBoardCache {
+  static String? month;
+  static DateTime? at;
+  static List<Map<String, dynamic>> items = [];
+  static bool more = false;
+  static int total = 0;
+  static Map<String, dynamic>? mine;
+  static bool get fresh => at != null && DateTime.now().difference(at!) < const Duration(minutes: 10);
+  static void clear() { at = null; }
+}
+
 class _BLeaguePageState extends State<_BLeaguePage> {
   Map<String, dynamic>? _home;
+  Map<String, dynamic>? _mine;            // my team's row in the table (rank null = not in the table yet)
+  int _minMembers = 2;
+  final Set<int> _animated = {};          // table rows that already played their entrance
+  int _animFrom = 0;
   bool _loading = true, _failed = false;
   int _tab = 0; // 0 فريقي · 1 الترتيب
   final List<Map<String, dynamic>> _board = [];
@@ -183,22 +199,75 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     }
   }
 
+  static const _page = 20;
+
   Future<void> _loadBoard({bool reset = false}) async {
     if (_boardBusy) return;
+    final month = _home?['month'] as String?;
+    // first open of the tab: use the copy on the phone when it is fresh
+    if (!reset && _board.isEmpty && _BLBoardCache.fresh && _BLBoardCache.month == month) {
+      setState(() {
+        _board.addAll(_BLBoardCache.items);
+        _boardMore = _BLBoardCache.more; _boardTotal = _BLBoardCache.total; _mine = _BLBoardCache.mine;
+        _animFrom = 0; _animated.clear();
+      });
+      return;
+    }
     _boardBusy = true;
-    if (reset) _board.clear();
+    if (reset) { _board.clear(); _animated.clear(); }
+    setState(() {});
     try {
-      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board', params: {'p': {'offset': _board.length, 'limit': 30}}) as Map);
+      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board', params: {'p': {'offset': _board.length, 'limit': _page}}) as Map);
       if (!mounted) return;
       setState(() {
+        _animFrom = _board.length;
         _board.addAll(((r['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
         _boardMore = r['has_more'] == true;
         _boardTotal = (r['total'] as num?)?.toInt() ?? 0;
+        _mine = r['mine'] is Map ? Map<String, dynamic>.from(r['mine'] as Map) : null;
+        _minMembers = (r['min_members'] as num?)?.toInt() ?? _minMembers;
       });
-    } catch (_) {} finally { _boardBusy = false; }
+      _BLBoardCache
+        ..month = r['month'] as String?
+        ..at = DateTime.now()
+        ..items = List.of(_board)
+        ..more = _boardMore
+        ..total = _boardTotal
+        ..mine = _mine;
+    } catch (_) {} finally { _boardBusy = false; if (mounted) setState(() {}); }
+  }
+
+  /// my place in the table: one small call for the 11 rows around my rank
+  Future<void> _showAround() async {
+    final m = _mine;
+    final rank = (m?['rank'] as num?)?.toInt();
+    if (m == null || rank == null) { setState(() => _tab = 0); return; }
+    List<Map<String, dynamic>> rows = [];
+    try {
+      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board',
+          params: {'p': {'offset': math.max(0, rank - 6), 'limit': 11}}) as Map);
+      rows = ((r['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {}
+    if (!mounted || rows.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context, useRootNavigator: true, useSafeArea: true, backgroundColor: bg,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Directionality(textDirection: ar ? TextDirection.rtl : TextDirection.ltr, child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 12),
+          Text(t('Your place in the table', 'مكانك في الترتيب'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          for (var i = 0; i < rows.length; i++)
+            StaggerIn(index: i, gate: false, dy: 14, stepMs: 45, child: _boardRow(rows[i], rows[i]['id'] == m['id'])),
+        ]),
+      )),
+    );
   }
 
   Map? get _team => _home?['team'] as Map?;
+  int get _min => (_team?['min_members'] as num?)?.toInt() ?? _minMembers;
   List<String> get _icons => ((_home?['icons'] as List?)?.map((e) => '$e').toList()) ?? _kBLIcons;
   List<String> get _colors => ((_home?['colors'] as List?)?.map((e) => '$e').toList()) ?? _kBLColors;
 
@@ -215,6 +284,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     );
     if (res != null && mounted) {
       setState(() { _home = {...?_home, 'team': res}; _tab = 0; });
+      _BLBoardCache.clear(); _board.clear(); _lsAt = null;
       if (team == null) _invite(res);
     }
   }
@@ -276,6 +346,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
       if (r['error'] != null) { _snack(_blErr(r['error'] as Object, ar)); return; }
       HapticFeedback.mediumImpact();
       setState(() { _home = {...?_home, 'team': r}; _tab = 0; });
+      _BLBoardCache.clear(); _board.clear(); _lsAt = null;
       _snack(t('Welcome to ${r['name']}! 🥇', 'أهلًا بيك في ${r['name']}! 🥇'));
     } catch (e) {
       if (mounted) _snack(_blErr(e, ar));
@@ -315,25 +386,51 @@ class _BLeaguePageState extends State<_BLeaguePage> {
                       width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                       decoration: BoxDecoration(color: _blGold.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: _blGold.withValues(alpha: 0.5))),
-                      child: Text(t('🎁 Monthly prize (all 5 of the winning team): $prize', '🎁 جايزة الشهر (للخمسة في الفريق الأول): $prize'),
+                      child: Text(t('🎁 Monthly prize (every player of the winning team): $prize', '🎁 جايزة الشهر (لكل لاعيبة الفريق الأول): $prize'),
                           style: const TextStyle(color: _blGold, fontSize: 12.5, fontWeight: FontWeight.w800, height: 1.35)),
                     )),
                   Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: line)),
-                    child: Row(children: [
-                      for (final (i, l) in [(0, t('My team', 'فريقي')), (1, t('Table', 'الترتيب'))])
-                        Expanded(child: GestureDetector(
-                          onTap: () { setState(() => _tab = i); if (i == 1 && _board.isEmpty) _loadBoard(); },
-                          child: AnimatedContainer(duration: const Duration(milliseconds: 160),
-                            padding: const EdgeInsets.symmetric(vertical: 9),
-                            decoration: BoxDecoration(color: _tab == i ? surface2 : Colors.transparent, borderRadius: BorderRadius.circular(10)),
-                            alignment: Alignment.center,
-                            child: Text(l, style: TextStyle(color: _tab == i ? Colors.white : muted, fontWeight: FontWeight.w800, fontSize: 13.5))),
-                        )),
+                    child: Stack(children: [
+                      // the selected pill slides between the tabs
+                      Positioned.fill(child: AnimatedAlign(
+                        duration: const Duration(milliseconds: 320), curve: Curves.easeOutBack,
+                        alignment: _tab == 0 ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+                        child: FractionallySizedBox(widthFactor: 0.5, heightFactor: 1, child: Container(
+                          decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _blGold.withValues(alpha: 0.35)))))),
+                      Row(children: [
+                        for (final (i, l) in [(0, t('My team', 'فريقي')), (1, t('Table', 'الترتيب'))])
+                          Expanded(child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (_tab == i) return;
+                              HapticFeedback.selectionClick();
+                              setState(() => _tab = i);
+                              if (i == 1 && _board.isEmpty) _loadBoard();
+                            },
+                            child: Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Center(child: AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 200),
+                              style: TextStyle(color: _tab == i ? Colors.white : muted, fontWeight: FontWeight.w800, fontSize: 13.5),
+                              child: Text(l)))),
+                          )),
+                      ]),
                     ]),
                   )),
-                  Expanded(child: _tab == 0 ? _myTeamTab() : _boardTab()),
+                  Expanded(child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 340),
+                    switchInCurve: Curves.easeOutCubic, switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, anim) {
+                      // My team comes from the start side, Table from the end side
+                      final fromStart = child.key == const ValueKey('bl_team');
+                      final dir = (fromStart ? -1.0 : 1.0) * (ar ? -1 : 1);
+                      return FadeTransition(opacity: anim, child: SlideTransition(
+                        position: Tween<Offset>(begin: Offset(0.12 * dir, 0), end: Offset.zero).animate(anim), child: child));
+                    },
+                    child: KeyedSubtree(key: ValueKey(_tab == 0 ? 'bl_team' : 'bl_board'),
+                        child: _tab == 0 ? _myTeamTab() : _boardTab()),
+                  )),
                 ])),
     );
   }
@@ -347,19 +444,19 @@ class _BLeaguePageState extends State<_BLeaguePage> {
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(18), border: Border.all(color: line)),
           child: Column(children: [
-            const Text('🥇', style: TextStyle(fontSize: 44)),
+            const PopIn(from: 0.3, child: Text('🥇', style: TextStyle(fontSize: 44))),
             const SizedBox(height: 6),
             Text(t('Play with your friends', 'العب مع صحابك'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
-            Text(t('Make a team of up to 5. Your draft points add up all month. The #1 team wins — all 5 get the prize.',
-                   'اعمل فريق لحد 5. نقط الدرافت بتاعتكم بتتجمع على الشهر كله، والفريق الأول يكسب والخمسة ياخدوا الجايزة.'),
+            Text(t('Make a team of $_min to 5 friends. Your draft points add up all month. The #1 team wins — all of you get the prize.',
+                   'اعمل فريق من $_min لـ 5 صحاب. نقط الدرافت بتاعتكم بتتجمع على الشهر كله، والفريق الأول يكسب وكلكم تاخدوا الجايزة.'),
                 textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 13, height: 1.45)),
             const SizedBox(height: 16),
-            SizedBox(width: double.infinity, height: 48, child: ElevatedButton(
+            Pressable(child: ShineSweep(radius: 12, child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(
               onPressed: () => _editTeam(),
               style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: Text(t('➕ Make a team', '➕ اعمل فريق'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))),
+              child: Text(t('➕ Make a team', '➕ اعمل فريق'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))))),
             const SizedBox(height: 10),
             SizedBox(width: double.infinity, height: 46, child: OutlinedButton(
               onPressed: _askCode,
@@ -375,58 +472,106 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     return RefreshIndicator(color: _blGold, onRefresh: _load,
         child: _BLTeamView(team: Map<String, dynamic>.from(team), isArabic: ar,
             onEdit: team['is_captain'] == true ? () => _editTeam(team: team) : null,
-            onInvite: () => _invite(team), footer: _rules()));
+            onInvite: () => _invite(team), footer: _rules(), animate: true));
   }
 
   // ── تاب الترتيب ──
   Widget _boardTab() {
     final myId = _team?['id'];
     if (_board.isEmpty && _boardBusy) return const Center(child: CircularProgressIndicator(color: _blGold));
-    return RefreshIndicator(color: _blGold, onRefresh: () => _loadBoard(reset: true), child: ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-      itemCount: _board.length + 2,
-      itemBuilder: (_, i) {
-        if (i == 0) {
-          return Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(
-              t('$_boardTotal teams · points update when a round is closed', '$_boardTotal فريق · النقط بتتحدّث لما الجولة تتقفل'),
-              style: const TextStyle(color: muted, fontSize: 12)));
-        }
-        if (i == _board.length + 1) {
-          if (!_boardMore) return const SizedBox(height: 8);
-          return Padding(padding: const EdgeInsets.only(top: 10), child: Center(child: TextButton(
-              onPressed: _boardBusy ? null : _loadBoard,
-              child: Text(t('Show more', 'اعرض أكتر'), style: const TextStyle(color: _blGold, fontWeight: FontWeight.w800)))));
-        }
-        final r = _board[i - 1];
-        final mine = r['id'] == myId;
-        final rank = (r['rank'] as num?)?.toInt() ?? 0;
-        return Padding(padding: const EdgeInsets.only(top: 6), child: Material(
-          color: mine ? brandRed.withValues(alpha: 0.10) : cardBg,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Directionality(
-                textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-                child: _BLTeamPage(teamId: '${r['id']}', isArabic: ar)))),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: mine ? brandRed : line)),
-              child: Row(children: [
-                SizedBox(width: 30, child: Text('$rank', textAlign: TextAlign.center,
-                    style: TextStyle(color: rank <= 3 ? _blGold : muted, fontWeight: FontWeight.w900, fontSize: 14))),
-                LeagueShield(icon: '${r['icon']}', color: '${r['color']}', size: 30),
-                const SizedBox(width: 10),
-                Expanded(child: Text('${r['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800))),
-                Text('${r['members']}/5', style: const TextStyle(color: muted, fontSize: 11.5)),
-                const SizedBox(width: 10),
-                SizedBox(width: 48, child: Text(_blPts(r['points']), textAlign: TextAlign.end,
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900))),
-              ]),
-            ),
-          ),
-        ));
-      },
+    final mine = _mine;
+    final mineShown = mine != null && _board.any((r) => r['id'] == mine['id']);
+    return Column(children: [
+      Expanded(child: RefreshIndicator(color: _blGold, onRefresh: () => _loadBoard(reset: true), child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+        itemCount: _board.length + 2,
+        itemBuilder: (_, i) {
+          if (i == 0) {
+            return Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(
+                t('$_boardTotal teams · a team enters with $_min players · points update when a round is closed',
+                  '$_boardTotal فريق · الفريق بيدخل الترتيب من $_min لاعيبة · النقط بتتحدّث لما الجولة تتقفل'),
+                style: const TextStyle(color: muted, fontSize: 12, height: 1.35)));
+          }
+          if (i == _board.length + 1) {
+            if (!_boardMore) return const SizedBox(height: 8);
+            return Padding(padding: const EdgeInsets.only(top: 12), child: Center(child: Pressable(child: OutlinedButton(
+                onPressed: _boardBusy ? null : _loadBoard,
+                style: OutlinedButton.styleFrom(foregroundColor: _blGold, side: BorderSide(color: _blGold.withValues(alpha: 0.5)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                child: _boardBusy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: _blGold))
+                    : Text(t('Show more', 'اعرض أكتر'), style: const TextStyle(fontWeight: FontWeight.w800))))));
+          }
+          final idx = i - 1;
+          final row = _boardRow(_board[idx], _board[idx]['id'] == myId);
+          // each row plays its entrance once (first page, then each "show more" page)
+          if (_animated.contains(idx)) return row;
+          _animated.add(idx);
+          return StaggerIn(index: (idx - _animFrom).clamp(0, 12).toInt(), gate: false, dy: 16, stepMs: 45, child: row);
+        },
+      ))),
+      // my team, pinned under the table when it is not in the rows on screen
+      if (mine != null && !mineShown)
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10), child: StaggerIn(gate: false, delayMs: 300, dy: 30,
+          child: Pressable(child: GestureDetector(onTap: _showAround, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            decoration: BoxDecoration(color: const Color(0xFF1E1214), borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: brandRed),
+                boxShadow: const [BoxShadow(color: Color(0x88000000), blurRadius: 14, offset: Offset(0, -4))]),
+            child: Row(children: [
+              SizedBox(width: 44, child: Text(mine['rank'] != null ? '#${mine['rank']}' : '—', textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5))),
+              LeagueShield(icon: '${mine['icon']}', color: '${mine['color']}', size: 28),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text('${mine['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800)),
+                Text(mine['rank'] != null ? t('Your team · tap to see your place', 'فريقك · دوس تشوف مكانك')
+                        : t('Not in the table yet · invite a friend', 'لسه مش في الترتيب · اعزم صاحب'),
+                    style: TextStyle(color: mine['rank'] != null ? muted : _blGold, fontSize: 11)),
+              ])),
+              Text(_blPts(mine['points']), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+            ]),
+          ))))),
+    ]);
+  }
+
+  Widget _boardRow(Map<String, dynamic> r, bool mine) {
+    final rank = (r['rank'] as num?)?.toInt() ?? 0;
+    const medals = [Color(0xFFFFB300), Color(0xFFC0C6CF), Color(0xFFCD7F32)];
+    final medal = rank >= 1 && rank <= 3 ? medals[rank - 1] : null;
+    final rankBox = medal == null
+        ? Text('$rank', textAlign: TextAlign.center, style: const TextStyle(color: muted, fontWeight: FontWeight.w900, fontSize: 13.5))
+        : ShineSweep(radius: 9, everyMs: 2800 + rank * 500, child: Container(
+            width: 26, height: 26, alignment: Alignment.center,
+            decoration: BoxDecoration(color: medal.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(9), border: Border.all(color: medal)),
+            child: Text('$rank', style: TextStyle(color: medal, fontWeight: FontWeight.w900, fontSize: 13))));
+    return Padding(padding: const EdgeInsets.only(top: 6), child: Material(
+      color: mine ? brandRed.withValues(alpha: 0.10) : cardBg,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Directionality(
+            textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+            child: _BLTeamPage(teamId: '${r['id']}', isArabic: ar)))),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: mine ? brandRed : (medal?.withValues(alpha: 0.45) ?? line))),
+          child: Row(children: [
+            SizedBox(width: 34, child: Center(child: rankBox)),
+            const SizedBox(width: 4),
+            LeagueShield(icon: '${r['icon']}', color: '${r['color']}', size: 30),
+            const SizedBox(width: 10),
+            Expanded(child: Text('${r['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800))),
+            Text('${r['members']}/5', style: const TextStyle(color: muted, fontSize: 11.5)),
+            const SizedBox(width: 10),
+            SizedBox(width: 48, child: Text(_blPts(r['points']), textAlign: TextAlign.end,
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900))),
+          ]),
+        ),
+      ),
     ));
   }
 
@@ -437,13 +582,14 @@ class _BLeaguePageState extends State<_BLeaguePage> {
       Text(t('How it works', 'الدوري ماشي إزاي'), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
       const SizedBox(height: 8),
       for (final l in [
-        t('A team is 1 to 5 friends. One team per player per month.', 'الفريق من 1 لـ 5 صحاب. فريق واحد بس لكل لاعيب في الشهر.'),
+        t('A team is $_min to 5 friends. One team per player per month.', 'الفريق من $_min لـ 5 صحاب. فريق واحد بس لكل لاعيب في الشهر.'),
+        t('A team enters the table once it has $_min players. Until then it can not win.', 'الفريق بيدخل الترتيب لما يبقى فيه $_min لاعيبة، وقبلها مايقدرش يكسب.'),
         t("Your 🎯 draft 7 points add up (local + world) for the whole month.", 'نقط 🎯 الدرافت 7 بتاعتكم (محلي + عالمي) بتتجمع على الشهر كله.'),
         t('You can add members any time until 5. Nobody can be removed or swapped.', 'تقدر تزوّد أعضاء في أي وقت لحد 5. ماحدش يتشال ولا يتبدّل.'),
         t('A new member counts from the first round whose deadline is after he joined.', 'العضو الجديد بيتحسب من أول جولة ديدلاينها بعد ما دخل.'),
         t('No squad in a round = 0 points.', 'اللي ماعملش تشكيلة في جولة = صفر.'),
         t('Tied? More exact score predictions, then the older team.', 'تعادل؟ اللي توقعاته للنتيجة مظبوطة أكتر، وبعدها الفريق الأقدم.'),
-        t('The #1 team of the month wins: all 5 get the prize.', 'الفريق الأول في الشهر يكسب، والخمسة ياخدوا الجايزة.'),
+        t('The #1 team of the month wins: all its players get the prize.', 'الفريق الأول في الشهر يكسب، وكل لاعيبته ياخدوا الجايزة.'),
       ]) Padding(padding: const EdgeInsets.only(bottom: 5), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('•  ', style: TextStyle(color: _blGold)),
         Expanded(child: Text(l, style: const TextStyle(color: muted, fontSize: 12.5, height: 1.4))),
@@ -488,9 +634,10 @@ class _BLTeamPageState extends State<_BLTeamPage> {
 
 /// شكل الفريق: الدرع والاسم والنقط، وبعدين الأعضاء كأنهم لاعيبة
 class _BLTeamView extends StatelessWidget {
-  const _BLTeamView({required this.team, required this.isArabic, this.onEdit, this.onInvite, this.footer});
+  const _BLTeamView({required this.team, required this.isArabic, this.onEdit, this.onInvite, this.footer, this.animate = true});
   final Map<String, dynamic> team;
   final bool isArabic;
+  final bool animate;
   final VoidCallback? onEdit, onInvite;
   final Widget? footer;
   String t(String en, String ar) => isArabic ? ar : en;
@@ -502,8 +649,13 @@ class _BLTeamView extends StatelessWidget {
     final member = team['is_member'] == true;
     final code = team['code'] as String?;
     final c = _blColor(team['color'] as String?);
+    final min = (team['min_members'] as num?)?.toInt() ?? 2;
+    final inTable = team['in_table'] != false && team['rank'] != null;
+    var k = 0;   // entrance order
+    Widget st(Widget w, {double dy = 18}) => StaggerIn(index: k++, gate: false, dy: dy, child: w);
+    const statStyle = TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900);
     return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-      Container(
+      st(dy: 24, Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
@@ -514,22 +666,52 @@ class _BLTeamView extends StatelessWidget {
             const Spacer(),
             if (onEdit != null) IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20)),
           ]),
-          LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 66),
+          PopIn(delayMs: 120, from: 0.4, child: LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 66)),
           const SizedBox(height: 8),
           Text('${team['name']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            _stat(_blPts(team['points']), t('points', 'نقطة')),
+          Row(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _statW(CountUp((team['points'] as num?) ?? 0, style: statStyle), t('points', 'نقطة')),
             Container(width: 1, height: 30, color: line, margin: const EdgeInsets.symmetric(horizontal: 18)),
-            _stat('#${team['rank'] ?? '-'}', t('of ${team['teams'] ?? '-'}', 'من ${team['teams'] ?? '-'}')),
+            inTable
+                ? _statW(CountUp((team['rank'] as num?) ?? 0, style: statStyle, format: (v) => '#$v'), t('of ${team['teams'] ?? '-'}', 'من ${team['teams'] ?? '-'}'))
+                : _statW(const Text('—', style: statStyle), t('not ranked yet', 'لسه مش في الترتيب')),
             Container(width: 1, height: 30, color: line, margin: const EdgeInsets.symmetric(horizontal: 18)),
-            _stat('${members.length}/5', t('members', 'أعضاء')),
+            // members: number + a small gold bar that fills up to 5
+            _statW(Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('${members.length}/5', style: statStyle),
+              const SizedBox(height: 4),
+              SizedBox(width: 46, height: 4, child: ClipRRect(borderRadius: BorderRadius.circular(2), child: Stack(children: [
+                Container(color: const Color(0xFF33363C)),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: members.length / 5), duration: const Duration(milliseconds: 900), curve: Curves.easeOutCubic,
+                  builder: (_, v, __) => FractionallySizedBox(widthFactor: v.clamp(0.0, 1.0), heightFactor: 1,
+                      alignment: AlignmentDirectional.centerStart, child: Container(color: _blGold))),
+              ]))),
+            ]), t('members', 'أعضاء')),
           ]),
         ]),
-      ),
+      )),
+      // not in the table yet: tell him what to do
+      if (member && !inTable) ...[
+        const SizedBox(height: 12),
+        st(Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: _blGold.withValues(alpha: 0.7)),
+              gradient: const LinearGradient(colors: [Color(0xFF2A2210), cardBg])),
+          child: Row(children: [
+            const Text('⚠️', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(
+                t('Your team is not in the table yet. Invite ${min - members.length <= 1 ? 'one friend' : '${min - members.length} friends'} so it enters the league.',
+                  'فريقك لسه مش في الترتيب. اعزم ${min - members.length <= 1 ? 'صاحب واحد' : '${min - members.length} صحاب'} عشان يدخل الدوري.'),
+                style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4, fontWeight: FontWeight.w700))),
+          ]),
+        )),
+      ],
       if (member && code != null && members.length < 5) ...[
         const SizedBox(height: 12),
-        Container(
+        st(Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: _blGold.withValues(alpha: 0.6))),
           child: Row(children: [
@@ -540,21 +722,23 @@ class _BLTeamView extends StatelessWidget {
                 child: Text(code, textDirection: TextDirection.ltr,
                     style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 4))),
             ])),
-            ElevatedButton.icon(
+            Pressable(child: ShineSweep(radius: 12, child: ElevatedButton.icon(
               onPressed: onInvite,
               style: ElevatedButton.styleFrom(backgroundColor: _blGold, foregroundColor: Colors.black, elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               icon: const Icon(Icons.ios_share, size: 17),
-              label: Text(t('Invite', 'اعزم'), style: const TextStyle(fontWeight: FontWeight.w900))),
+              label: Text(t('Invite', 'اعزم'), style: const TextStyle(fontWeight: FontWeight.w900))))),
           ]),
-        ),
+        )),
       ],
       const SizedBox(height: 14),
-      Text(t('PLAYERS', 'اللاعيبة'), style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.2, fontWeight: FontWeight.w800)),
+      st(Text(t('PLAYERS', 'اللاعيبة'), style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.2, fontWeight: FontWeight.w800))),
       const SizedBox(height: 6),
-      for (final m in members) _memberRow(context, m, rounds),
+      for (final m in members) st(_memberRow(context, m, rounds)),
       for (var i = members.length; i < 5; i++)
-        Padding(padding: const EdgeInsets.only(top: 6), child: InkWell(
+        st(Padding(padding: const EdgeInsets.only(top: 6), child: GlowPulse(
+          // the first free spot breathes while the team is still too small
+          on: member && !inTable && i == members.length, radius: 12, child: InkWell(
           onTap: member ? onInvite : null,
           borderRadius: BorderRadius.circular(12),
           child: Container(
@@ -568,10 +752,15 @@ class _BLTeamView extends StatelessWidget {
                   style: const TextStyle(color: muted, fontSize: 13.5, fontWeight: FontWeight.w700)),
             ]),
           ),
-        )),
+        )))),
       if (footer != null) ...[const SizedBox(height: 16), footer!],
     ]);
   }
+
+  Widget _statW(Widget v, String l) => Column(children: [
+    v,
+    Text(l, style: const TextStyle(color: muted, fontSize: 11.5)),
+  ]);
 
   Widget _stat(String v, String l) => Column(children: [
     Text(v, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),

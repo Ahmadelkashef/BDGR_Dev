@@ -18,8 +18,10 @@ class _LaunchStatus {
   const _LaunchStatus(this.blHome, this.leagues, this.invites);
   Map? get team => blHome?['team'] as Map?;
   String? get month => blHome?['month'] as String?;
-  /// 'badger' | 'league' | null (has both)
-  String? get next => team == null ? 'badger' : (leagues == 0 ? 'league' : null);
+  /// my Badger League team is too small to be in the table
+  bool get teamTooSmall => team != null && team!['in_table'] == false;
+  /// 'badger' | 'bl_invite' (team not in the table yet) | 'league' | null (has all)
+  String? get next => team == null ? 'badger' : teamTooSmall ? 'bl_invite' : (leagues == 0 ? 'league' : null);
 }
 
 _LaunchStatus? _lsCache;
@@ -302,6 +304,9 @@ class _LaunchNudgeLineState extends State<LaunchNudgeLine> {
       'badger' => (const Text('🥇', style: TextStyle(fontSize: 18)),
                    t('Make your Badger League team · $month', 'اعمل فريقك في دوري بادجر · $month'),
                    const Color(0xFF6B5313), const [Color(0xFF2A2210), cardBg], () => _openBLeague(context)),
+      'bl_invite' => (LeagueShield(icon: '${team!['icon']}', color: '${team['color']}', size: 24),
+                   t('${team['name']} is not in the table yet · invite a friend', '${team['name']} لسه مش في الترتيب · اعزم صاحب'),
+                   const Color(0xFF6B5313), const [Color(0xFF2A2210), cardBg], () => _openBLeague(context)),
       'league' => (const Text('🛡️', style: TextStyle(fontSize: 17)),
                    t('Start a league with your friends', 'اعمل ليج لصحابك أو الشغل'),
                    const Color(0xFF2A3A6B), const [Color(0xFF141C33), cardBg], () => _openLeaguesPage(context, widget.isArabic)),
@@ -341,8 +346,10 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
   if (!context.mounted) return false;
   await LocalStore.setFlag(flag);
   String t(String en, String ar) => isArabic ? ar : en;
-  final badger = next == 'badger';
-  final month = _blMonthName(s!.month, isArabic);
+  final invite = next == 'bl_invite';
+  final badger = next == 'badger' || invite;
+  final team = s!.team;
+  final month = _blMonthName(s.month, isArabic);
   const gold = Color(0xFFFFB300);
   final go = await showModalBottomSheet<bool>(
     context: context, useRootNavigator: true, isScrollControlled: true, backgroundColor: const Color(0xFF15171A),
@@ -357,18 +364,24 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
           Text(t('✓ Your team is saved', '✓ تشكيلتك اتحفظت'), textAlign: TextAlign.center,
             style: const TextStyle(color: Brand.green, fontSize: 15, fontWeight: FontWeight.w900)),
           const SizedBox(height: 18),
-          Center(child: PopIn(delayMs: 150, from: 0.3, child: badger
+          Center(child: PopIn(delayMs: 150, from: 0.3, child: invite
+              ? LeagueShield(icon: '${team!['icon']}', color: '${team['color']}', size: 64)
+              : badger
               ? const LeagueShield(icon: '🥇', color: '#F5B301', size: 64)
               : Container(width: 64, height: 64, alignment: Alignment.center,
                   decoration: BoxDecoration(color: const Color(0xFF141C33), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFF2A3A6B))),
                   child: const Text('🛡️', style: TextStyle(fontSize: 30))))),
           const SizedBox(height: 12),
-          Text(badger ? t('Badger League · $month', 'دوري بادجر · $month') : t('Play with your friends', 'العب مع صحابك'),
+          Text(invite ? t('${team!['name']} needs one more', '${team!['name']} محتاج واحد كمان')
+              : badger ? t('Badger League · $month', 'دوري بادجر · $month') : t('Play with your friends', 'العب مع صحابك'),
             textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
-          Text(badger
-              ? t('Make a team with up to 5 friends. Your points add up, so every friend you add raises your chances. If your team finishes #1 this month, all of you win the prize.',
-                  'اعمل فريق مع صحابك لحد 5. نقطكم بتتجمع، فكل صاحب بتضيفه فرصتكم بتكبر. ولو فريقكم طلع الأول الشهر ده، كلكم تكسبوا الجايزة.')
+          Text(invite
+              ? t('Your team enters the Badger League table once it has 2 players. Send your code to a friend now.',
+                  'فريقك بيدخل ترتيب دوري بادجر لما يبقى فيه اتنين. ابعت الكود لصاحبك دلوقتي.')
+              : badger
+              ? t('Make a team of 2 to 5 friends. Your points add up, so every friend you add raises your chances. If your team finishes #1 this month, all of you win the prize.',
+                  'اعمل فريق من 2 لـ 5 صحاب. نقطكم بتتجمع، فكل صاحب بتضيفه فرصتكم بتكبر. ولو فريقكم طلع الأول الشهر ده، كلكم تكسبوا الجايزة.')
               : t('Make a league for your friends, family or work — any size — and see who is the best coach.',
                   'اعمل ليج لصحابك أو عيلتك أو الشغل، بأي عدد، وشوفوا مين أحسن مدرب.'),
             textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFC9CCD1), fontSize: 13.5, height: 1.5)),
@@ -378,7 +391,7 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
               for (var i = 0; i < 5; i++) PopIn(delayMs: 380 + i * 90, child: Container(
                 width: 34, height: 34, margin: const EdgeInsets.symmetric(horizontal: 4), alignment: Alignment.center,
                 decoration: BoxDecoration(shape: BoxShape.circle,
-                  color: i == 0 ? const Color(0xFF2A2210) : null,
+                  color: i == 0 || (invite && i < _blMembers(team!)) ? const Color(0xFF2A2210) : null,
                   border: Border.all(color: i == 0 ? gold : const Color(0xFF6B5313), width: i == 0 ? 2 : 1.2)),
                 child: Text(i == 0 ? t('YOU', 'إنت') : '+', style: const TextStyle(color: gold, fontSize: 10.5, fontWeight: FontWeight.w900)))),
             ]),
@@ -388,7 +401,8 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: badger ? gold : brandRed, foregroundColor: badger ? Colors.black : Colors.white,
               elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            child: Text(badger ? t('MAKE OR JOIN A TEAM', 'اعمل فريق أو انضم لواحد') : t('MAKE OR JOIN A LEAGUE', 'اعمل ليج أو انضم لواحدة'),
+            child: Text(invite ? t('INVITE A FRIEND', 'اعزم صاحب')
+                : badger ? t('MAKE OR JOIN A TEAM', 'اعمل فريق أو انضم لواحد') : t('MAKE OR JOIN A LEAGUE', 'اعمل ليج أو انضم لواحدة'),
               style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14.5)))),
           const SizedBox(height: 6),
           TextButton(onPressed: () => Navigator.pop(ctx, false),
@@ -430,7 +444,7 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
   }
 
   Widget _card({required Widget icon, required String title, required Widget sub, required VoidCallback onTap, bool gold = false, int i = 0}) =>
-    StaggerIn(index: i, dy: 28, child: Pressable(child: Padding(padding: const EdgeInsets.only(bottom: 12), child: Material(color: Colors.transparent, child: InkWell(
+    StaggerIn(index: i, dy: 28, gate: false, child: Pressable(child: Padding(padding: const EdgeInsets.only(bottom: 12), child: Material(color: Colors.transparent, child: InkWell(
       borderRadius: BorderRadius.circular(18), onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -474,8 +488,10 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
           icon: team != null ? LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 30) : const Text('🥇', style: TextStyle(fontSize: 22)),
           title: t('Badger League', 'دوري بادجر'),
           sub: Text(team != null
-              ? '${team['name']} · #${team['rank'] ?? '-'} · ${_blPts(team['points'])} ${t('pts', 'نقطة')}${_blMembers(team) < 5 ? ' · ${t('invite a friend', 'اعزم صاحب')} (${_blMembers(team)}/5)' : ''}'
-              : t('Team up with up to 4 friends · ${_blMonthName(s?.month, false)}', 'اعمل فريق لحد 5 صحاب · ${_blMonthName(s?.month, true)}'),
+              ? (s!.teamTooSmall
+                  ? t('${team['name']} · not in the table yet · invite a friend (${_blMembers(team)}/5)', '${team['name']} · لسه مش في الترتيب · اعزم صاحب (${_blMembers(team)}/5)')
+                  : '${team['name']} · #${team['rank'] ?? '-'} · ${_blPts(team['points'])} ${t('pts', 'نقطة')}${_blMembers(team) < 5 ? ' · ${t('invite a friend', 'اعزم صاحب')} (${_blMembers(team)}/5)' : ''}')
+              : t('Team up with 1 to 4 friends · ${_blMonthName(s?.month, false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s?.month, true)}'),
             maxLines: 2, overflow: TextOverflow.ellipsis, style: subStyle),
           onTap: () async { await _openBLeague(context); _load(true); }),
       ],
