@@ -107,6 +107,21 @@ extension _LaunchLobby on _FancyPageState {
                 style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)))),
         const SizedBox(height: 10),
         StaggerIn(index: 1, dy: 24, child: _lInfoCard(event, ph, has)),
+        // modes = both (DB): pick which squad this page shows
+        if (_FancyPageState._modes == 'both' && event.draftOn)
+          Padding(padding: const EdgeInsets.only(top: 10), child: StaggerIn(index: 2, child: draftModeSwitch(onPick: (d) => _lSetMode(event, d)))),
+        // finished round: one calm line to the ranking
+        if (ph == 'finished')
+          StaggerIn(index: 2, child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openRankingPage(context, isArabic, null),
+            child: Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
+              const Icon(Icons.leaderboard_outlined, color: Brand.green, size: 17),
+              const SizedBox(width: 8),
+              Expanded(child: Text(t('See your ranking', 'شوف ترتيبك'),
+                style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800))),
+              Text(isArabic ? '‹' : '›', style: const TextStyle(color: Brand.green, fontSize: 18, fontWeight: FontWeight.w900)),
+            ])))),
         // open + no squad: nothing else, the team comes first
         if (_squadChecked && (ph != 'open' || has))
           StaggerIn(index: 2, child: LaunchNudgeLine(key: ValueKey('nudge_${event.eventId}_$has'), isArabic: isArabic)),
@@ -136,6 +151,21 @@ extension _LaunchLobby on _FancyPageState {
         StaggerIn(index: 3, dy: 40, durationMs: 560, child: _lButton(event, ph, has)),
       ]),
     ));
+  }
+
+  /// modes = both: switch the lobby between the draft and the normal 11 (each saved on its own)
+  void _lSetMode(FantasyEvent event, bool draft) {
+    if (_draftView == draft || _flying) return;
+    _v2Set(() {
+      _draftView = draft;
+      clearSquad();
+      saved = false; _hasSquad = false; _squadChecked = false; _gStage = -1;
+      _flown.clear(); _landedId = null; _duelKey = null; _myRank = null;
+      formation = v2Formation;
+    });
+    squadTick.value++;
+    _loadSavedSquad(event.eventId);
+    if (phaseOf(event) == 'finished') _loadMyRank(event.eventId);
   }
 
   Widget _lButton(FantasyEvent event, String ph, bool has) {

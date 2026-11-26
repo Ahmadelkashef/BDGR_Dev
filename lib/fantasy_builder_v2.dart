@@ -23,6 +23,25 @@ const List<(String, int)> _kD7Order = [
   ('GK', 0), ('DEF', 0), ('DEF', 1), ('MID', 0), ('MID', 1), ('MID', 2), ('FWD', 0),
 ];
 
+// ── DRAFT 4 / 5 / 6 (owner 26 Nov): any defender, any midfielder, wingers count as attackers ──
+// server keys D / M / F; the size comes per round (fantasy_event_config.draft_size, default 7)
+const Map<int, List<(String, int)>> _kDSmallOrder = {
+  4: [('GK', 0), ('DEF', 0), ('MID', 0), ('FWD', 0)],
+  5: [('GK', 0), ('DEF', 0), ('MID', 0), ('MID', 1), ('FWD', 0)],
+  6: [('GK', 0), ('DEF', 0), ('DEF', 1), ('MID', 0), ('MID', 1), ('FWD', 0)],
+};
+
+/// one line for the start screen / help: what a draft of this size asks for
+String draftShapeText(int size, bool ar) {
+  switch (size) {
+    case 4: return ar ? '4 اختيارات: حارس، مدافع، لاعب وسط، ومهاجم.' : '4 picks: goalkeeper, defender, midfielder and an attacker.';
+    case 5: return ar ? '5 اختيارات: حارس، مدافع، 2 وسط، ومهاجم.' : '5 picks: goalkeeper, defender, two midfielders and an attacker.';
+    case 6: return ar ? '6 اختيارات: حارس، 2 مدافعين، 2 وسط، ومهاجم.' : '6 picks: goalkeeper, two defenders, two midfielders and an attacker.';
+  }
+  return ar ? '7 اختيارات: حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم.'
+            : '7 picks: goalkeeper, full back, centre back, midfielder, two wingers and a striker.';
+}
+
 /// pick order: (squad position, index)
 const List<(String, int)> _kV2Order = [
   ('GK', 0), ('DEF', 0), ('DEF', 1), ('DEF', 2), ('DEF', 3),
@@ -33,6 +52,14 @@ extension _BuilderV2 on _FancyPageState {
   // ── slot rules ──────────────────────────────────────────────────────────────
   /// exact positions a slot takes (depends on the midfield layout for MID0..2)
   Set<String> _v2Accepts(String pos, int idx) {
+    if (isDraft && draftSize < 7) {
+      switch (pos) {
+        case 'GK': return const {'GK'};
+        case 'DEF': return const {'RB', 'LB', 'CB'};
+        case 'MID': return const {'DM', 'CM', 'AM'};
+      }
+      return const {'CF', 'SS', 'RW', 'RM', 'LW', 'LM'};   // attacker = striker or winger
+    }
     if (isDraft) {
       switch (pos) {
         case 'GK': return const {'GK'};
@@ -55,6 +82,11 @@ extension _BuilderV2 on _FancyPageState {
   }
 
   bool _v2Fits(FancyPlayer p, String pos, int idx) {
+    if (isDraft && draftSize < 7) {
+      // small drafts: a winger (MID in players.position) can stand in the attacker spot
+      final xp = p.exactPos;
+      return xp == null ? p.position == pos : _v2Accepts(pos, idx).contains(xp);
+    }
     if (p.position != pos) return false;            // the server checks the broad position
     final xp = p.exactPos;
     return xp == null || _v2Accepts(pos, idx).contains(xp);
@@ -62,6 +94,7 @@ extension _BuilderV2 on _FancyPageState {
 
   /// short code shown on an empty pitch spot
   String _v2SlotCode(String pos, int idx) {
+    if (isDraft && draftSize < 7) return pos == 'GK' ? 'GK' : pos == 'DEF' ? 'DEF' : pos == 'MID' ? 'MID' : 'ATT';
     if (isDraft) {
       switch (pos) {
         case 'GK': return 'GK';
@@ -82,6 +115,14 @@ extension _BuilderV2 on _FancyPageState {
 
   /// what the user picks now ("pick the right back" …)
   String _v2SlotTitle(String pos, int idx) {
+    if (isDraft && draftSize < 7) {
+      switch (pos) {
+        case 'GK': return t('Pick your goalkeeper', 'اختار الحارس');
+        case 'DEF': return idx == 0 ? t('Pick a defender', 'اختار مدافع') : t('Pick your second defender', 'اختار المدافع التاني');
+        case 'MID': return idx == 0 ? t('Pick a midfielder', 'اختار لاعب وسط') : t('Pick your second midfielder', 'اختار لاعب الوسط التاني');
+      }
+      return t('Pick an attacker (striker or winger)', 'اختار مهاجم (رأس حربة أو جناح)');
+    }
     if (isDraft) {
       switch (pos) {
         case 'GK': return t('Pick your goalkeeper', 'اختار الحارس');
@@ -108,7 +149,7 @@ extension _BuilderV2 on _FancyPageState {
   }
 
   /// next empty slot in pick order; null = 11 picked
-  List<(String, int)> get _v2Order => isDraft ? _kD7Order : _kV2Order;
+  List<(String, int)> get _v2Order => isDraft ? (_kDSmallOrder[draftSize] ?? _kD7Order) : _kV2Order;
 
   (String, int)? get _v2NextSlot {
     for (final s in _v2Order) {
@@ -121,6 +162,11 @@ extension _BuilderV2 on _FancyPageState {
 
   /// pitch rows, far (top) → near (bottom); each row left → right on screen
   List<List<(String, int)>> get _v2Rows {
+    if (isDraft && draftSize < 7) {
+      final o = _kDSmallOrder[draftSize]!;
+      List<(String, int)> line(String pos) => [for (final s in o.reversed) if (s.$1 == pos) s];   // index 0 on the right
+      return [line('FWD'), line('MID'), line('DEF'), line('GK')];
+    }
     if (isDraft) {
       // the full back stands on his own side (a left back on the left), the CB next to him
       final lb = squad['DEF']![0]?.exactPos == 'LB';
@@ -254,7 +300,7 @@ extension _BuilderV2 on _FancyPageState {
     if (stage >= 1) ...[
       const SizedBox(width: 8),
       GestureDetector(onTap: _v2Restart,
-        child: _v2Pill(Icons.grid_view_rounded, isDraft ? t('Draft 7', 'درافت 7') : _layout, trailing: Icons.refresh_rounded)),
+        child: _v2Pill(Icons.grid_view_rounded, isDraft ? t('$draftSize players', '$draftSize لاعيبة') : _layout, trailing: Icons.refresh_rounded)),
     ],
   ]);
 
@@ -301,8 +347,7 @@ extension _BuilderV2 on _FancyPageState {
           shadows: [Shadow(color: Colors.black, blurRadius: 10)])),
       const SizedBox(height: 6),
       Text(isDraft
-          ? t('7 picks: goalkeeper, full back, centre back, midfielder, two wingers and a striker.',
-              '7 اختيارات: حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم.')
+          ? draftShapeText(draftSize, isArabic)
           : t('Shape, then goalkeeper, defence, midfield and attack.',
               'الشكل، وبعدين الحارس، الدفاع، الوسط، الهجوم.'), textAlign: TextAlign.center,
         style: const TextStyle(color: Color(0xFFDADADA), fontSize: 12.5, height: 1.4,
@@ -319,21 +364,11 @@ extension _BuilderV2 on _FancyPageState {
       body = _v2Layouts();
       action = _v2Button(t('Next: goalkeeper', 'يلا نختار الحارس'), () => _v2Set(() { _gStage = 1; formation = '4-5-1'; }));
     } else if (stage == 2 && isDraft) {
-      final pm = _predMatches;
-      if (pm.isEmpty) {
-        title = t('Your team is ready', 'فريقك جاهز');
-        final sur = pickedPlayers.where((p) => p.surprise).length;
-        sub = sur == 0 ? null : t('$sur surprise ×${_multText()}', '$sur مفاجأة ×${_multText()}');
-        body = _v2CaptainCards(pickOnly: true);
-      } else {
-        // last step: predict the score(s) — tie-break only, no points
-        title = pm.length == 1 ? t('Predict the score', 'توقّع النتيجة') : t('Predict the scores', 'توقّع النتيجتين');
-        sub = t('tie-break only', 'لفك التعادل بس');
-        body = Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: _d7PredEditor(_preds, _v2Set));
-      }
+      // launch (owner 26 Nov): save first; the score predictions are asked in a sheet right after the save
+      title = t('Your team is ready', 'فريقك جاهز');
+      body = _v2CaptainCards(pickOnly: true);
       action = _v2Button(
-        deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين')
-          : !_predsDone ? t('Predict the score first', 'توقّع النتيجة الأول') : t('SAVE TEAM', 'حفظ الفريق'),
+        deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين') : t('SAVE TEAM', 'حفظ الفريق'),
         canSaveV2 && !_saving ? _v2Save : null, busy: _saving);
     } else if (stage == 2) {
       title = t('Pick your captain', 'اختار الكابتن');
@@ -586,11 +621,11 @@ extension _BuilderV2 on _FancyPageState {
   }
 
   // ── NORMAL 11 / DRAFT 7 switch (only when the draft is open in this round) ──
-  Widget draftModeSwitch() {
+  Widget draftModeSwitch({void Function(bool draft)? onPick}) {
     Widget seg(bool draft, String label) {
       final on = _draftView == draft;
       return Expanded(child: GestureDetector(
-        onTap: on ? null : () => _setDraftView(draft),
+        onTap: on ? null : () => (onPick ?? _setDraftView)(draft),
         child: AnimatedContainer(duration: const Duration(milliseconds: 180), height: 36,
           alignment: Alignment.center,
           decoration: BoxDecoration(color: on ? brandRed : Colors.transparent, borderRadius: BorderRadius.circular(9)),
@@ -598,7 +633,7 @@ extension _BuilderV2 on _FancyPageState {
     }
     return Container(padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: line)),
-      child: Row(children: [seg(false, t('⚽ Normal 11', '⚽ نورمال 11')), seg(true, t('🎯 Draft 7', '🎯 درافت 7'))]));
+      child: Row(children: [seg(false, t('⚽ 11 players', '⚽ 11 لاعب')), seg(true, t('🎯 $draftSize players', '🎯 $draftSize لاعيبة'))]));
   }
 
   /// switch between the normal squad and the draft squad of this round (each saved on its own)
@@ -777,7 +812,7 @@ extension _BuilderV2 on _FancyPageState {
       onEdit: phaseOf(currentEvent) == 'open' ? _d7EditPreds : null);
   }
 
-  Future<void> _d7EditPreds() async {
+  Future<void> _d7EditPreds({bool afterSave = false}) async {
     final ev = currentEvent;
     if (ev == null) return;
     final vals = {for (final m in _predMatches) m.matchId: List<int?>.of(_preds[m.matchId] ?? [null, null])};
@@ -790,9 +825,16 @@ extension _BuilderV2 on _FancyPageState {
         return Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 16), child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 12),
+          if (afterSave) ...[
+            Text(t('✓ Your team is saved', '✓ تشكيلتك اتحفظت'), style: const TextStyle(color: Color(0xFF4CD964), fontSize: 13, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+          ],
           Text(t('🎯 Your score predictions', '🎯 توقعاتك للنتيجة'), style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
           const SizedBox(height: 4),
-          Text(t('Tie-break only. Changing them does not change when you saved.', 'لفك التعادل بس. تعديلها مش بيغيّر وقت حفظ تشكيلتك.'),
+          Text(afterSave
+              ? t('If you tie on points, the better predictions win. You can change them until the deadline.',
+                  'لو اتعادلت في النقط، اللي توقعاته أصح يكسب. تقدر تعدّلها لحد الديدلاين.')
+              : t('Tie-break only. Changing them does not change when you saved.', 'لفك التعادل بس. تعديلها مش بيغيّر وقت حفظ تشكيلتك.'),
             textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 12)),
           const SizedBox(height: 10),
           _d7PredEditor(vals, ss),
@@ -809,6 +851,8 @@ extension _BuilderV2 on _FancyPageState {
                 _showSnack(_saveErrorText(e.toString()));
               }
             }, busy: busy),
+          if (afterSave) TextButton(onPressed: busy ? null : () => Navigator.of(ctx).pop(false),
+            child: Text(t('Later', 'بعدين'), style: const TextStyle(color: muted, fontWeight: FontWeight.w700))),
         ]));
       }));
     if (ok == true && mounted) {

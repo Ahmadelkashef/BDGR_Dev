@@ -583,7 +583,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
       for (final l in [
         t('A team is $_min to 5 friends. One team per player per month.', 'الفريق من $_min لـ 5 صحاب. فريق واحد بس لكل لاعيب في الشهر.'),
         t('A team enters the table once it has $_min players. Until then it can not win.', 'الفريق بيدخل الترتيب لما يبقى فيه $_min لاعيبة، وقبلها مايقدرش يكسب.'),
-        t("Your 🎯 draft 7 points add up (local + world) for the whole month.", 'نقط 🎯 الدرافت 7 بتاعتكم (محلي + عالمي) بتتجمع على الشهر كله.'),
+        t("Your team points add up (local + world) for the whole month.", 'نقط تشكيلاتكم (محلي + عالمي) بتتجمع على الشهر كله.'),
         t('You can add members any time until 5. Nobody can be removed or swapped.', 'تقدر تزوّد أعضاء في أي وقت لحد 5. ماحدش يتشال ولا يتبدّل.'),
         t('A new member counts from the first round whose deadline is after he joined.', 'العضو الجديد بيتحسب من أول جولة ديدلاينها بعد ما دخل.'),
         t('No squad in a round = 0 points.', 'اللي ماعملش تشكيلة في جولة = صفر.'),

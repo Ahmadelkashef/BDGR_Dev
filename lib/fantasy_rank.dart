@@ -23,7 +23,8 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   String _period = 'round';          // round | month | season
   String? _key;                      // رقم الجولة / 2026-10 / 2026-27
   String _scope = 'all';             // all | governorate | city | league
-  String _mode = 'draft';            // launch: DRAFT only (leagues too)
+  // modes from the DB (fantasy_modes): draft → draft ranking · normal → normal · both → a menu
+  String _mode = _FancyPageState._modes == 'normal' ? 'normal' : 'draft';
   String? _leagueId;
 
   Map<String, dynamic>? _periods;
@@ -155,11 +156,11 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           child: Row(children: [
             Expanded(child: _periodButton()),
             if (widget.leagueId == null) ...[
-              if (false) _FilterMenu(value: _mode,   // launch: no normal/draft menu
-                items: [('normal', t('⚽ Normal', '⚽ نورمال')), ('draft', t('🎯 Draft', '🎯 درافت'))],
+              if (_FancyPageState._modes == 'both') _FilterMenu(value: _mode,
+                items: [('draft', t('🎯 Small team', '🎯 التشكيلة الصغيرة')), ('normal', t('⚽ 11 players', '⚽ 11 لاعب'))],
                 onChanged: (v) {
                   if (v == _mode) return;
-                  setState(() { _mode = v; if (_scope == 'league') { _scope = 'all'; _leagueId = null; } });
+                  setState(() => _mode = v);   // leagues rank on both
                   _loadBoard();
                 }),
               const SizedBox(width: 8), _scopeButton()],

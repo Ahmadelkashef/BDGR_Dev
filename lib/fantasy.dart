@@ -217,6 +217,9 @@ class FantasyEvent {
   final bool          draftOn;
   final int           draftMaxPerTeam;
   final double        surpriseMult;
+  /// draft size of this round (4..7, default 7) + its shape [(key, pitch group, how many)] from the server
+  final int           draftSize;
+  final List<(String, String, int)> draftShape;
   /// draft tie-break: the matches whose score users predict (chosen in the dashboard, max 2)
   final List<String>  draftPredict;
 
@@ -226,7 +229,7 @@ class FantasyEvent {
     this.phase = 'open', this.prizes = const [],
     required this.deadlineAt, required this.startAt,
     required this.playerBudget, required this.matches, required this.teamPool,
-    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2, this.draftPredict = const [],
+    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2, this.draftPredict = const [], this.draftSize = 7, this.draftShape = const [],
   });
 
   factory FantasyEvent.fromJson(Map<String, dynamic> j) {
@@ -253,6 +256,9 @@ class FantasyEvent {
       draftMaxPerTeam: (j['draft_max_per_team'] as num?)?.toInt() ?? 4,
       surpriseMult: ((j['surprise_mult'] ?? 2) as num).toDouble(),
       draftPredict: ((j['draft_predict'] as List?) ?? []).map((e) => e.toString()).toList(),
+      draftSize:    (j['draft_size'] as num?)?.toInt() ?? 7,
+      draftShape:   [for (final x in (j['draft_shape'] as List?) ?? const [])
+                      ('${(x as Map)['key']}', '${x['grp']}', (x['n'] as num?)?.toInt() ?? 1)],
     );
   }
 }
@@ -547,17 +553,19 @@ class _FancyPageState extends State<FancyPage> {
   Map<String, dynamic>? _myRank;
   Future<void> _loadMyRank(String eventId) async {
     try {
-      final r = await _sb.rpc('get_my_draft_rank', params: {'p_event_id': eventId});   // launch: draft only
+      final r = await _sb.rpc(isDraft ? 'get_my_draft_rank' : 'get_my_event_rank', params: {'p_event_id': eventId});
       if (mounted) setState(() => _myRank = r is Map ? Map<String, dynamic>.from(r) : null);
     } catch (_) {}
   }
   bool   get canSave => selectedCount == 11 && remaining >= 0 && !deadlinePassed && captain != null;
-  bool   get canSaveV2 => selectedCount == squadSize && !deadlinePassed && (isDraft ? _predsDone : captain != null); // v2: no budget; draft needs the score predictions
+  bool   get canSaveV2 => selectedCount == squadSize && !deadlinePassed && (isDraft || captain != null); // v2: no budget; draft predictions come AFTER the save (launch)
   /// draft-7 round (owner 25 Nov): 7 spots, no captain, "surprise" players score × surpriseMult
   bool   get isDraft => _draftView && (currentEvent?.draftOn ?? false);
-  int    get squadSize => isDraft ? 7 : 11;
-  /// the server formation the v2 builder saves
-  String get v2Formation => isDraft ? '2-3-1' : '4-5-1';
+  int    get squadSize => isDraft ? draftSize : 11;
+  /// draft size of the current round (4..7; 7 = the full shape with wingers)
+  int    get draftSize => (currentEvent?.draftSize ?? 7).clamp(4, 7).toInt();
+  /// the server formation the v2 builder saves (draft: DEF-MID-FWD counts of the round's shape)
+  String get v2Formation => isDraft ? const {4: '1-1-1', 5: '1-2-1', 6: '2-2-1'}[draftSize] ?? '2-3-1' : '4-5-1';
 
   // ─────────────────────────────────────────────────────────────────────────
   // LIFECYCLE
@@ -584,6 +592,10 @@ class _FancyPageState extends State<FancyPage> {
   static String _pitchName = 'short_club';  // pitch strips: split | full_club | short_club
   static String _arenaInfo = 'show';      // arena page info box: show | hide (fantasy_arena_info)
   static bool _cfgLoaded = false;
+  /// which squads the app offers (DB `fantasy_modes`): draft | normal | both (launch default draft)
+  static String _modes = 'draft';
+  bool get _draftOnly => _modes == 'draft';
+  bool get _normalOnly => _modes == 'normal';
   Future<void> _loadAppConfig() async {
     if (_cfgLoaded) return;
     try {
@@ -596,6 +608,8 @@ class _FancyPageState extends State<FancyPage> {
         final pn = r['pitch_name'];
         _pitchName = (pn == 'split' || pn == 'full_club') ? pn as String : 'short_club';
         _arenaInfo = r['arena_info'] == 'hide' ? 'hide' : 'show';
+        final md = r['modes'];
+        _modes = (md == 'normal' || md == 'both') ? md as String : 'draft';
       }
       _cfgLoaded = true;
       if (mounted) setState(() {});
@@ -633,11 +647,12 @@ class _FancyPageState extends State<FancyPage> {
     setState(() { _lobbyLoading = true; _lobbyError = null; });
     try {
       try { await _sb.rpc('fantasy_tick'); } catch (_) {}
+      await _loadAppConfig();   // the modes decide which rounds count
       final res = await _sb.rpc('get_fantasy_lobby');
       final data = res as Map<String, dynamic>;
       setState(() {
-        // launch = DRAFT only: a round without the draft open counts as "no round"
-        FantasyEvent? ev(dynamic j) { if (j == null) return null; final e = FantasyEvent.fromJson(j as Map<String, dynamic>); return e.draftOn ? e : null; }
+        // modes = draft: a round without the draft open counts as "no round"; normal / both: every round
+        FantasyEvent? ev(dynamic j) { if (j == null) return null; final e = FantasyEvent.fromJson(j as Map<String, dynamic>); return (e.draftOn || !_draftOnly) ? e : null; }
         _localEvent = ev(data['LOCAL']);
         _worldEvent = ev(data['WORLD']);
         _lobbyLoading = false;
@@ -690,7 +705,7 @@ class _FancyPageState extends State<FancyPage> {
       }
       if (isDraft) {
         await _sb.rpc('save_fantasy_draft', params: {'p_event_id': currentEvent!.eventId, 'p_slots': slots});
-        if (_predMatches.isNotEmpty) {
+        if (_predMatches.isNotEmpty && _predsDone) {
           await _sb.rpc('save_draft_predictions', params: {'p_event_id': currentEvent!.eventId, 'p_preds': _predsPayload});
         }
       } else {
@@ -704,8 +719,10 @@ class _FancyPageState extends State<FancyPage> {
       setState(() { _saving = false; saved = true; _hasSquad = true; });
       if (mounted) showStadiumConfetti(context);
       final evId = currentEvent!.eventId;
+      final askPreds = isDraft && _predMatches.isNotEmpty && !_predsDone;
       Future.delayed(const Duration(milliseconds: 1200), () async {
         if (!mounted) return;
+        if (askPreds) { await this._d7EditPreds(afterSave: true); if (!mounted) return; }
         final shown = await showLaunchSavedNudge(context, isArabic, evId);
         if (!shown && mounted) _showSavedAd();
       });
@@ -766,7 +783,7 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   void enterArena(String value) {
     Diag.crumb('enterArena $value event=${currentEvent?.eventId}');
-    setState(() { arena = value; step = 1; clearSquad(); saved = false; _hasSquad = false; _squadChecked = false; _draftView = true; _duelKey = null; _startCountdown(); });
+    setState(() { arena = value; step = 1; clearSquad(); saved = false; _hasSquad = false; _squadChecked = false; _draftView = !_normalOnly && (currentEvent?.draftOn ?? false); _duelKey = null; _startCountdown(); });
     if (currentEvent != null) {
       _myRank = null;
       _loadPlayers(currentEvent!.eventId);
@@ -1989,7 +2006,7 @@ class _FancyPageState extends State<FancyPage> {
             userId: _sb.auth.currentUser!.id, draft: isDraft, isArabic: isArabic),
         ],
       ])),
-      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: (formation == '4-5-1' || formation == '2-3-1') ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
+      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: (formation == '4-5-1' || isDraft) ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
     ]);
   });
 
@@ -4947,16 +4964,16 @@ class _FantasyHelpSheetState extends State<FantasyHelpSheet> {
     final steps = [
       (Icons.stadium_outlined,      t('Pick your arena', 'اختار الأرينا'),
                                     t('Egypt (Ahly & Zamalek) or World.', 'مصر (الأهلي والزمالك) أو عالمي.')),
-      (Icons.groups_2_outlined,     t('Pick 7 players', 'اختار 7 لعيبة'),
-                                    t('Goalkeeper, full back, centre back, midfielder, two wingers and a striker.',
-                                      'حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم.')),
+      (Icons.groups_2_outlined,     t('Pick your players', 'اختار لاعيبتك'),
+                                    t('Every round says how many (4 to 7): a goalkeeper, then defence, midfield and attack.',
+                                      'كل جولة بتقولك العدد (من 4 لـ 7): حارس، وبعدين دفاع، ووسط، وهجوم.')),
       (Icons.compare_arrows_rounded, t('Two players, you choose', 'لاعبين قدامك، وإنت تختار'),
                                     t('For every spot you see two players. Tap the one you want; the winner stays until you lock him.',
                                       'في كل مركز بيظهرلك لاعبين. دوس على اللي عايزه، واللي يكسب يفضل لحد ما تثبّته.')),
       (Icons.shield_outlined,       t('Max ${4} from one club', 'أقصى 4 من نفس النادي'),
                                     t('Mix your team from different clubs.', 'نوّع فريقك من أكتر من نادي.')),
       (Icons.scoreboard_outlined,   t('Predict the score', 'توقّع النتيجة'),
-                                    t('If you tie on points, the better score predictions win.', 'لو اتعادلت في النقط، اللي توقعاته أصح يكسب.')),
+                                    t('Right after you save. If you tie on points, the better predictions win.', 'بعد ما تحفظ على طول. لو اتعادلت في النقط، اللي توقعاته أصح يكسب.')),
       (Icons.lock_clock,            t('Save before the deadline', 'احفظ قبل الديدلاين'),
                                     t('Teams lock before the round starts.', 'التشكيلات بتتقفل قبل ما الجولة تبدأ.')),
       (Icons.sports_soccer,         t('Players play — you score', 'اللاعيبة بتلعب وإنت بتجمع نقط'),
