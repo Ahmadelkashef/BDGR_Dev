@@ -34,7 +34,6 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   List<Map<String, dynamic>> _rows = [];
   List<Map<String, dynamic>> _leagues = [];
   bool _loading = true, _loadingMore = false;
-  bool _showRest = false;   // في الأول التلاتة الأوائل بس
   String? _error;
   int _token = 0;
 
@@ -92,7 +91,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   Future<void> _loadBoard({bool more = false}) async {
     if (_key == null) { setState(() { _loading = false; _board = null; _rows = []; }); return; }
     final tok = ++_token;
-    setState(() { if (more) { _loadingMore = true; } else { _loading = true; _error = null; _showRest = false; } });
+    setState(() { if (more) { _loadingMore = true; } else { _loading = true; _error = null; } });
     try {
       final r = Map<String, dynamic>.from(await _sb.rpc(_mode == 'draft' ? 'fantasy_leaderboard_draft' : 'fantasy_leaderboard', params: {
         'p_type': _type, 'p_period': _period, 'p_key': _key, 'p_scope': _scope,
@@ -217,46 +216,36 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
     final top = _rows.take(3).toList();
     final rest = _rows.skip(3).toList();
     return [
-      SliverPersistentHeader(pinned: true, delegate: _PodiumHeader(
-        maxH: _heroH,
-        full: Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 0), child: GestureDetector(
-          onHorizontalDragEnd: (d) {
-            final v = d.primaryVelocity ?? 0;
-            if (v.abs() > 250) _switchType();
-          },
-          child: _podium(top))),
-        compact: _podiumCompact(top),
-      )),
-      SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 6, 16, 0), child: _myStrip())),
+      // calm podium: three tall bars (3 · 2 · 1, the winner on the right), then my card, then the list
+      SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: GestureDetector(
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v.abs() > 250) _switchType();
+        },
+        child: _podium(top)))),
+      SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 18, 16, 6), child: _myStrip())),
       if (state == 'running')
-        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
           child: Text(t('Still running — points are added after each round finishes.', 'لسه شغال — النقط بتتضاف بعد ما كل جولة تخلص.'),
             style: const TextStyle(color: muted, fontSize: 12)))),
-      if (!_showRest && rest.isNotEmpty)
-        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: OutlinedButton(
-            onPressed: () => setState(() => _showRest = true),
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: line),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 12)),
-            child: Text(t('Show places 4 – ${rest.length + 3}', 'اعرض من 4 لـ ${rest.length + 3}'),
-              style: const TextStyle(fontWeight: FontWeight.w800)),
-          ))),
-      if (_showRest) SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      if (rest.isNotEmpty) SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         sliver: SliverList.separated(
           itemCount: rest.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 6),
+          separatorBuilder: (_, __) => const Divider(height: 1, thickness: 1, color: Color(0xFF1E2024)),
           itemBuilder: (_, i) => _row(rest[i]),
         ),
       ),
-      if (_showRest && _rows.length < total)
-        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: OutlinedButton(
+      if (_rows.length < total)
+        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          child: Center(child: TextButton(
             onPressed: _loadingMore ? null : () => _loadBoard(more: true),
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: line),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 12)),
-            child: Text(_loadingMore ? t('Loading…', 'بنحمّل…') : t('Next 10', 'اعرض 10 كمان')),
-          ))),
+            style: TextButton.styleFrom(foregroundColor: Colors.white70, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF2A2D32)))),
+            child: _loadingMore
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: muted))
+              : Text(t('Show more', 'اعرض أكتر'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          )))),
     ];
   }
 
@@ -433,6 +422,10 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   }
 
   // ─── podium ────────────────────────────────────────────────────────────
+  static const _bar = Color(0xFF1C1E22);       // bar fill
+  static const _barLine = Color(0xFF2A2D32);   // bar edge
+  static const _crown = Color(0xFFE8C46A);     // only the winner's picture frame
+
   Widget _podium(List<Map<String, dynamic>> top) {
     final prizes = ((_board?['prizes'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     String? prizeFor(int rank) {
@@ -441,87 +434,50 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
       return withPrizeIcon(prizeIconOf(p), widget.isArabic ? '${p['prize_ar']}' : '${p['prize_en']}');
     }
     Map<String, dynamic>? at(int i) => top.length > i ? top[i] : null;
-    final h = _heroH - 8;
-    return Container(
-      height: h,
-      padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF2B210A), Color(0xFF141109), Color(0xFF0E0E10)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-        borderRadius: BorderRadius.circular(24), border: Border.all(color: _gold.withOpacity(0.4))),
-      child: Column(children: [
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Image.asset(Brand.badger, height: 18, color: _gold),
-          const SizedBox(width: 8),
-          Text(_badgerTitle, style: const TextStyle(color: _gold, fontSize: 17, fontWeight: FontWeight.w900)),
-        ]),
-        const SizedBox(height: 2),
-        Text(_periodTitle, style: const TextStyle(color: muted, fontSize: 12.5, fontWeight: FontWeight.w700)),
-        Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(child: _podiumSpot(at(1), 2, h * 0.18, _silver, prizeFor(2), h * 0.155)),
-          Expanded(child: _podiumSpot(at(0), 1, h * 0.25, _gold, prizeFor(1), h * 0.20)),
-          Expanded(child: _podiumSpot(at(2), 3, h * 0.14, _bronze, prizeFor(3), h * 0.155)),
-        ])),
-        const SizedBox(height: 12),
-      ]),
-    );
+    return Column(children: [
+      Text(_badgerTitle, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 2),
+      Text(_periodTitle, style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 18),
+      // 3 · 2 · 1 left → right in both languages (the winner stands on the right, tallest)
+      SizedBox(height: 300, child: Directionality(textDirection: TextDirection.ltr, child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Expanded(child: _podiumSpot(at(2), 3, 118, prizeFor(3))),
+          const SizedBox(width: 14),
+          Expanded(child: _podiumSpot(at(1), 2, 150, prizeFor(2))),
+          const SizedBox(width: 14),
+          Expanded(child: _podiumSpot(at(0), 1, 186, prizeFor(1))),
+        ]))),
+    ]);
   }
 
-  // ترتيبي: سطر رفيع جوه المنصة
-  Widget _myStrip() {
-    final me = _board?['me'] as Map?;
-    final total = (_board?['total'] as num?)?.toInt() ?? 0;
-    return GestureDetector(
-      onTap: () => openMyFantasyStats(context, widget.isArabic, type: _type, onToggleLanguage: widget.onToggleLanguage),
-      child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: brandRed.withOpacity(0.45))),
-      child: me == null
-        ? Text(t("You didn't play this one — next round opens Friday", 'ما لعبتش في دي — الجولة الجاية بتفتح الجمعة'),
-            textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 12))
-        : Row(children: [
-            Text(t('You', 'إنت'), style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w800)),
-            const SizedBox(width: 8),
-            Text('#${me['rank']}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-            _move(me['move']?.toString()),
-            const SizedBox(width: 4),
-            Expanded(child: Text(t('of $total', 'من $total'), style: const TextStyle(color: Colors.white38, fontSize: 11.5))),
-            Text(t('${me['points']} pts', '${me['points']} نقطة'), style: const TextStyle(color: Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w800)),
-            const SizedBox(width: 6),
-            const Icon(Icons.insights_rounded, color: Colors.white38, size: 16),
-          ]),
-    ));
-  }
-
-  Widget _podiumSpot(Map<String, dynamic>? r, int place, double barH, Color c, String? prize, double avatar) {
+  Widget _podiumSpot(Map<String, dynamic>? r, int place, double barH, String? prize) {
     if (r == null) return const SizedBox.shrink();
     final me = r['is_me'] == true;
-    final big = place == 1;
+    final first = place == 1;
     return GestureDetector(
       onTap: () => _openUser(r),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (big) Text('👑', style: TextStyle(fontSize: avatar * 0.3)),
-        _avatar(r, avatar, ring: c),
+        _avatarSq(r, first ? 58 : 50, frame: first ? _crown : null),
         const SizedBox(height: 8),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(me ? t('You', 'إنت') : '${r['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-            style: TextStyle(color: me ? Brand.green : Colors.white, fontSize: big ? 15.5 : 13.5, fontWeight: FontWeight.w900))),
-        const SizedBox(height: 2),
+        Text(me ? t('You', 'إنت') : '${r['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+          style: TextStyle(color: me ? Brand.green : Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 1),
         Text(t('${r['points']} pts', '${r['points']} نقطة'),
-          style: TextStyle(color: c, fontSize: big ? 15 : 13, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
+          style: const TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 10),
         Container(
-          height: barH, margin: const EdgeInsets.symmetric(horizontal: 5),
+          height: barH, width: double.infinity,
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [c.withOpacity(0.7), c.withOpacity(0.12)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14))),
-          alignment: Alignment.topCenter,
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('$place', style: TextStyle(color: Colors.white, fontSize: big ? 30 : 24, fontWeight: FontWeight.w900, height: 1)),
+            color: first ? brandRed.withOpacity(0.16) : _bar,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: first ? brandRed.withOpacity(0.45) : _barLine)),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text('$place', style: TextStyle(color: Colors.white, fontSize: first ? 34 : 28, fontWeight: FontWeight.w300, height: 1)),
             if (prize != null) ...[
-              const SizedBox(height: 4),
-              FittedBox(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(prize, style: TextStyle(color: Colors.white, fontSize: big ? 14 : 12.5, fontWeight: FontWeight.w900)))),
+              const SizedBox(height: 8),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: FittedBox(
+                child: Text(prize, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)))),
             ],
           ]),
         ),
@@ -529,56 +485,86 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
     );
   }
 
-  Widget _avatar(Map<String, dynamic> r, double size, {Color? ring}) {
-    final url = r['avatar']?.toString();
-    final name = '${r['name'] ?? '?'}'.trim();
+  /// rounded-square picture (initial when there is none)
+  Widget _avatarSq(Map<String, dynamic>? r, double size, {Color? frame}) {
+    final url = r?['avatar']?.toString();
+    final name = '${r?['name'] ?? '?'}'.trim();
     final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
+    final fallback = Center(child: Text(initial, style: TextStyle(color: Colors.white, fontSize: size * 0.38, fontWeight: FontWeight.w800)));
     return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: surface2,
-          border: Border.all(color: ring ?? line, width: ring == null ? 1 : 2.5)),
-      child: ClipOval(child: url != null && url.isNotEmpty
-          ? _netImage(url, fit: BoxFit.cover, fallback: Center(child: Text(initial, style: TextStyle(color: Colors.white, fontSize: size * 0.38, fontWeight: FontWeight.w900))))
-          : Center(child: Text(initial, style: TextStyle(color: Colors.white, fontSize: size * 0.38, fontWeight: FontWeight.w900)))),
+      width: size, height: size, padding: EdgeInsets.all(frame == null ? 0 : 2),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(size * 0.3),
+        border: frame == null ? null : Border.all(color: frame, width: 1.6)),
+      child: ClipRRect(borderRadius: BorderRadius.circular(size * 0.26), child: Container(color: surface2,
+        child: url != null && url.isNotEmpty ? _netImage(url, fit: BoxFit.cover, fallback: fallback) : fallback)),
     );
   }
 
-  // ─── rows ──────────────────────────────────────────────────────────────
+  // my card: red, picture · points · rank · of
+  Widget _myStrip() {
+    final me = _board?['me'] as Map?;
+    final total = (_board?['total'] as num?)?.toInt() ?? 0;
+    Widget stat(String label, String value) => Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 3),
+      Text(value, maxLines: 1, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+    ]));
+    return GestureDetector(
+      onTap: () => openMyFantasyStats(context, widget.isArabic, type: _type, onToggleLanguage: widget.onToggleLanguage),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFFD81818), Color(0xFFA30F0F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(20)),
+        child: me == null
+          ? Text(t("You didn't play this one — next round opens soon", 'ما لعبتش في دي — الجولة الجاية قريب'),
+              textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700))
+          : Row(children: [
+              Column(mainAxisSize: MainAxisSize.min, children: [
+                _avatarSq(Map<String, dynamic>.from(me), 42),
+                const SizedBox(height: 4),
+                Text(t('You', 'إنت'), style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+              ]),
+              const SizedBox(width: 16),
+              stat(t('Points', 'النقط'), '${me['points']}'),
+              stat(t('Rank', 'الترتيب'), '#${me['rank']}'),
+              stat(t('Players', 'من'), '$total'),
+              _move(me['move']?.toString(), big: true),
+            ]),
+      ));
+  }
+
+  Widget _avatar(Map<String, dynamic> r, double size, {Color? ring}) => _avatarSq(r, size, frame: ring);
+
+  // ─── rows: rank · name + points · movement ─────────────────────────────
   Widget _row(Map<String, dynamic> r) {
     final me = r['is_me'] == true;
+    final rank = (r['rank'] as num?)?.toInt() ?? 0;
     return InkWell(
       onTap: () => _openUser(r),
-      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: me ? Brand.green.withOpacity(0.08) : cardBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: me ? Brand.green.withOpacity(0.6) : line)),
+        color: me ? Brand.green.withOpacity(0.06) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
         child: Row(children: [
-          SizedBox(width: 44, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${r['rank']}', style: const TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w900,
-                fontFeatures: [FontFeature.tabularFigures()])),
-            _move(r['move']?.toString()),
-          ])),
-          _avatar(r, 36),
-          const SizedBox(width: 10),
+          SizedBox(width: 46, child: Text(rank < 10 ? '0$rank' : '$rank', maxLines: 1,
+            style: const TextStyle(color: Colors.white60, fontSize: 18, fontWeight: FontWeight.w300,
+              fontFeatures: [FontFeature.tabularFigures()]))),
+          _avatarSq(r, 38),
+          const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(me ? t('You', 'إنت') : '${r['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: me ? Brand.green : Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
-            if (r['username'] != null)
-              Text('@${r['username']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
-          ])),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Row(mainAxisSize: MainAxisSize.min, children: [
+              style: TextStyle(color: me ? Brand.green : Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Row(children: [
+              Text(_period == 'round' ? t('${r['points']} pts', '${r['points']} نقطة')
+                  : t('${r['points']} pts · ${r['rounds']} rds', '${r['points']} نقطة · ${r['rounds']} جولة'),
+                style: const TextStyle(color: muted, fontSize: 12)),
               if (r['tied'] == true) GestureDetector(
                 onTap: () => showTieBreakSheet(context, widget.isArabic, period: _period, draft: _boardDraft, tb: r['tb'] as Map?, name: me ? t('You', 'إنت') : '${r['name']}'),
-                child: const Padding(padding: EdgeInsetsDirectional.only(end: 4), child: Icon(Icons.info_outline, color: _gold, size: 15))),
-              Text('${r['points']}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                child: const Padding(padding: EdgeInsetsDirectional.only(start: 4), child: Icon(Icons.info_outline, color: Colors.white38, size: 14))),
             ]),
-            Text(_period == 'round' ? t('pts', 'نقطة') : t('${r['rounds']} rds', '${r['rounds']} جولة'),
-              style: const TextStyle(color: muted, fontSize: 10.5)),
-          ]),
+          ])),
+          _move(r['move']?.toString(), big: true),
         ]),
       ),
     );
