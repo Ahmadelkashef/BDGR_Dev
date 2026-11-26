@@ -26,6 +26,8 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   // modes from the DB (fantasy_modes): draft → draft ranking · normal → normal · both → a menu
   String _mode = _FancyPageState._modes == 'normal' ? 'normal' : 'draft';
   String? _leagueId;
+  /// the server answers with its own mode: a round with no draft (e.g. Round 1) comes back as the normal ranking
+  bool get _boardDraft => ((_board?['mode'] as String?) ?? _mode) == 'draft';
 
   Map<String, dynamic>? _periods;
   Map<String, dynamic>? _board;
@@ -570,7 +572,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               if (r['tied'] == true) GestureDetector(
-                onTap: () => showTieBreakSheet(context, widget.isArabic, period: _period, draft: _mode == 'draft', tb: r['tb'] as Map?, name: me ? t('You', 'إنت') : '${r['name']}'),
+                onTap: () => showTieBreakSheet(context, widget.isArabic, period: _period, draft: _boardDraft, tb: r['tb'] as Map?, name: me ? t('You', 'إنت') : '${r['name']}'),
                 child: const Padding(padding: EdgeInsetsDirectional.only(end: 4), child: Icon(Icons.info_outline, color: _gold, size: 15))),
               Text('${r['points']}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
             ]),
@@ -588,7 +590,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => _UserSquadPage(
         userId: '${r['user_id']}', userName: '${r['name']}', eventId: ev, roundName: _periodTitle,
         username: r['username']?.toString(), avatarUrl: r['avatar']?.toString(),
-        rank: (r['rank'] as num?)?.toInt(), points: r['points'], isArabic: widget.isArabic, draft: _mode == 'draft')));
+        rank: (r['rank'] as num?)?.toInt(), points: r['points'], isArabic: widget.isArabic, draft: _boardDraft)));
     } else {
       _openVisitorProfile(context, userId: '${r['user_id']}', username: '${r['username'] ?? ''}',
           displayName: '${r['name']}', avatarUrl: r['avatar']?.toString());
