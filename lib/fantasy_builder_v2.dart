@@ -352,9 +352,28 @@ extension _BuilderV2 on _FancyPageState {
               'الشكل، وبعدين الحارس، الدفاع، الوسط، الهجوم.'), textAlign: TextAlign.center,
         style: const TextStyle(color: Color(0xFFDADADA), fontSize: 12.5, height: 1.4,
           shadows: [Shadow(color: Colors.black, blurRadius: 8)])),
+      if (isDraft) ...[const SizedBox(height: 14), _v2LimitPills()],
       const SizedBox(height: 22),
       _StartButton(label: t('START', 'ابدأ'), onTap: () => _v2Set(() { _gStage = isDraft ? 1 : 0; formation = v2Formation; })),
     ])));
+
+  /// club limits (owner 27 Nov): shown on the START screen and above the bench — calm glass pills, no popup
+  Widget _v2LimitPills({bool benchOnly = false}) {
+    Widget pill(IconData ic, String text) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(color: Colors.black.withOpacity(0.45), borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.14))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(ic, size: 14, color: brandRed), const SizedBox(width: 6),
+        Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
+      ]));
+    final lim = maxPerTeam ?? 4, sub = _FancyPageState._subsMax;
+    return Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+      if (!benchOnly) pill(Icons.shield_outlined, t('Team: max $lim from one club', 'الأساسيين: أقصى $lim من نفس النادي')),
+      if (this._benchOn) pill(Icons.event_seat_outlined, t('Bench: max $sub from one club', 'الاحتياطي: أقصى $sub من نفس النادي')),
+    ]);
+  }
 
   // ── bottom panel ────────────────────────────────────────────────────────────
   Widget _v2Panel(int stage, (String, int)? next) {
@@ -368,7 +387,9 @@ extension _BuilderV2 on _FancyPageState {
       title = t('Your team is ready', 'فريقك جاهز');
       // WORLD: the optional bench before saving
       body = this._benchOn
-        ? Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: this._benchRow(editable: !deadlinePassed))
+        ? Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _v2LimitPills(benchOnly: true), const SizedBox(height: 10),
+            this._benchRow(editable: !deadlinePassed)]))
         : _v2CaptainCards(pickOnly: true);
       action = _v2Button(
         deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين') : t('SAVE TEAM', 'حفظ الفريق'),
