@@ -227,13 +227,12 @@ class _BLeaguePageState extends State<_BLeaguePage> {
         _mine = r['mine'] is Map ? Map<String, dynamic>.from(r['mine'] as Map) : null;
         _minMembers = (r['min_members'] as num?)?.toInt() ?? _minMembers;
       });
-      _BLBoardCache
-        ..month = r['month'] as String?
-        ..at = DateTime.now()
-        ..items = List.of(_board)
-        ..more = _boardMore
-        ..total = _boardTotal
-        ..mine = _mine;
+      _BLBoardCache.month = r['month'] as String?;
+      _BLBoardCache.at = DateTime.now();
+      _BLBoardCache.items = List.of(_board);
+      _BLBoardCache.more = _boardMore;
+      _BLBoardCache.total = _boardTotal;
+      _BLBoardCache.mine = _mine;
     } catch (_) {} finally { _boardBusy = false; if (mounted) setState(() {}); }
   }
 
@@ -399,7 +398,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
                         alignment: _tab == 0 ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
                         child: FractionallySizedBox(widthFactor: 0.5, heightFactor: 1, child: Container(
                           decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: _blGold.withValues(alpha: 0.35)))))),
+                            border: Border.all(color: _blGold.withValues(alpha: 0.35))))))),
                       Row(children: [
                         for (final (i, l) in [(0, t('My team', 'فريقي')), (1, t('Table', 'الترتيب'))])
                           Expanded(child: GestureDetector(
