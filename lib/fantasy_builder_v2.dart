@@ -352,7 +352,7 @@ extension _BuilderV2 on _FancyPageState {
               'الشكل، وبعدين الحارس، الدفاع، الوسط، الهجوم.'), textAlign: TextAlign.center,
         style: const TextStyle(color: Color(0xFFDADADA), fontSize: 12.5, height: 1.4,
           shadows: [Shadow(color: Colors.black, blurRadius: 8)])),
-      if (isDraft) ...[const SizedBox(height: 14), _v2LimitPills()],
+      if (isDraft && _FancyPageState._limitPills) ...[const SizedBox(height: 14), _v2LimitPills()],
       const SizedBox(height: 22),
       _StartButton(label: t('START', 'ابدأ'), onTap: () => _v2Set(() { _gStage = isDraft ? 1 : 0; formation = v2Formation; })),
     ])));
@@ -388,7 +388,7 @@ extension _BuilderV2 on _FancyPageState {
       // WORLD: the optional bench before saving
       body = this._benchOn
         ? Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _v2LimitPills(benchOnly: true), const SizedBox(height: 10),
+            if (_FancyPageState._limitPills) ...[_v2LimitPills(benchOnly: true), const SizedBox(height: 10)],
             this._benchRow(editable: !deadlinePassed)]))
         : _v2CaptainCards(pickOnly: true);
       action = _v2Button(

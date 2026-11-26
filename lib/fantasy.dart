@@ -600,6 +600,7 @@ class _FancyPageState extends State<FancyPage> {
   static String _cardImage = 'photo';
   static String _pitchImage = 'shirt';      // pitch spot picture: photo | shirt
   static String _pitchName = 'short_club';  // pitch strips: split | full_club | short_club
+  static bool _limitPills = true;        // club-limit pills on the START / bench step (fantasy_limit_pills = show | hide)
   static int _subsMax = 2;               // bench: max subs from the same club (fantasy_draft_subs_max_per_team), apart from the 7
   static String _arenaInfo = 'show';      // arena page info box: show | hide (fantasy_arena_info)
   static bool _cfgLoaded = false;
@@ -623,6 +624,7 @@ class _FancyPageState extends State<FancyPage> {
         _modes = (md == 'normal' || md == 'both') ? md as String : 'draft';
         final sm = (r['subs_max_per_team'] as num?)?.toInt();
         if (sm != null && sm > 0) _subsMax = sm;
+        _limitPills = r['limit_pills'] != 'hide';
       }
       _cfgLoaded = true;
       if (mounted) setState(() {});
