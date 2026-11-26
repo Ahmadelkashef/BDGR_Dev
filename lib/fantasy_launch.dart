@@ -103,7 +103,7 @@ extension _LaunchLobby on _FancyPageState {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         StaggerIn(index: 0, child: backHeader(label: '', onBack: () => _v2Set(() => step = 0),
-            title: Text(t('Current Gameweek', 'الجولة الحالية'), maxLines: 1, overflow: TextOverflow.ellipsis,
+            title: Text(t('Current GW', 'الجولة الحالية'), maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)))),
         const SizedBox(height: 10),
         StaggerIn(index: 1, dy: 24, child: _lInfoCard(event, ph, has)),

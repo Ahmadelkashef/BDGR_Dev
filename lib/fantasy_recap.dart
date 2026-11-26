@@ -13,6 +13,9 @@ part of 'fantasy.dart';
 
 /// recap per arena type (LOCAL / WORLD), kept for the app run
 final Map<String, Map<String, dynamic>> _recapCache = {};
+/// recaps by event id (swiping to older rounds) + finished rounds list per arena, kept for the app run
+final Map<String, Map<String, dynamic>> _recapByEvent = {};
+final Map<String, List<Map<String, dynamic>>> _recapRoundsCache = {};
 
 String _fmtInt(num? n) {
   if (n == null) return '—';
@@ -70,7 +73,6 @@ extension _RoundRecap on _FancyPageState {
     final rc = _recap, m = _recapMain;
     if (rc == null || m == null) return const SizedBox.shrink();
     if ('${rc['event_id']}' == current.eventId && phaseOf(current) != 'finished') return const SizedBox.shrink();
-    final name = isArabic ? '${rc['name_ar'] ?? rc['name_en']}' : '${rc['name_en']}';
     final played = m['played'] == true;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -86,8 +88,8 @@ extension _RoundRecap on _FancyPageState {
           const SizedBox(width: 8),
           Expanded(child: Text(
             played
-              ? '$name · ${_fmtInt(m['points'] as num?)} ${t('pts', 'نقطة')} · #${_fmtInt(m['rank'] as num?)}'
-              : t('You missed $name', 'فاتتك $name'),
+              ? '${t('Last round', 'آخر جولة')} · ${_fmtInt(m['points'] as num?)} ${t('pts', 'نقطة')} · #${_fmtInt(m['rank'] as num?)}'
+              : t('You missed the last round', 'فاتتك آخر جولة'),
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800))),
           Text(t('Recap', 'الملخص'), style: const TextStyle(color: Brand.green, fontSize: 12, fontWeight: FontWeight.w800)),
@@ -98,8 +100,9 @@ extension _RoundRecap on _FancyPageState {
   }
 
   void _openRecap() {
-    final rc = _recap;
-    if (rc == null) return;
+    final rc0 = _recap;
+    if (rc0 == null) return;
+    final rc = rc0;
     final cur = currentEvent;
     final canBuild = cur != null && phaseOf(cur) == 'open' && !(_hasSquad || saved) && '${rc['event_id']}' != cur.eventId;
     showModalBottomSheet<String>(
@@ -114,7 +117,9 @@ extension _RoundRecap on _FancyPageState {
       } else if (act == 'rank') {
         _openRankingPage(context, isArabic, null);
       } else if (act.startsWith('squad:')) {
-        final mode = act.substring(6);
+        final parts = act.split(':');
+        final mode = parts[1];
+        final rc = _recapByEvent[parts.length > 2 ? parts[2] : ''] ?? rc0;
         final m = ((rc['modes'] as List?) ?? const []).cast<Map>().firstWhere((x) => x['mode'] == mode, orElse: () => const {});
         final me = _sb.auth.currentUser?.id;
         if (me == null) return;
@@ -137,26 +142,81 @@ class _RecapSheet extends StatefulWidget {
 
 class _RecapSheetState extends State<_RecapSheet> {
   final _cardKey = GlobalKey();
-  int _tab = 0;
-  bool _sharing = false, _confetti = false;
+  int _tab = 0, _i = 0, _dir = 1;
+  bool _sharing = false, _loading = false;
+  List<Map<String, dynamic>> _rounds = [];
+  final Set<String> _confettiDone = {};
   static const _gold = Color(0xFFFFB300);
 
   String t(String en, String ar) => widget.isArabic ? ar : en;
+  /// the recap on screen (page 0 = the last round)
+  Map<String, dynamic> get _rc {
+    if (_rounds.isEmpty) return widget.recap;
+    return _recapByEvent['${_rounds[_i]['event_id']}'] ?? (_i == 0 ? widget.recap : const {});
+  }
   List<Map<String, dynamic>> get _modes =>
-      [for (final m in (widget.recap['modes'] as List?) ?? const []) Map<String, dynamic>.from(m as Map)];
+      [for (final m in (_rc['modes'] as List?) ?? const []) Map<String, dynamic>.from(m as Map)];
   Map<String, dynamic> get _m => _modes.isEmpty ? const {} : _modes[_tab.clamp(0, _modes.length - 1).toInt()];
-  String get _roundName => widget.isArabic ? '${widget.recap['name_ar'] ?? widget.recap['name_en']}' : '${widget.recap['name_en']}';
+  String get _roundName => widget.isArabic ? '${_rc['name_ar'] ?? _rc['name_en'] ?? ''}' : '${_rc['name_en'] ?? ''}';
   String get _arena => widget.recap['type'] == 'LOCAL' ? t('Egypt', 'مصر') : t('World', 'عالمي');
 
   @override
   void initState() {
     super.initState();
-    // top 10%: confetti once, after the numbers counted up
-    if (_modes.any((m) => m['top10'] == true)) {
+    _recapByEvent['${widget.recap['event_id']}'] = widget.recap;
+    _rounds = [{'event_id': widget.recap['event_id'], 'name_en': widget.recap['name_en'], 'name_ar': widget.recap['name_ar']}];
+    _loadRounds();
+    _maybeConfetti();
+  }
+
+  /// the list of finished rounds of this arena (names only, once per app run)
+  Future<void> _loadRounds() async {
+    final type = '${widget.recap['type']}';
+    try {
+      var list = _recapRoundsCache[type];
+      if (list == null) {
+        final r = await _sb.rpc('fantasy_recap_rounds', params: {'p_type': type});
+        list = [for (final x in (r as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
+        _recapRoundsCache[type] = list;
+      }
+      if (!mounted || list.isEmpty) return;
+      final cur = '${_rounds[_i]['event_id']}';
+      setState(() {
+        _rounds = list!;
+        final k = _rounds.indexWhere((x) => '${x['event_id']}' == cur);
+        _i = k < 0 ? 0 : k;
+      });
+    } catch (_) {}
+  }
+
+  /// top 10%: confetti once per round, after the numbers counted up
+  void _maybeConfetti() {
+    final id = '${_rc['event_id']}';
+    if (_modes.any((m) => m['top10'] == true) && _confettiDone.add(id)) {
       Future.delayed(const Duration(milliseconds: 1000), () {
-        if (mounted && !_confetti) { _confetti = true; showStadiumConfetti(context); HapticFeedback.mediumImpact(); }
+        if (mounted && '${_rc['event_id']}' == id) { showStadiumConfetti(context); HapticFeedback.mediumImpact(); }
       });
     }
+  }
+
+  /// older = +1, newer = -1
+  Future<void> _go(int step) async {
+    final n = _i + step;
+    if (n < 0 || n >= _rounds.length || _loading) return;
+    final id = '${_rounds[n]['event_id']}';
+    HapticFeedback.selectionClick();
+    if (!_recapByEvent.containsKey(id)) {
+      setState(() => _loading = true);
+      try {
+        final r = await _sb.rpc('fantasy_round_recap', params: {'p_type': widget.recap['type'], 'p_event': id});
+        if (r is Map) _recapByEvent[id] = Map<String, dynamic>.from(r);
+      } catch (_) {}
+      if (!mounted) return;
+      _loading = false;
+      if (!_recapByEvent.containsKey(id)) { setState(() {}); return; }
+    }
+    setState(() { _dir = step; _i = n; _tab = 0; });
+    _maybeConfetti();
   }
 
   Future<void> _share() async {
@@ -181,38 +241,103 @@ class _RecapSheetState extends State<_RecapSheet> {
     }
   }
 
+  /// ‹ older · title · newer ›  (+ dots); the older round is on the reading-start side
+  Widget _navHeader() {
+    final older = _i < _rounds.length - 1, newer = _i > 0;
+    Widget arrow(bool toOlder, bool on) {
+      // start side = older: left in English, right in Arabic
+      final icon = (toOlder != widget.isArabic) ? Icons.chevron_left_rounded : Icons.chevron_right_rounded;
+      return Pressable(child: GestureDetector(
+        onTap: on ? () => _go(toOlder ? 1 : -1) : null,
+        child: Container(width: 40, height: 40, alignment: Alignment.center,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: on ? const Color(0xFF1F2125) : Colors.transparent,
+            border: Border.all(color: on ? const Color(0xFF3A3D42) : Colors.transparent)),
+          child: Icon(icon, color: on ? Colors.white : Colors.white12, size: 26))));
+    }
+    return Column(children: [
+      Row(children: [
+        arrow(true, older),
+        Expanded(child: Column(children: [
+          Text(_i == 0 ? t('LAST ROUND', 'آخر جولة') : _roundName.toUpperCase(),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 2),
+          Text(_i == 0 ? '$_roundName · $_arena' : _arena,
+            style: const TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w700)),
+        ])),
+        arrow(false, newer),
+      ]),
+      if (_rounds.length > 1) ...[
+        const SizedBox(height: 8),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          if (_rounds.length <= 12)
+            // dots: the last round sits on the reading-end side, older ones before it
+            for (var k = _rounds.length - 1; k >= 0; k--)
+              AnimatedContainer(duration: const Duration(milliseconds: 200), margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: k == _i ? 16 : 6, height: 6,
+                decoration: BoxDecoration(color: k == _i ? brandRed : Colors.white24, borderRadius: BorderRadius.circular(3)))
+          else
+            Text('${_rounds.length - _i} / ${_rounds.length}', style: const TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 4),
+        Text(t('Swipe or use the arrows for older rounds', 'اسحب أو دوس على الأسهم للجولات اللي قبل كده'),
+          style: const TextStyle(color: Colors.white38, fontSize: 11)),
+      ],
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final m = _m;
     final played = m['played'] == true;
-    final bl = widget.recap['bleague'] is Map ? Map<String, dynamic>.from(widget.recap['bleague'] as Map) : null;
-    return DraggableScrollableSheet(
-      expand: false, initialChildSize: 0.9, maxChildSize: 0.95, minChildSize: 0.5,
-      builder: (ctx, sc) => Column(children: [
-        const SizedBox(height: 10),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-        Expanded(child: ListView(controller: sc, padding: const EdgeInsets.fromLTRB(18, 14, 18, 12), children: [
-          Row(children: [
-            Expanded(child: Text(t('ROUND RECAP', 'ملخص الجولة'),
-              style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.6, fontWeight: FontWeight.w800))),
-            Text('$_roundName · $_arena', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
-          ]),
-          if (_modes.length > 1) ...[const SizedBox(height: 10), _modeTabs()],
-          const SizedBox(height: 12),
-          if (!played) _missed(m) else ...[
-            RepaintBoundary(key: _cardKey, child: _shareCard(m)),
-            const SizedBox(height: 12),
-            _statsRow(m),
-            const SizedBox(height: 12),
-            if (m['best'] is Map) _playerRow(Map<String, dynamic>.from(m['best'] as Map), best: true),
-            if (m['worst'] is Map && (m['worst'] as Map)['id'] != (m['best'] as Map?)?['id'])
-              Padding(padding: const EdgeInsets.only(top: 8), child: _playerRow(Map<String, dynamic>.from(m['worst'] as Map), best: false)),
-            if (bl != null) ...[const SizedBox(height: 12), _blCard(bl)],
-          ],
-        ])),
-        _buttons(played),
-      ]),
-    );
+    final bl = _rc['bleague'] is Map ? Map<String, dynamic>.from(_rc['bleague'] as Map) : null;
+    final id = '${_rc['event_id']}';
+    final content = ListView(key: ValueKey('rc_${id}_$_tab'), padding: const EdgeInsets.fromLTRB(18, 4, 18, 12), children: [
+      if (_modes.length > 1) ...[_modeTabs(), const SizedBox(height: 12)],
+      if (!played) _missed(m) else ...[
+        RepaintBoundary(key: _cardKey, child: _shareCard(m)),
+        const SizedBox(height: 12),
+        _statsRow(m),
+        const SizedBox(height: 12),
+        if (m['best'] is Map) _playerRow(Map<String, dynamic>.from(m['best'] as Map), best: true),
+        if (m['worst'] is Map && (m['worst'] as Map)['id'] != (m['best'] as Map?)?['id'])
+          Padding(padding: const EdgeInsets.only(top: 8), child: _playerRow(Map<String, dynamic>.from(m['worst'] as Map), best: false)),
+        if (bl != null) ...[const SizedBox(height: 12), _blCard(bl)],
+      ],
+    ]);
+    // older content comes in from the start side (left in English, right in Arabic)
+    final fromStart = _dir > 0;
+    final dx = (fromStart != widget.isArabic) ? -1.0 : 1.0;
+    return FractionallySizedBox(heightFactor: 0.9, child: Column(children: [
+      const SizedBox(height: 10),
+      Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+      Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 10), child: _navHeader()),
+      Expanded(child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v.abs() < 250) return;
+          final towardEnd = v > 0;   // finger moved left → right
+          // pulling the content toward the reading end shows the older round
+          _go((towardEnd != widget.isArabic) ? 1 : -1);
+        },
+        child: Stack(children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            transitionBuilder: (child, a) {
+              final incoming = child.key == ValueKey('rc_${id}_$_tab');
+              final begin = Offset(incoming ? dx * 0.35 : -dx * 0.35, 0);
+              return FadeTransition(opacity: a, child: SlideTransition(
+                position: Tween(begin: begin, end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+                child: child));
+            },
+            child: content),
+          if (_loading) const Positioned(top: 8, left: 0, right: 0,
+            child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: muted)))),
+        ]),
+      )),
+      _buttons(played),
+    ]));
   }
 
   Widget _modeTabs() {
@@ -373,7 +498,7 @@ class _RecapSheetState extends State<_RecapSheet> {
           if (played) Expanded(child: _ghost(Icons.share_rounded, t('Share', 'شير'), _sharing ? null : _share)),
           if (played) const SizedBox(width: 8),
           if (played) Expanded(child: _ghost(Icons.groups_2_outlined, t('My squad', 'تشكيلتي'),
-            () => Navigator.of(context).pop('squad:${m['mode']}'))),
+            () => Navigator.of(context).pop('squad:${m['mode']}:${_rc['event_id']}'))),
           if (played) const SizedBox(width: 8),
           Expanded(child: _ghost(Icons.leaderboard_outlined, t('Ranking', 'الترتيب'), () => Navigator.of(context).pop('rank'))),
         ]),
