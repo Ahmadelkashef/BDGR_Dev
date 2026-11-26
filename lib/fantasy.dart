@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'media_cache.dart';
 import 'dart:math' as math;
-import 'dart:ui' show FontFeature;
+import 'dart:ui' show FontFeature, ImageByteFormat;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -32,6 +33,7 @@ part 'fantasy_social.dart';
 part 'fantasy_cup.dart';
 part 'fantasy_launch.dart';
 part 'fantasy_bleague.dart';
+part 'fantasy_recap.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -790,6 +792,7 @@ class _FancyPageState extends State<FancyPage> {
       _loadSavedSquad(currentEvent!.eventId);
       if (phaseOf(currentEvent) == 'finished') _loadMyRank(currentEvent!.eventId);
     }
+    this._loadRecap();   // last finished round of this arena (opens once per round)
   }
 
   Future<void> _loadSavedSquad(String eventId) async {

@@ -29,6 +29,8 @@ class FantasyMotion {
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
   /// the intro plays once per app run
   static bool introPlayed = false;
+  /// a "your points are out" push was tapped: the round page opens this round's recap (event id)
+  static String? pendingRecapEvent;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

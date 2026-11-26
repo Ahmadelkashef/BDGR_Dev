@@ -107,6 +107,8 @@ extension _LaunchLobby on _FancyPageState {
                 style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)))),
         const SizedBox(height: 10),
         StaggerIn(index: 1, dy: 24, child: _lInfoCard(event, ph, has)),
+        // the last finished round: "Round 1 · 9 pts · #5,457 ›" → the recap sheet
+        StaggerIn(index: 2, child: this._recapLine(event)),
         // modes = both (DB): pick which squad this page shows
         if (_FancyPageState._modes == 'both' && event.draftOn)
           Padding(padding: const EdgeInsets.only(top: 10), child: StaggerIn(index: 2, child: draftModeSwitch(onPick: (d) => _lSetMode(event, d)))),

@@ -253,6 +253,7 @@ class _MainShellState extends State<MainShell> {
     Route<void>? page;
     if (kind == 'fantasy_deadline' || kind == 'fantasy_results') {
       tab = 1;
+      if (kind == 'fantasy_results') FantasyMotion.pendingRecapEvent = d['event_id']?.toString();
     } else if (kind == 'support_reply') {
       final id = int.tryParse(d['ticket_id']?.toString() ?? '');
       if (id != null) { tab = 0; page = supportThreadRoute(id); }
