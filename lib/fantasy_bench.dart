@@ -68,7 +68,7 @@ extension _Bench on _FancyPageState {
       await _sb.rpc('save_fantasy_draft_subs', params: {'p_event_id': ev.eventId, 'p_subs': _benchPayload});   // quiet on success
     } catch (e) {
       final s = e.toString();
-      _showSnack(s.contains('team_limit') ? t('Max ${maxPerTeam ?? 4} players from the same club (bench included).', 'أقصى ${maxPerTeam ?? 4} من نفس النادي (مع الاحتياطي).')
+      _showSnack(s.contains('team_limit') ? t('Max ${_FancyPageState._subsMax} subs from the same club.', 'أقصى ${_FancyPageState._subsMax} احتياطي من نفس النادي.')
         : s.contains('event_closed') ? t('The deadline has passed.', 'الديدلاين عدّى.')
         : t('Could not save the bench. Try again.', 'الاحتياطي ما اتحفظش. جرّب تاني.'));
     }
@@ -175,6 +175,8 @@ extension _Bench on _FancyPageState {
             'لو حد من الـ7 مالعبش خالص، يدخل احتياطي 1، بعده 2، بعده 3، أيًا كان المركز.'),
           t('The bench goalkeeper only replaces your goalkeeper.', 'الحارس الاحتياطي بيدخل مكان الحارس بس.'),
           t('A sub who did not play either is skipped.', 'الاحتياطي اللي مالعبش هو كمان بيتخطى.'),
+          t('Max ${_FancyPageState._subsMax} subs from the same club (the bench counts on its own, apart from your 7).',
+            'أقصى ${_FancyPageState._subsMax} احتياطي من نفس النادي (الاحتياطي بيتحسب لوحده، بعيد عن الـ7).'),
         ]) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('• $l',
             style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4))),
       ])));
@@ -263,9 +265,10 @@ extension _Bench on _FancyPageState {
         final c = b.totalPts.compareTo(a.totalPts);
         return c != 0 ? c : (isArabic ? a.nameAr : a.nameEn).compareTo(isArabic ? b.nameAr : b.nameEn);
       });
-    final lim = maxPerTeam;
+    // the 7 and the bench have separate club limits: starters = maxPerTeam, bench = _subsMax (subs only)
+    final int? lim = countBench ? _FancyPageState._subsMax : maxPerTeam;
     int clubCount(String? team) => team == null ? 0
-      : teamCount(team) + (countBench ? [_benchGk, ..._benchOut].where((b) => b?.teamId == team).length : 0);
+      : countBench ? [_benchGk, ..._benchOut].where((b) => b?.teamId == team).length : teamCount(team);
     var asList = listFirst;
     var club = '', pos = '';
     final clubs = <String, String>{for (final p in all) if (p.teamId != null) p.teamId!: isArabic ? p.teamNameAr : p.teamNameEn};
@@ -277,7 +280,7 @@ extension _Bench on _FancyPageState {
         final list = all.where((p) => (club.isEmpty || p.teamId == club) && (pos.isEmpty || p.exactPos == pos)).toList();
         bool full(FancyPlayer p) => lim != null && p.teamId != null && clubCount(p.teamId) >= lim;
         void pick(FancyPlayer p) {
-          if (full(p)) { _showSnack(t('Max $lim players from the same club.', 'أقصى $lim لاعيبة من نفس النادي.')); return; }
+          if (full(p)) { _showSnack(countBench ? t('Max $lim subs from the same club.', 'أقصى $lim احتياطي من نفس النادي.') : t('Max $lim players from the same club.', 'أقصى $lim لاعيبة من نفس النادي.')); return; }
           HapticFeedback.selectionClick();
           Navigator.pop(ctx, p);
         }

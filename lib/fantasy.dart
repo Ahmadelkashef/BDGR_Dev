@@ -600,6 +600,7 @@ class _FancyPageState extends State<FancyPage> {
   static String _cardImage = 'photo';
   static String _pitchImage = 'shirt';      // pitch spot picture: photo | shirt
   static String _pitchName = 'short_club';  // pitch strips: split | full_club | short_club
+  static int _subsMax = 2;               // bench: max subs from the same club (fantasy_draft_subs_max_per_team), apart from the 7
   static String _arenaInfo = 'show';      // arena page info box: show | hide (fantasy_arena_info)
   static bool _cfgLoaded = false;
   /// which squads the app offers (DB `fantasy_modes`): draft | normal | both (launch default draft)
@@ -620,6 +621,8 @@ class _FancyPageState extends State<FancyPage> {
         _arenaInfo = r['arena_info'] == 'hide' ? 'hide' : 'show';
         final md = r['modes'];
         _modes = (md == 'normal' || md == 'both') ? md as String : 'draft';
+        final sm = (r['subs_max_per_team'] as num?)?.toInt();
+        if (sm != null && sm > 0) _subsMax = sm;
       }
       _cfgLoaded = true;
       if (mounted) setState(() {});
@@ -5011,11 +5014,11 @@ class _FantasyHelpSheetState extends State<FantasyHelpSheet> {
       (Icons.compare_arrows_rounded, t('How you pick', 'إزاي بتختار'),
                                     t('Egypt: two players at a time — tap the one you want, he stays on his side, or open "All players". World: swipe the cards or open the list with club and position filters.',
                                       'مصر: لاعبين قدامك — دوس على اللي عايزه ويفضل مكانه، أو افتح "كل اللعيبة". العالمي: اسحب الكروت، أو افتح الليستة بفلتر النادي والمركز.')),
-      (Icons.event_seat_outlined,   t('Bench (World)', 'الاحتياطي (العالمي)'),
-                                    t('Optional: a goalkeeper + up to 3 players (defender, midfielder, attacker) in order. If one of your 7 does not play at all, sub 1 comes in, then 2, then 3; the bench goalkeeper only replaces your goalkeeper.',
-                                      'اختياري: حارس + لحد 3 لاعيبة (مدافع ووسط ومهاجم) بالترتيب. لو حد من الـ7 مالعبش خالص يدخل احتياطي 1، بعده 2، بعده 3، والحارس الاحتياطي بيدخل مكان الحارس بس.')),
+      (Icons.event_seat_outlined,   t('Bench', 'الاحتياطي'),
+                                    t('Optional: a goalkeeper + up to 3 players (defender, midfielder, attacker) in order. If one of your 7 does not play at all, sub 1 comes in, then 2, then 3; the bench goalkeeper only replaces your goalkeeper. Max ${_FancyPageState._subsMax} subs from one club.',
+                                      'اختياري: حارس + لحد 3 لاعيبة (مدافع ووسط ومهاجم) بالترتيب. لو حد من الـ7 مالعبش خالص يدخل احتياطي 1، بعده 2، بعده 3، والحارس الاحتياطي بيدخل مكان الحارس بس. أقصى ${_FancyPageState._subsMax} احتياطي من نفس النادي.')),
       (Icons.shield_outlined,       t('Max ${4} from one club', 'أقصى 4 من نفس النادي'),
-                                    t('Mix your team from different clubs.', 'نوّع فريقك من أكتر من نادي.')),
+                                    t('In your main team. Mix it from different clubs.', 'في الأساسيين. نوّع فريقك من أكتر من نادي.')),
       (Icons.scoreboard_outlined,   t('Predict the score', 'توقّع النتيجة'),
                                     t('Right after you save. If you tie on points, the better predictions win.', 'بعد ما تحفظ على طول. لو اتعادلت في النقط، اللي توقعاته أصح يكسب.')),
       (Icons.lock_clock,            t('Save before the deadline', 'احفظ قبل الديدلاين'),
