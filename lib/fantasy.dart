@@ -15,6 +15,7 @@ import 'location_prompt.dart';
 import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
 import 'fantasy_stadium.dart';
+import 'fantasy_motion.dart';
 import 'diag.dart';
 import 'safe_svg.dart';
 import 'team_initials_crest.dart';
@@ -1065,7 +1066,11 @@ class _FancyPageState extends State<FancyPage> {
               child: Opacity(opacity: 0.06,
                 child: Image.asset(Brand.badger, fit: BoxFit.contain)))))),
           Positioned.fill(child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 280),
+            duration: const Duration(milliseconds: 380),
+            // launch motion: the next page comes forward (fade + a small zoom), the old one steps back
+            transitionBuilder: (child, anim) => FadeTransition(opacity: anim,
+              child: ScaleTransition(scale: Tween<double>(begin: 0.94, end: 1.0)
+                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)), child: child)),
             // بعد الديدلاين: التشكيلة للعرض بس (مفيش بناء ولا تعديل)
             child: step == 0 ? buildArenaScreen()
                 : step == 1 ? buildLobbyScreen()
@@ -1122,8 +1127,8 @@ class _FancyPageState extends State<FancyPage> {
         child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 6, 20, 2),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          FantasyHighlightsStrip(isArabic: isArabic),
-          _arenaTitle(compact),
+          StaggerIn(index: 0, child: FantasyHighlightsStrip(isArabic: isArabic)),
+          StaggerIn(index: 1, child: _arenaTitle(compact)),
           // راعي الفانتازي كلها: "FANTASY برعاية X"
           const AdSlot('fantasy_title', center: true, padding: EdgeInsets.only(top: 6),
               prefixEn: 'Presented by', prefixAr: 'برعاية'),
@@ -1151,7 +1156,7 @@ class _FancyPageState extends State<FancyPage> {
             ])))
           else
             Expanded(child: _arenaSplit()),
-          if (_arenaInfo == 'show') ...[const SizedBox(height: 10), _howItWorksStrip()] else const SizedBox(height: 10),
+          if (_arenaInfo == 'show') ...[const SizedBox(height: 10), StaggerIn(index: 4, child: _howItWorksStrip())] else const SizedBox(height: 10),
         ]),
       ));
     });
@@ -1218,12 +1223,12 @@ class _FancyPageState extends State<FancyPage> {
     return Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         AnimatedContainer(duration: arenaAnim, curve: arenaCurve, width: leftW,
-          child: _arenaHalf(id: 'EGYPT', tag: _arenaTag(_localEvent),
-            image: egyptArenaImage, tint: egyptTint, isLeft: true, available: _localEvent != null)),
+          child: StaggerIn(index: 2, dy: 60, durationMs: 560, child: _arenaHalf(id: 'EGYPT', tag: _arenaTag(_localEvent),
+            image: egyptArenaImage, tint: egyptTint, isLeft: true, available: _localEvent != null))),
         const SizedBox(width: gap),
         AnimatedContainer(duration: arenaAnim, curve: arenaCurve, width: rightW,
-          child: _arenaHalf(id: 'WORLD', tag: _arenaTag(_worldEvent),
-            image: worldArenaImage, tint: worldTint, isLeft: false, available: _worldEvent != null)),
+          child: StaggerIn(index: 3, dy: 60, durationMs: 560, child: _arenaHalf(id: 'WORLD', tag: _arenaTag(_worldEvent),
+            image: worldArenaImage, tint: worldTint, isLeft: false, available: _worldEvent != null))),
       ]),
       AnimatedPositioned(duration: arenaAnim, curve: arenaCurve,
         left: leftW + gap / 2 - 22, top: cons.maxHeight * 0.36 - 22,
@@ -1306,7 +1311,7 @@ class _FancyPageState extends State<FancyPage> {
         Text(t('No active event','مفيش إيفنت نشط'), style: const TextStyle(color: muted, fontSize: 11)),
       ],
       const SizedBox(height: 16),
-      SizedBox(width: double.infinity, height: 46,
+      Pressable(enabled: available, child: SizedBox(width: double.infinity, height: 46,
         child: ElevatedButton(
           onPressed: available ? () => enterArena(id) : null,
           style: ElevatedButton.styleFrom(
@@ -1315,7 +1320,7 @@ class _FancyPageState extends State<FancyPage> {
             elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 8),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
           child: FittedBox(fit: BoxFit.scaleDown,
-            child: Text(btnLabel, style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.6))))),
+            child: Text(btnLabel, style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.6)))))),
     ]);
   }
 
@@ -2406,9 +2411,26 @@ class _FantasyShellState extends State<FantasyShell> {
   bool _showOnboarding = false;
   int  _onboardPage = 0;
 
+  bool _showIntro = false;   // launch: stadium intro, once per app run
+
+  void _onTabActive() {
+    if (!FantasyMotion.tabActive.value || FantasyMotion.introPlayed || !mounted) return;
+    FantasyMotion.introPlayed = true;
+    if (motionCalm(context)) { FantasyMotion.ready.value = true; return; }
+    setState(() => _showIntro = true);
+  }
+
+  @override
+  void dispose() {
+    FantasyMotion.tabActive.removeListener(_onTabActive);
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    FantasyMotion.tabActive.addListener(_onTabActive);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onTabActive());
     _loadSharedEvents();
     LocalStore.getFlag('fantasy_help_hint').then((seen) {
       if (mounted && !seen) setState(() => _helpPulse = true);
@@ -2530,7 +2552,7 @@ class _FantasyShellState extends State<FantasyShell> {
       return Scaffold(backgroundColor: bg, body: _buildOnboarding(topInset, bottomInset));
     }
 
-    return Scaffold(
+    return Stack(children: [Positioned.fill(child: Scaffold(
       backgroundColor: bg,
       body: Column(children: [
         SizedBox(height: topInset),
@@ -2599,7 +2621,10 @@ class _FantasyShellState extends State<FantasyShell> {
           ],
         )),
       ]),
-    );
+    )),
+      if (_showIntro) Positioned.fill(child: FantasyIntro(isArabic: isArabic,
+          onDone: () { if (mounted) setState(() => _showIntro = false); })),
+    ]);
   }
 }
 

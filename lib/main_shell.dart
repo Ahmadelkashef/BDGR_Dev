@@ -15,6 +15,7 @@ import 'deep_links.dart';
 import 'feed/feed_page.dart';
 import 'fantasy.dart' show FantasyShell, fantasyLeaguePage, badgerLeaguePage;
 import 'home/home_page.dart' show HomePage, HomeActions;
+import 'fantasy_motion.dart' show FantasyMotion;
 import 'profile/profile_page.dart';
 import 'settings/help_support_page.dart' show supportThreadRoute;
 import 'settings/terms_privacy_page.dart';
@@ -79,6 +80,7 @@ class _MainShellState extends State<MainShell> {
     super.setState(fn);
     _feedActive.value = _index == _feedTab;
     HomeActions.active.value = _index == 0;
+    FantasyMotion.tabActive.value = _index == 1;   // launch: the fantasy intro plays the first time
   }
 
   // كل تاب ليه Navigator: أي صفحة بتتفتح جوه التاب والشريط اللي تحت يفضل ظاهر

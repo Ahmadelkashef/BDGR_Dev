@@ -100,16 +100,16 @@ extension _LaunchLobby on _FancyPageState {
     return LayoutBuilder(key: const ValueKey('lobby'), builder: (context, constraints) => Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        backHeader(label: '', onBack: () => _v2Set(() => step = 0),
+        StaggerIn(index: 0, child: backHeader(label: '', onBack: () => _v2Set(() => step = 0),
             title: Text(t('Current Gameweek', 'الجولة الحالية'), maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900))),
+                style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)))),
         const SizedBox(height: 10),
-        _lInfoCard(event, ph, has),
+        StaggerIn(index: 1, dy: 24, child: _lInfoCard(event, ph, has)),
         // open + no squad: nothing else, the team comes first
         if (_squadChecked && (ph != 'open' || has))
-          LaunchNudgeLine(key: ValueKey('nudge_${event.eventId}_$has'), isArabic: isArabic),
+          StaggerIn(index: 2, child: LaunchNudgeLine(key: ValueKey('nudge_${event.eventId}_$has'), isArabic: isArabic)),
         const SizedBox(height: 14),
-        Row(children: [
+        StaggerIn(index: 3, child: Row(children: [
           Expanded(child: Text(t('MATCHES', 'الماتشات'), maxLines: 1,
             style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.6, fontWeight: FontWeight.w800))),
           if (anyResult || ph != 'open')
@@ -117,18 +117,21 @@ extension _LaunchLobby on _FancyPageState {
               onTap: () => openFixturesPage(context, type: event.fantasyType ?? 'WORLD'),
               child: Text(t('All results ›', 'كل النتايج ›'),
                 style: const TextStyle(color: Brand.green, fontSize: 12.5, fontWeight: FontWeight.w800))),
-        ]),
-        const SizedBox(height: 4),
-        Expanded(child: ListView(padding: const EdgeInsets.only(bottom: 8), children: [
-          for (final entry in byDay.entries) ...[
-            Padding(padding: const EdgeInsets.only(bottom: 6, top: 6),
-              child: Text('${entry.key} · ${_fmtDate(entry.value.first.kickoffAt)}',
-                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700))),
-            ...entry.value.map((m) => _matchCard(m)),
-          ],
         ])),
+        const SizedBox(height: 4),
+        Expanded(child: Builder(builder: (_) {
+          var n = 4;   // matches come in one after the other, under the title
+          return ListView(padding: const EdgeInsets.only(bottom: 8), children: [
+            for (final entry in byDay.entries) ...[
+              StaggerIn(index: n++, child: Padding(padding: const EdgeInsets.only(bottom: 6, top: 6),
+                child: Text('${entry.key} · ${_fmtDate(entry.value.first.kickoffAt)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)))),
+              ...entry.value.map((m) => StaggerIn(index: n++, dy: 26, child: _matchCard(m))),
+            ],
+          ]);
+        })),
         const SizedBox(height: 8),
-        _lButton(event, ph, has),
+        StaggerIn(index: 3, dy: 40, durationMs: 560, child: _lButton(event, ph, has)),
       ]),
     ));
   }
@@ -137,14 +140,14 @@ extension _LaunchLobby on _FancyPageState {
     final open = ph == 'open';
     // open + no squad = the one red action; everything else = calm dark button
     if (open && !has) {
-      return SizedBox(width: double.infinity, height: 52, child: ElevatedButton(
+      return Pressable(child: ShineSweep(child: SizedBox(width: double.infinity, height: 52, child: ElevatedButton(
         onPressed: () => _v2Set(() { step = 2; _gStage = -1; _landedId = null; }),
         style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           Text(t('BUILD MY TEAM', 'ابني فريقي'), style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 15.5)),
           const SizedBox(width: 10), Icon(isArabic ? Icons.arrow_back : Icons.arrow_forward, size: 19),
-        ])));
+        ])))));
     }
     if (!open && !has) {
       return Container(width: double.infinity, height: 52, alignment: Alignment.center,
@@ -153,8 +156,9 @@ extension _LaunchLobby on _FancyPageState {
           maxLines: 1, overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 13.5)));
     }
-    final pts = (!open && _myRank?['total_points'] != null) ? ' · ${(_myRank!['total_points'] as num).toStringAsFixed(0)} ${t('pts', 'نقطة')}' : '';
-    return SizedBox(width: double.infinity, height: 52, child: OutlinedButton(
+    final pts = (!open && _myRank?['total_points'] != null) ? (_myRank!['total_points'] as num) : null;
+    const btnStyle = TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1, fontSize: 15);
+    return Pressable(child: SizedBox(width: double.infinity, height: 52, child: OutlinedButton(
       onPressed: () {
         // came back from an unsaved edit: show the SAVED team, not the half-edited one
         if (!saved) { clearSquad(); _loadSavedSquad(event.eventId); }
@@ -165,8 +169,13 @@ extension _LaunchLobby on _FancyPageState {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         const Icon(Icons.visibility_outlined, size: 19), const SizedBox(width: 8),
-        Text('${t('SHOW MY TEAM', 'وريني تشكيلتي')}$pts', style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1, fontSize: 15)),
-      ])));
+        Text(t('SHOW MY TEAM', 'وريني تشكيلتي'), style: btnStyle),
+        // finished: the points count up
+        if (pts != null) ...[
+          const Text(' · ', style: btnStyle),
+          CountUp(pts, style: btnStyle, format: (v) => '$v ${t('pts', 'نقطة')}'),
+        ],
+      ]))));
   }
 
   /// small card: deadline (or state) in one line + the 1st prize in one line (tap → all prizes)
@@ -199,15 +208,21 @@ extension _LaunchLobby on _FancyPageState {
           Icon(ic, color: c, size: 20),
           const SizedBox(width: 8),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: ph == 'open' ? Colors.white : c, fontSize: ph == 'open' ? 20 : 15.5,
-                fontWeight: FontWeight.w900, fontFeatures: const [FontFeature.tabularFigures()])),
-            if (ph == 'open' && has) Container(
+            if (ph == 'open')
+              // countdown: each digit rolls when it changes
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                if (d > 0) Text(t('${d}d ', '$dي '), style: _cdStyle),
+                RollingText('${pad(h)}:${pad(m)}:${pad(s)}', style: _cdStyle),
+              ])
+            else
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: c, fontSize: 15.5, fontWeight: FontWeight.w900, fontFeatures: const [FontFeature.tabularFigures()])),
+            if (ph == 'open' && has) PopIn(delayMs: 250, child: Container(
               margin: const EdgeInsets.only(top: 3, bottom: 2),
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Brand.green.withOpacity(0.6))),
               child: Text(t('✓ YOUR TEAM IS SAVED', '✓ تشكيلتك محفوظة'),
-                style: const TextStyle(color: Brand.green, fontSize: 10, fontWeight: FontWeight.w900))),
+                style: const TextStyle(color: Brand.green, fontSize: 10, fontWeight: FontWeight.w900)))),
             Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 11.5)),
           ])),
           const SizedBox(width: 8),
@@ -232,6 +247,9 @@ extension _LaunchLobby on _FancyPageState {
       ]),
     );
   }
+
+  static const _cdStyle = TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900,
+      fontFeatures: [FontFeature.tabularFigures()]);
 
   void _lPrizesSheet(FantasyEvent event) {
     final ad = _roundSponsorAd(event);
@@ -339,11 +357,11 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
           Text(t('✓ Your team is saved', '✓ تشكيلتك اتحفظت'), textAlign: TextAlign.center,
             style: const TextStyle(color: Brand.green, fontSize: 15, fontWeight: FontWeight.w900)),
           const SizedBox(height: 18),
-          Center(child: badger
+          Center(child: PopIn(delayMs: 150, from: 0.3, child: badger
               ? const LeagueShield(icon: '🥇', color: '#F5B301', size: 64)
               : Container(width: 64, height: 64, alignment: Alignment.center,
                   decoration: BoxDecoration(color: const Color(0xFF141C33), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFF2A3A6B))),
-                  child: const Text('🛡️', style: TextStyle(fontSize: 30)))),
+                  child: const Text('🛡️', style: TextStyle(fontSize: 30))))),
           const SizedBox(height: 12),
           Text(badger ? t('Badger League · $month', 'دوري بادجر · $month') : t('Play with your friends', 'العب مع صحابك'),
             textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
@@ -357,12 +375,12 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
           if (badger) ...[
             const SizedBox(height: 14),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              for (var i = 0; i < 5; i++) Container(
+              for (var i = 0; i < 5; i++) PopIn(delayMs: 380 + i * 90, child: Container(
                 width: 34, height: 34, margin: const EdgeInsets.symmetric(horizontal: 4), alignment: Alignment.center,
                 decoration: BoxDecoration(shape: BoxShape.circle,
                   color: i == 0 ? const Color(0xFF2A2210) : null,
                   border: Border.all(color: i == 0 ? gold : const Color(0xFF6B5313), width: i == 0 ? 2 : 1.2)),
-                child: Text(i == 0 ? t('YOU', 'إنت') : '+', style: const TextStyle(color: gold, fontSize: 10.5, fontWeight: FontWeight.w900))),
+                child: Text(i == 0 ? t('YOU', 'إنت') : '+', style: const TextStyle(color: gold, fontSize: 10.5, fontWeight: FontWeight.w900)))),
             ]),
           ],
           const SizedBox(height: 18),
@@ -411,8 +429,8 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
     if (mounted) setState(() => _s = s);
   }
 
-  Widget _card({required Widget icon, required String title, required Widget sub, required VoidCallback onTap, bool gold = false}) =>
-    Padding(padding: const EdgeInsets.only(bottom: 12), child: Material(color: Colors.transparent, child: InkWell(
+  Widget _card({required Widget icon, required String title, required Widget sub, required VoidCallback onTap, bool gold = false, int i = 0}) =>
+    StaggerIn(index: i, dy: 28, child: Pressable(child: Padding(padding: const EdgeInsets.only(bottom: 12), child: Material(color: Colors.transparent, child: InkWell(
       borderRadius: BorderRadius.circular(18), onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -431,7 +449,7 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
           Icon(ar ? Icons.chevron_left : Icons.chevron_right, color: muted),
         ]),
       ),
-    )));
+    )))));
 
   @override
   Widget build(BuildContext context) {
@@ -451,8 +469,8 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
             if (s.invites > 0) TextSpan(text: ' · ${t('${s.invites} invite${s.invites == 1 ? '' : 's'}', '${s.invites} دعوة')}',
                 style: const TextStyle(color: Color(0xFFFF5C5C), fontWeight: FontWeight.w800)),
           ])),
-          onTap: () async { await _openLeaguesPage(context, ar); _load(true); }),
-        _card(gold: true,
+          i: 1, onTap: () async { await _openLeaguesPage(context, ar); _load(true); }),
+        _card(gold: true, i: 2,
           icon: team != null ? LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 30) : const Text('🥇', style: TextStyle(fontSize: 22)),
           title: t('Badger League', 'دوري بادجر'),
           sub: Text(team != null
