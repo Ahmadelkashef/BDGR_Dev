@@ -174,7 +174,6 @@ extension _BuilderV2 on _FancyPageState {
             label: isArabic ? currentEvent?.nameAr ?? '' : currentEvent?.nameEn ?? '',
             onBack: () => _v2Set(() { step = 1; saved = false; _gStage = -1; })),
           const SizedBox(height: 8),
-          if (currentEvent?.draftOn == true) ...[draftModeSwitch(), const SizedBox(height: 8)],
           _v2InfoRow(stage),
         ])),
         Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -302,8 +301,8 @@ extension _BuilderV2 on _FancyPageState {
           shadows: [Shadow(color: Colors.black, blurRadius: 10)])),
       const SizedBox(height: 6),
       Text(isDraft
-          ? t('7 picks: goalkeeper, full back, centre back, midfielder, two wingers and a striker. 🎲 Surprise players score double.',
-              '7 اختيارات: حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم. 🎲 المفاجأة نقطه بتتضاعف.')
+          ? t('7 picks: goalkeeper, full back, centre back, midfielder, two wingers and a striker.',
+              '7 اختيارات: حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم.')
           : t('Shape, then goalkeeper, defence, midfield and attack.',
               'الشكل، وبعدين الحارس، الدفاع، الوسط، الهجوم.'), textAlign: TextAlign.center,
         style: const TextStyle(color: Color(0xFFDADADA), fontSize: 12.5, height: 1.4,

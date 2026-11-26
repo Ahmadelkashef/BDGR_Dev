@@ -23,7 +23,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   String _period = 'round';          // round | month | season
   String? _key;                      // رقم الجولة / 2026-10 / 2026-27
   String _scope = 'all';             // all | governorate | city | league
-  String _mode = 'normal';           // normal (11) | draft (7) — leagues use normal only
+  String _mode = 'draft';            // launch: DRAFT only (leagues too)
   String? _leagueId;
 
   Map<String, dynamic>? _periods;
@@ -155,8 +155,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
           child: Row(children: [
             Expanded(child: _periodButton()),
             if (widget.leagueId == null) ...[
-              const SizedBox(width: 8),
-              _FilterMenu(value: _mode,
+              if (false) _FilterMenu(value: _mode,   // launch: no normal/draft menu
                 items: [('normal', t('⚽ Normal', '⚽ نورمال')), ('draft', t('🎯 Draft', '🎯 درافت'))],
                 onChanged: (v) {
                   if (v == _mode) return;

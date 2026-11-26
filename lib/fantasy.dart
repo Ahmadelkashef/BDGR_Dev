@@ -29,6 +29,7 @@ part 'fantasy_matches.dart';
 part 'fantasy_builder_v2.dart';
 part 'fantasy_social.dart';
 part 'fantasy_cup.dart';
+part 'fantasy_launch.dart';
 part 'fantasy_bleague.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
@@ -324,7 +325,7 @@ class FancyPlayer {
     marketValue:  (j['market_value_euro'] as num?)?.toDouble(),
     exactPos:     j['exact_position'] as String?,
     imageUrl:     j['image_url'] as String?,
-    surprise:     j['surprise'] == true,
+    surprise:     false,   // launch: no ⭐/🎲 (owner, 26 Nov)
     draftPct:     j['draft_pct'] as num?,
   );
 }
@@ -493,6 +494,7 @@ class _FancyPageState extends State<FancyPage> {
   String _layout = '4-3-3';                  // v2 midfield layout: 4-1-4-1 | 4-2-3-1 | 4-3-3 (server formation stays 4-5-1)
   void _v2Set(VoidCallback f) => setState(f);
   bool saved     = false;
+  bool _hasSquad = false, _squadChecked = false;   // launch lobby: does he have a saved draft squad in this round
   bool _saving   = false;
   String? _saveError;
 
@@ -544,7 +546,7 @@ class _FancyPageState extends State<FancyPage> {
   Map<String, dynamic>? _myRank;
   Future<void> _loadMyRank(String eventId) async {
     try {
-      final r = await _sb.rpc('get_my_event_rank', params: {'p_event_id': eventId});
+      final r = await _sb.rpc('get_my_draft_rank', params: {'p_event_id': eventId});   // launch: draft only
       if (mounted) setState(() => _myRank = r is Map ? Map<String, dynamic>.from(r) : null);
     } catch (_) {}
   }
@@ -579,6 +581,7 @@ class _FancyPageState extends State<FancyPage> {
   static String _cardImage = 'photo';
   static String _pitchImage = 'shirt';      // pitch spot picture: photo | shirt
   static String _pitchName = 'short_club';  // pitch strips: split | full_club | short_club
+  static String _arenaInfo = 'show';      // arena page info box: show | hide (fantasy_arena_info)
   static bool _cfgLoaded = false;
   Future<void> _loadAppConfig() async {
     if (_cfgLoaded) return;
@@ -591,6 +594,7 @@ class _FancyPageState extends State<FancyPage> {
         _pitchImage = r['pitch_image'] == 'photo' ? 'photo' : 'shirt';
         final pn = r['pitch_name'];
         _pitchName = (pn == 'split' || pn == 'full_club') ? pn as String : 'short_club';
+        _arenaInfo = r['arena_info'] == 'hide' ? 'hide' : 'show';
       }
       _cfgLoaded = true;
       if (mounted) setState(() {});
@@ -631,8 +635,10 @@ class _FancyPageState extends State<FancyPage> {
       final res = await _sb.rpc('get_fantasy_lobby');
       final data = res as Map<String, dynamic>;
       setState(() {
-        _localEvent = data['LOCAL'] != null ? FantasyEvent.fromJson(data['LOCAL'] as Map<String, dynamic>) : null;
-        _worldEvent = data['WORLD'] != null ? FantasyEvent.fromJson(data['WORLD'] as Map<String, dynamic>) : null;
+        // launch = DRAFT only: a round without the draft open counts as "no round"
+        FantasyEvent? ev(dynamic j) { if (j == null) return null; final e = FantasyEvent.fromJson(j as Map<String, dynamic>); return e.draftOn ? e : null; }
+        _localEvent = ev(data['LOCAL']);
+        _worldEvent = ev(data['WORLD']);
         _lobbyLoading = false;
       });
     } catch (e) {
@@ -694,9 +700,14 @@ class _FancyPageState extends State<FancyPage> {
           'p_slots':            slots,
         });
       }
-      setState(() { _saving = false; saved = true; });
+      setState(() { _saving = false; saved = true; _hasSquad = true; });
       if (mounted) showStadiumConfetti(context);
-      Future.delayed(const Duration(milliseconds: 1200), () { if (mounted) _showSavedAd(); });
+      final evId = currentEvent!.eventId;
+      Future.delayed(const Duration(milliseconds: 1200), () async {
+        if (!mounted) return;
+        final shown = await showLaunchSavedNudge(context, isArabic, evId);
+        if (!shown && mounted) _showSavedAd();
+      });
     } catch (e) {
       setState(() { _saving = false; _saveError = e.toString(); });
       _showSnack(_saveErrorText(e.toString()));
@@ -754,7 +765,7 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   void enterArena(String value) {
     Diag.crumb('enterArena $value event=${currentEvent?.eventId}');
-    setState(() { arena = value; step = 1; clearSquad(); saved = false; _draftView = false; _duelKey = null; _startCountdown(); });
+    setState(() { arena = value; step = 1; clearSquad(); saved = false; _hasSquad = false; _squadChecked = false; _draftView = true; _duelKey = null; _startCountdown(); });
     if (currentEvent != null) {
       _myRank = null;
       _loadPlayers(currentEvent!.eventId);
@@ -768,6 +779,8 @@ class _FancyPageState extends State<FancyPage> {
       final draft = isDraft;
       final res = await _sb.rpc(draft ? 'get_my_fantasy_draft' : 'get_my_fantasy_squad', params: {'p_event_id': eventId});
       if (draft != isDraft) return;   // the user switched normal / draft meanwhile
+      final has = res is Map ? ((res['slots'] as List?) ?? const []).isNotEmpty : (res is List && res.isNotEmpty);
+      if (mounted) setState(() { _hasSquad = has; _squadChecked = true; });
       // الدالة بترجع object (مش list) — نقبل الشكلين
       final Map<String, dynamic>? data = res is Map
           ? Map<String, dynamic>.from(res)
@@ -811,7 +824,7 @@ class _FancyPageState extends State<FancyPage> {
           }
         }
         saved = true;
-        step = 2;
+        _hasSquad = true;
       });
       if (formation == '4-5-1') this._v2RestoreLayout(eventId);
     } catch (_) {}
@@ -1138,8 +1151,7 @@ class _FancyPageState extends State<FancyPage> {
             ])))
           else
             Expanded(child: _arenaSplit()),
-          const SizedBox(height: 10),
-          _howItWorksStrip(),
+          if (_arenaInfo == 'show') ...[const SizedBox(height: 10), _howItWorksStrip()] else const SizedBox(height: 10),
         ]),
       ));
     });
@@ -1160,9 +1172,9 @@ class _FancyPageState extends State<FancyPage> {
         decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14),
             border: Border.all(color: line)),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          item(Icons.groups_2_outlined, t('Pick 11 players\nwithin the budget', 'اختار 11 لاعب\nفي حدود الميزانية')),
-          item(Icons.star_rounded,      t('Captain scores\ndouble points', 'الكابتن بياخد\nضعف النقط')),
-          item(Icons.sports_soccer,     t('Points from real\nmatch performance', 'النقط من أداء\nحقيقي في الماتشات')),
+          item(Icons.groups_2_outlined, t('Be the\ncoach', 'عيش دور\nالمدرب')),
+          item(Icons.star_rounded,      t('Pick the right player\nfor every spot', 'اختار الأنسب\nلكل مركز')),
+          item(Icons.sports_soccer,     t('Points from\nreal matches', 'نقط من الماتشات\nالحقيقية')),
         ]),
       ),
       TextButton(
@@ -1334,90 +1346,7 @@ class _FancyPageState extends State<FancyPage> {
     if (event == null) {
       return Center(child: Text(t('No event available.','مفيش إيفنت متاح.'), style: const TextStyle(color: muted)));
     }
-    final byDay = <String, List<FantasyMatch>>{};
-    for (final m in event.matches) {
-      (byDay[_dayLabel(m.kickoffAt)] ??= []).add(m);
-    }
-    return LayoutBuilder(key: const ValueKey('lobby'), builder: (context, constraints) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // سهم الرجوع + اسم الجولة + الساحة في سطر واحد (توفير مساحة: أول ماتش لازم يبان)
-          backHeader(label: '', onBack: () => setState(() => step = 0),
-              title: Text(isArabic ? event.nameAr : event.nameEn, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900))),
-          const SizedBox(height: 10),
-          _lobbyInfoCard(event),
-          BadgerCupBanner(key: ValueKey('cup_${event.eventId}'), eventId: event.eventId, isArabic: isArabic),
-          BadgerLeagueBanner(key: ValueKey('bl_${event.eventId}'), isArabic: isArabic),
-          const SizedBox(height: 14),
-          Row(children: [
-            Expanded(child: Text(t('MATCHES THIS ROUND','ماتشات الجولة'), maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.2, fontWeight: FontWeight.w800))),
-            GestureDetector(
-              onTap: () => _openPlayersPage(browse: true),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white24)),
-                child: Text(t('👥 Players', '👥 اللاعيبة'),
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
-              ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => openFixturesPage(context, type: event.fantasyType ?? 'WORLD'),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white24)),
-                child: Text(t('📅 Results', '📅 النتايج'),
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
-              ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: _openUpcoming,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: const Color(0xFF5AA9FF).withOpacity(0.12), borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF5AA9FF).withOpacity(0.5))),
-                child: Text(t('🗓️ Next rounds', '🗓️ الجولات الجاية'),
-                  style: const TextStyle(color: Color(0xFF5AA9FF), fontSize: 12, fontWeight: FontWeight.w800)),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          Expanded(child: ListView(padding: const EdgeInsets.only(bottom: 8),
-            children: [
-              ...byDay.entries.expand((entry) => [
-              Padding(padding: const EdgeInsets.only(bottom: 6, top: 6),
-                child: Text('${entry.key} · ${_fmtDate(entry.value.first.kickoffAt)}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700))),
-              ...entry.value.map((m) => _matchCard(m)),
-            ]),
-            ])),
-          const SizedBox(height: 8),
-          SizedBox(width: double.infinity, height: 50,
-            child: ElevatedButton(
-              onPressed: () {
-                // مفتوحة: يبني فريقه. اتقفلت: يشوف فريقه للعرض بس، ولو ما لعبش يشوف الجولات الجاية
-                if (phaseOf(event) != 'open' && !saved) { _openUpcoming(); return; }
-                setState(() { step = 2; _gStage = -1; _landedId = null; });
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text(phaseOf(event) == 'open' ? t('BUILD MY TEAM','ابني فريقي')
-                     : !saved ? t("YOU MISSED THIS ROUND · NEXT ROUNDS", 'مالحقتش الجولة دي · الجولات الجاية')
-                     : phaseOf(event) == 'live' ? t('MY TEAM','فريقي')
-                     : t('MY TEAM & RESULTS','فريقي ونتيجتي'),
-                  style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-                const SizedBox(width: 10), const Icon(Icons.arrow_forward, size: 19),
-              ]))),
-        ]),
-      );
-    });
+    return this.launchLobby(event);   // launch: fantasy_launch.dart
   }
 
   /// الجولات الجاية: معاينة (قابلة للتعديل لحد ما تتفتح)
@@ -1999,7 +1928,6 @@ class _FancyPageState extends State<FancyPage> {
           label: isArabic ? currentEvent?.nameAr ?? '' : currentEvent?.nameEn ?? '',
           onBack: () => setState(() => step = 1)),
         const SizedBox(height: 10),
-        if (currentEvent?.draftOn == true) ...[this.draftModeSwitch(), const SizedBox(height: 10)],
         if (phaseOf(currentEvent) != 'open')
           // اتقفلت: مفيش تعديل خالص
           Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -2624,11 +2552,11 @@ class _FantasyShellState extends State<FantasyShell> {
             _HelpPulse(active: _statsPulse && !_helpPulse, child: GestureDetector(
               onTap: () {
                 if (_statsPulse) { setState(() => _statsPulse = false); LocalStore.setFlag('fantasy_stats_hint'); }
-                openMyFantasyStats(context, isArabic, onToggleLanguage: _toggleLanguage);
+                openMyFantasyHub(context, isArabic, onToggleLanguage: _toggleLanguage);   // launch: ranking · leagues · Badger League
               },
               child: Container(width: 36, height: 36,
-                decoration: BoxDecoration(color: cardBg, shape: BoxShape.circle, border: Border.all(color: line)),
-                child: const Icon(Icons.insights_rounded, color: Colors.white, size: 18)),
+                decoration: BoxDecoration(color: cardBg, shape: BoxShape.circle, border: Border.all(color: const Color(0x99FFB300))),
+                child: const Icon(Icons.person_rounded, color: Colors.white, size: 19)),
             )),
             const SizedBox(width: 6),
             FantasyLangToggle(isArabic: isArabic, onTap: _toggleLanguage),
@@ -2654,7 +2582,7 @@ class _FantasyShellState extends State<FantasyShell> {
           ]),
           AnimatedSize(
             duration: const Duration(milliseconds: 220), curve: Curves.easeOut,
-            child: (_tab == 0 && _inArena) ? const SizedBox(width: double.infinity) : Column(children: [
+            child: true ? const SizedBox(width: double.infinity) : Column(children: [   // launch: tab row removed (code kept)
               const SizedBox(height: 8),
               _FantasyTopTabs(selected: _tab, isArabic: isArabic, onTap: (i) => setState(() => _tab = i)),
             ])),
@@ -4956,8 +4884,7 @@ class _FantasyHelpSheetState extends State<FantasyHelpSheet> {
               child: Row(children: [
                 _tabBtn(0, t('How it works', 'الطريقة')),
                 _tabBtn(1, t('Points', 'النقط')),
-                _tabBtn(2, t('Example', 'مثال')),
-                _tabBtn(3, t('Ties', 'التعادل')),
+                _tabBtn(2, t('Ties', 'التعادل')),
               ]),
             ),
           ),
@@ -4967,10 +4894,8 @@ class _FantasyHelpSheetState extends State<FantasyHelpSheet> {
                 ? _howItWorks()
                 : _section == 1
                     ? _pointsTable()
-                    : _section == 2
-                        ? _FantasyExample(key: ValueKey('ex-$_ar'), isArabic: _ar)
-                        : ListView(key: const ValueKey('ties'), padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                            children: [FantasyTieRules(isArabic: _ar)]),
+                    : ListView(key: const ValueKey('ties'), padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        children: [FantasyTieRules(isArabic: _ar, draft: true)]),
           )),
         ])),
       ),
@@ -4995,24 +4920,25 @@ class _FantasyHelpSheetState extends State<FantasyHelpSheet> {
   // ── الطريقة: خطوات مترقّمة ────────────────────────────────────────────────
   Widget _howItWorks() {
     final steps = [
-      (Icons.stadium_outlined,      t('Pick your arena', 'اختار الساحة'),
+      (Icons.stadium_outlined,      t('Pick your arena', 'اختار الأرينا'),
                                     t('Egypt (Ahly & Zamalek) or World.', 'مصر (الأهلي والزمالك) أو عالمي.')),
-      (Icons.grid_view_rounded,     t('Pick a formation', 'اختار التشكيل'),
-                                    t('4-4-2, 4-3-3, 3-5-2 … any of them.', '4-4-2 أو 4-3-3 أو 3-5-2 … أي واحد.')),
-      (Icons.groups_2_outlined,     t('Pick 11 players', 'اختار 11 لاعب'),
-                                    t('One for every spot in your formation.', 'لاعب لكل مكان في التشكيل.')),
-      (Icons.account_balance_wallet_outlined, t('Stay within the budget', 'خليك في حدود الميزانية'),
-                                    t('Every player has his real market price. You can spend less, never more.',
-                                      'كل لاعب بسعره الحقيقي في السوق. تصرف أقل براحتك، أكتر لأ.')),
-      (Icons.star_rounded,          t('Pick a captain', 'اختار الكابتن'),
-                                    t('His points count double.', 'نقطه بتتحسب مرتين.')),
+      (Icons.groups_2_outlined,     t('Pick 7 players', 'اختار 7 لعيبة'),
+                                    t('Goalkeeper, full back, centre back, midfielder, two wingers and a striker.',
+                                      'حارس، ظهير، قلب دفاع، نص ملعب، جناحين، ومهاجم.')),
+      (Icons.compare_arrows_rounded, t('Two players, you choose', 'لاعبين قدامك، وإنت تختار'),
+                                    t('For every spot you see two players. Tap the one you want; the winner stays until you lock him.',
+                                      'في كل مركز بيظهرلك لاعبين. دوس على اللي عايزه، واللي يكسب يفضل لحد ما تثبّته.')),
+      (Icons.shield_outlined,       t('Max ${4} from one club', 'أقصى 4 من نفس النادي'),
+                                    t('Mix your team from different clubs.', 'نوّع فريقك من أكتر من نادي.')),
+      (Icons.scoreboard_outlined,   t('Predict the score', 'توقّع النتيجة'),
+                                    t('If you tie on points, the better score predictions win.', 'لو اتعادلت في النقط، اللي توقعاته أصح يكسب.')),
       (Icons.lock_clock,            t('Save before the deadline', 'احفظ قبل الديدلاين'),
                                     t('Teams lock before the round starts.', 'التشكيلات بتتقفل قبل ما الجولة تبدأ.')),
       (Icons.sports_soccer,         t('Players play — you score', 'اللاعيبة بتلعب وإنت بتجمع نقط'),
                                     t('Goals, assists, clean sheets … from the real matches.', 'جول، أسيست، شباك نظيفة … من الماتشات الحقيقية.')),
       (Icons.emoji_events_outlined, t('Climb the ranking', 'اطلع في الترتيب'),
-                                    t('Overall, in your governorate and city, and in your private leagues.',
-                                      'على الكل، وعلى محافظتك ومدينتك، وفي الليجات بتاعتك مع صحابك.')),
+                                    t('Overall, in your leagues, and with your friends in the Badger League.',
+                                      'على الكل، وفي الليجز بتاعتك، ومع صحابك في دوري بادجر.')),
     ];
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
