@@ -34,6 +34,7 @@ part 'fantasy_cup.dart';
 part 'fantasy_launch.dart';
 part 'fantasy_bleague.dart';
 part 'fantasy_recap.dart';
+part 'fantasy_bench.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -222,6 +223,8 @@ class FantasyEvent {
   /// draft size of this round (4..7, default 7) + its shape [(key, pitch group, how many)] from the server
   final int           draftSize;
   final List<(String, String, int)> draftShape;
+  /// WORLD bench (owner 26 Nov): optional GK sub + up to 3 outfield subs (one DEF, one MID, one ATT), in order
+  final bool          draftSubs;
   /// draft tie-break: the matches whose score users predict (chosen in the dashboard, max 2)
   final List<String>  draftPredict;
 
@@ -231,7 +234,7 @@ class FantasyEvent {
     this.phase = 'open', this.prizes = const [],
     required this.deadlineAt, required this.startAt,
     required this.playerBudget, required this.matches, required this.teamPool,
-    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2, this.draftPredict = const [], this.draftSize = 7, this.draftShape = const [],
+    this.fantasyType, this.maxPerTeam, this.draftOn = false, this.draftMaxPerTeam = 4, this.surpriseMult = 2, this.draftPredict = const [], this.draftSize = 7, this.draftShape = const [], this.draftSubs = false,
   });
 
   factory FantasyEvent.fromJson(Map<String, dynamic> j) {
@@ -259,6 +262,7 @@ class FantasyEvent {
       surpriseMult: ((j['surprise_mult'] ?? 2) as num).toDouble(),
       draftPredict: ((j['draft_predict'] as List?) ?? []).map((e) => e.toString()).toList(),
       draftSize:    (j['draft_size'] as num?)?.toInt() ?? 7,
+      draftSubs:    j['draft_subs'] == true,
       draftShape:   [for (final x in (j['draft_shape'] as List?) ?? const [])
                       ('${(x as Map)['key']}', '${x['grp']}', (x['n'] as num?)?.toInt() ?? 1)],
     );
@@ -487,6 +491,10 @@ class _FancyPageState extends State<FancyPage> {
   String? _duelKey;
   List<FancyPlayer> _duelQueue = [];
   FancyPlayer? _duelHold, _duelRival;
+  bool _duelHoldLeft = true, _duelPicked = false;   // the kept card stays on its side; picked = the user tapped one
+  // WORLD bench: GK sub + outfield subs in order 1..3 (fantasy_bench.dart)
+  FancyPlayer? _benchGk;
+  final List<FancyPlayer?> _benchOut = [null, null, null];
   int _duelTotal = 0;
   final List<List<Object?>> _duelHist = [];
   /// draft score predictions (tie-break only): match id → [home, away] (null = not picked yet)
@@ -707,6 +715,9 @@ class _FancyPageState extends State<FancyPage> {
       }
       if (isDraft) {
         await _sb.rpc('save_fantasy_draft', params: {'p_event_id': currentEvent!.eventId, 'p_slots': slots});
+        if (this._benchOn) {
+          await _sb.rpc('save_fantasy_draft_subs', params: {'p_event_id': currentEvent!.eventId, 'p_subs': this._benchPayload});
+        }
         if (_predMatches.isNotEmpty && _predsDone) {
           await _sb.rpc('save_draft_predictions', params: {'p_event_id': currentEvent!.eventId, 'p_preds': _predsPayload});
         }
@@ -844,6 +855,7 @@ class _FancyPageState extends State<FancyPage> {
             if (capId != null && pid == capId) captain = player;
           }
         }
+        if (draft) this._benchLoad(data['subs']);
         saved = true;
         _hasSquad = true;
       });
@@ -854,6 +866,8 @@ class _FancyPageState extends State<FancyPage> {
   void clearSquad() {
     for (final l in squad.values) { for (var i = 0; i < l.length; i++) l[i] = null; }
     captain = null;
+    _benchGk = null;
+    for (var i = 0; i < _benchOut.length; i++) _benchOut[i] = null;
   }
 
   void changeFormation(String value) {
@@ -889,7 +903,8 @@ class _FancyPageState extends State<FancyPage> {
   String? placePlayer(FancyPlayer p, {String? pos, int? index, bool noBudget = false}) {
     if (inSquad(p)) return t('Already in your team.', 'موجود في فريقك.');
     final slotPos = pos ?? p.position;
-    if (slotPos != p.position) return t('Wrong position.', 'المركز مش مناسب.');
+    // small drafts (4/5/6): a winger (MID in players.position) may stand in the attacker spot
+    if (slotPos != p.position && !(isDraft && draftSize < 7)) return t('Wrong position.', 'المركز مش مناسب.');
     var idx = index;
     if (idx == null) {
       for (var i = 0; i < slotCount(slotPos); i++) {
@@ -2010,6 +2025,9 @@ class _FancyPageState extends State<FancyPage> {
         ],
       ])),
       Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: (formation == '4-5-1' || isDraft) ? this.buildPitchV2(readOnly: true) : buildPitch(readOnly: true))),
+      // WORLD bench under the pitch (edit until the deadline; saved at once)
+      if (this._benchOn) Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+        child: this._benchRow(editable: phaseOf(currentEvent) == 'open', autoSave: true)),
     ]);
   });
 
@@ -3273,6 +3291,7 @@ class _UserSquadPageState extends State<_UserSquadPage> {
               : _squad == null
                 ? Center(child: Text(t('No squad saved.','مفيش تشكيلة.'), style: const TextStyle(color: muted)))
                 : _buildPitch())),
+        if (widget.draft && ((_squad?['subs'] as List?)?.isNotEmpty ?? false)) _benchLine(),
         if (_squad != null)
           Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: SquadSocialBar(
             eventId: widget.eventId, userId: widget.userId, draft: widget.draft, isArabic: widget.isArabic)),
@@ -3352,6 +3371,25 @@ class _UserSquadPageState extends State<_UserSquadPage> {
   }
 
   // ── pitch (same look as Build Team, read-only, shows each player's points) ──
+  /// the bench (WORLD) + who came in after the results
+  Widget _benchLine() {
+    final subs = [for (final x in (_squad!['subs'] as List)) Map<String, dynamic>.from(x as Map)];
+    final names = <String, String>{};
+    for (final x in [...(_squad!['slots'] as List? ?? const []), ...subs]) {
+      final m = Map<String, dynamic>.from(x as Map);
+      names['${m['player_id']}'] = '${widget.isArabic ? (m['name_ar'] ?? m['name_en']) : m['name_en']}';
+    }
+    final ins = [for (final x in (_squad!['subs_in'] as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
+    String label(Map<String, dynamic> b) => b['kind'] == 'GK' ? 'GK' : '${b['order']}';
+    return Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('${t('Bench', 'الاحتياطي')}: ${subs.map((b) => '${label(b)} ${names['${b['player_id']}'] ?? ''}').join(' · ')}',
+        maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      for (final s in ins)
+        Text('⇄ ${names['${s['in']}'] ?? ''} ${t('in for', 'دخل مكان')} ${names['${s['out']}'] ?? ''}',
+          style: const TextStyle(color: Brand.green, fontSize: 12, fontWeight: FontWeight.w700)),
+    ]));
+  }
+
   Widget _buildPitch() {
     final slots     = (_squad!['slots'] as List?) ?? [];
     final formation = (_squad!['formation'] as String?) ?? '4-3-3';

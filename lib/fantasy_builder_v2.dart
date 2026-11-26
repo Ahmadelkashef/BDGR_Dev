@@ -366,7 +366,10 @@ extension _BuilderV2 on _FancyPageState {
     } else if (stage == 2 && isDraft) {
       // launch (owner 26 Nov): save first; the score predictions are asked in a sheet right after the save
       title = t('Your team is ready', 'فريقك جاهز');
-      body = _v2CaptainCards(pickOnly: true);
+      // WORLD: the optional bench before saving
+      body = this._benchOn
+        ? Padding(padding: const EdgeInsets.symmetric(horizontal: 13), child: this._benchRow(editable: !deadlinePassed))
+        : _v2CaptainCards(pickOnly: true);
       action = _v2Button(
         deadlinePassed ? t('DEADLINE PASSED', 'انتهى الديدلاين') : t('SAVE TEAM', 'حفظ الفريق'),
         canSaveV2 && !_saving ? _v2Save : null, busy: _saving);
@@ -382,7 +385,7 @@ extension _BuilderV2 on _FancyPageState {
       final s = next ?? ('GK', 0);
       title = _v2SlotTitle(s.$1, s.$2);
       sub = '${selectedCount + 1} / $squadSize';
-      body = isDraft ? _d7Duel(s.$1, s.$2) : _v2PlayerCards(s.$1, s.$2);
+      body = isDraft ? (this._pickByCards ? this._cardsWithList(s.$1, s.$2) : _d7Duel(s.$1, s.$2)) : _v2PlayerCards(s.$1, s.$2);
     }
     return Container(
       width: double.infinity,
@@ -473,7 +476,7 @@ extension _BuilderV2 on _FancyPageState {
         label: Text(t('Could not load players. Retry', 'اللعيبة ما اتحمّلوش. جرّب تاني'),
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)))));
     }
-    final list = players.where((p) => _v2Fits(p, pos, idx) && !inSquad(p)).toList()
+    final list = players.where((p) => _v2Fits(p, pos, idx) && !inSquad(p) && !this._inBench(p)).toList()
       ..sort((a, b) {
         // market value high → low (no value last), then total points, then name
         final av = a.marketValue, bv = b.marketValue;
@@ -661,13 +664,15 @@ extension _BuilderV2 on _FancyPageState {
     final key = '${currentEvent?.eventId}_${pos}_$idx';
     if (_duelKey != key) {
       final lim = maxPerTeam;
-      final list = players.where((p) => _v2Fits(p, pos, idx) && !inSquad(p)
+      final list = players.where((p) => _v2Fits(p, pos, idx) && !inSquad(p) && !this._inBench(p)
           && !(lim != null && p.teamId != null && teamCount(p.teamId) >= lim)).toList()..shuffle();
       _duelKey = key;
       _duelTotal = list.length;
       _duelHold = list.isEmpty ? null : list[0];
       _duelRival = list.length > 1 ? list[1] : null;
       _duelQueue = list.length > 2 ? list.sublist(2) : [];
+      _duelHoldLeft = true;
+      _duelPicked = false;
       _duelHist.clear();
     }
     final hold = _duelHold;
@@ -677,71 +682,80 @@ extension _BuilderV2 on _FancyPageState {
     }
     final rival = _duelRival;
     final left = _duelQueue.length + (rival == null ? 0 : 1);
-    Widget tag(String text, Color c) => Padding(padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.4)));
+    final chosen = _duelPicked || rival == null;
     Widget swap(Widget child, String id) => AnimatedSwitcher(
       duration: const Duration(milliseconds: 260),
       switchInCurve: Curves.easeOutBack, switchOutCurve: Curves.easeIn,
       transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: 0.85, end: 1.0).animate(a), child: c)),
       child: KeyedSubtree(key: ValueKey(id), child: child));
+    // the kept card never moves: tap a card = keep it, the other side gets a new player
+    final holdCard = swap(Builder(builder: (cctx) {
+      _duelHoldCtx = cctx;
+      return GestureDetector(
+        onTap: () => rival == null ? _v2Fly(cctx, hold, pos, idx) : _duelNext(keepHold: true),
+        child: AnimatedContainer(duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: chosen ? brandRed : Colors.transparent, width: 2)),
+          child: _v2CardFace(hold)));
+    }), 'h_${hold.id}');
+    final rivalCard = rival == null ? null : swap(GestureDetector(onTap: () => _duelNext(keepHold: false),
+      child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: Colors.transparent, width: 2)),
+        child: _v2CardFace(rival))), 'r_${rival.id}');
+    final vs = Padding(padding: const EdgeInsets.fromLTRB(10, 0, 10, 70), child: Container(width: 34, height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: Colors.black, shape: BoxShape.circle, border: Border.all(color: Colors.white24)),
+      child: const Text('VS', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900))));
     return SizedBox(height: 236, child: Column(children: [
-      Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-        Column(mainAxisSize: MainAxisSize.min, children: [
-          tag(t('YOUR PICK', 'اختيارك'), brandRed),
-          swap(Builder(builder: (cctx) {
-            _duelHoldCtx = cctx;
-            return GestureDetector(
-              onTap: () => rival == null ? _v2Fly(cctx, hold, pos, idx) : _duelNext(keepHold: true),
-              child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: brandRed, width: 2)),
-                child: _v2CardFace(hold)));
-          }), 'h_${hold.id}'),
-        ]),
-        if (rival != null) ...[
-          Padding(padding: const EdgeInsets.fromLTRB(10, 0, 10, 74), child: Container(width: 34, height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: Colors.black, shape: BoxShape.circle, border: Border.all(color: Colors.white24)),
-            child: const Text('VS', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900)))),
-          Column(mainAxisSize: MainAxisSize.min, children: [
-            tag(t('CHALLENGER', 'المنافس'), muted),
-            swap(GestureDetector(onTap: () => _duelNext(keepHold: false), child: _v2CardFace(rival)), 'r_${rival.id}'),
-          ]),
-        ],
-      ])),
+      Expanded(child: Directionality(textDirection: TextDirection.ltr, child: Row(
+        mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+          if (rivalCard == null) holdCard
+          else ...(_duelHoldLeft ? [holdCard, vs, rivalCard] : [rivalCard, vs, holdCard]),
+        ]))),
       const SizedBox(height: 8),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [
         Expanded(child: Text(
-          rival == null ? t('Last one standing', 'ده آخر واحد فضل')
-            : t('$left challengers left · tap who you want', 'باقي $left منافس · دوس على اللي عايزه'),
-          style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700))),
-        if (_duelHist.isNotEmpty) Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: OutlinedButton(
+          rival == null ? t('Last one left', 'ده آخر واحد فضل')
+            : t('$left left · tap who you want', 'باقي $left · دوس على اللي عايزه'),
+          maxLines: 2, style: const TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w700))),
+        TextButton(
+          onPressed: _flying ? null : () => this._seeAllFor(pos, idx),
+          style: TextButton.styleFrom(foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: const Size(0, 36)),
+          child: Text(t('All players', 'كل اللعيبة'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, decoration: TextDecoration.underline))),
+        if (_duelHist.isNotEmpty) Padding(padding: const EdgeInsetsDirectional.only(end: 6), child: OutlinedButton(
           onPressed: _flying ? null : _duelUndo,
           style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38),
-            padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(0, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 10), minimumSize: const Size(0, 36),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-          child: Text(t('↶ Undo', '↶ رجوع'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)))),
-        Builder(builder: (bctx) => TextButton(
-          onPressed: _flying ? null : () => _duelLock(pos, idx),
-          style: TextButton.styleFrom(foregroundColor: Colors.white, backgroundColor: brandRed,
-            padding: const EdgeInsets.symmetric(horizontal: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-          child: Text(rival == null ? t('Pick him ✓', 'اختاره ✓') : t('That\'s him ✓', 'خلاص، هو ده ✓'),
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12.5)))),
+          child: Text(t('↶', '↶'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14)))),
+        TextButton(
+          onPressed: _flying || !chosen ? null : () => _duelLock(pos, idx),
+          style: TextButton.styleFrom(foregroundColor: Colors.white, backgroundColor: chosen ? brandRed : surface2,
+            disabledForegroundColor: muted, disabledBackgroundColor: surface2,
+            padding: const EdgeInsets.symmetric(horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          child: Text(rival == null ? t('Pick him ✓', 'اختاره ✓') : t('That\'s him ✓', 'هو ده ✓'),
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12.5))),
       ])),
     ]));
   }
 
-  /// next rival: keepHold = the holder won; else the rival takes his place
+  /// keepHold = the kept card was tapped again (the other side gets the next player);
+  /// else the other card is kept now (it stays on its side) and the old one is replaced
   void _duelNext({required bool keepHold}) {
     if (_flying) return;
     HapticFeedback.selectionClick();
     _v2Set(() {
-      _duelHist.add([_duelHold, _duelRival, List<FancyPlayer>.of(_duelQueue)]);
-      if (!keepHold && _duelRival != null) _duelHold = _duelRival;
+      _duelHist.add([_duelHold, _duelRival, List<FancyPlayer>.of(_duelQueue), _duelHoldLeft, _duelPicked]);
+      if (!keepHold && _duelRival != null) {
+        _duelHold = _duelRival;
+        _duelHoldLeft = !_duelHoldLeft;
+      }
+      _duelPicked = true;
       _duelRival = _duelQueue.isEmpty ? null : _duelQueue.removeAt(0);
     });
   }
 
-  /// undo the last tap: the same two cards come back
+  /// undo the last tap: the same two cards come back, on the same sides
   void _duelUndo() {
     if (_flying || _duelHist.isEmpty) return;
     HapticFeedback.selectionClick();
@@ -750,10 +764,12 @@ extension _BuilderV2 on _FancyPageState {
       _duelHold = h[0] as FancyPlayer?;
       _duelRival = h[1] as FancyPlayer?;
       _duelQueue = h[2] as List<FancyPlayer>;
+      _duelHoldLeft = h[3] as bool;
+      _duelPicked = h[4] as bool;
     });
   }
 
-  /// lock the holder → it flies to its spot (from the holder card on screen)
+  /// lock the kept card → it flies to its spot (from the card on screen)
   void _duelLock(String pos, int idx) {
     final hold = _duelHold;
     if (hold == null) return;
