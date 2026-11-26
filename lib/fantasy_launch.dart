@@ -155,7 +155,11 @@ extension _LaunchLobby on _FancyPageState {
     }
     final pts = (!open && _myRank?['total_points'] != null) ? ' · ${(_myRank!['total_points'] as num).toStringAsFixed(0)} ${t('pts', 'نقطة')}' : '';
     return SizedBox(width: double.infinity, height: 52, child: OutlinedButton(
-      onPressed: () => _v2Set(() { step = 2; saved = true; }),
+      onPressed: () {
+        // came back from an unsaved edit: show the SAVED team, not the half-edited one
+        if (!saved) { clearSquad(); _loadSavedSquad(event.eventId); }
+        _v2Set(() { step = 2; saved = true; });
+      },
       style: OutlinedButton.styleFrom(backgroundColor: const Color(0xFF1B1D21), foregroundColor: Colors.white,
         side: const BorderSide(color: Color(0xFF3A3D42)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
