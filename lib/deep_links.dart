@@ -29,6 +29,9 @@ class DeepLinks {
   /// كود فريق (مسابقات) مستني — من لينك دعوة ?t=<code> أو com.bdgr.app://team/<code>
   static final ValueNotifier<String?> pendingTeamCode = ValueNotifier<String?>(null);
 
+  /// كود فريق دوري بادجر (الفانتازي) — من ?b=<code> أو com.bdgr.app://bleague/<code>
+  static final ValueNotifier<String?> pendingBLeagueCode = ValueNotifier<String?>(null);
+
   static final AppLinks _appLinks = AppLinks();
   static StreamSubscription<Uri>? _sub;
   static bool _started = false;
@@ -58,6 +61,8 @@ class DeepLinks {
     if (ugc != null) { pendingUgcId.value = ugc; return; }
     final id = momentIdFrom(uri);
     if (id != null) { pendingMomentId.value = id; return; }
+    final bl = bLeagueCodeFrom(uri);
+    if (bl != null) { pendingBLeagueCode.value = bl; return; }
     final team = teamCodeFrom(uri);
     if (team != null) { pendingTeamCode.value = team; return; }
     final code = leagueCodeFrom(uri);
@@ -91,6 +96,20 @@ class DeepLinks {
   }
 
   static void consumeTeam() => pendingTeamCode.value = null;
+
+  /// com.bdgr.app://bleague/<code>  أو  https://...?b=<code>
+  static String? bLeagueCodeFrom(Uri uri) {
+    String? c;
+    if (uri.host == 'bleague' && uri.pathSegments.isNotEmpty) {
+      c = uri.pathSegments.first;
+    } else {
+      c = uri.queryParameters['b'];
+    }
+    if (c == null || !RegExp(r'^[A-Za-z2-9]{6}$').hasMatch(c)) return null;
+    return c.toUpperCase();
+  }
+
+  static void consumeBLeague() => pendingBLeagueCode.value = null;
 
   /// بيطلّع id المومنت من اللينك، أو null لو اللينك مش لمومنت
   static String? momentIdFrom(Uri uri) {

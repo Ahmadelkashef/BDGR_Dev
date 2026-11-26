@@ -194,6 +194,7 @@ jobs:
               '                <data android:host="post"/>\n'
               '                <data android:host="ugc"/>\n'
               '                <data android:host="team"/>\n'
+              '                <data android:host="bleague"/>\n'
               '            </intent-filter>\n'
               '        '
           )

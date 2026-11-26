@@ -29,6 +29,7 @@ part 'fantasy_matches.dart';
 part 'fantasy_builder_v2.dart';
 part 'fantasy_social.dart';
 part 'fantasy_cup.dart';
+part 'fantasy_bleague.dart';
 
 // ─── Supabase client shortcut ─────────────────────────────────────────────
 SupabaseClient get _sb => Supabase.instance.client;
@@ -1348,6 +1349,7 @@ class _FancyPageState extends State<FancyPage> {
           const SizedBox(height: 10),
           _lobbyInfoCard(event),
           BadgerCupBanner(key: ValueKey('cup_${event.eventId}'), eventId: event.eventId, isArabic: isArabic),
+          BadgerLeagueBanner(key: ValueKey('bl_${event.eventId}'), isArabic: isArabic),
           const SizedBox(height: 14),
           Row(children: [
             Expanded(child: Text(t('MATCHES THIS ROUND','ماتشات الجولة'), maxLines: 1, overflow: TextOverflow.ellipsis,

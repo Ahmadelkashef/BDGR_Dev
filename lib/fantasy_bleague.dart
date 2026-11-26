@@ -1,0 +1,773 @@
+part of 'fantasy.dart';
+
+/// 🥇 دوري بادجر: فرق صحاب (من 1 لـ 5) بيجمعوا نقط الدرافت بتاعتهم على الشهر.
+/// السيرفر: badger_league_home / _team / _board / _create / _update / _preview / _join.
+const Color _blGold = Color(0xFFFFB300);
+const List<String> _kBLIcons = ['🦅','🦁','🐺','🦈','🐉','🦂','🐍','🐆','🦬','🦡','⚡','🔥','👑','⭐','💎','🚀','⚔️','🛡️'];
+const List<String> _kBLColors = ['#E53935','#FFB300','#1E88E5','#43A047','#8E24AA','#00ACC1','#F4511E','#3949AB','#6D4C41','#546E7A'];
+
+Color _blColor(String? hex) {
+  final h = (hex ?? '').replaceAll('#', '');
+  return h.length == 6 ? Color(int.parse('FF$h', radix: 16)) : const Color(0xFF546E7A);
+}
+
+String _blMonthName(String? m, bool ar) {
+  final p = (m ?? '').split('-');
+  if (p.length != 2) return '';
+  final i = (int.tryParse(p[1]) ?? 1) - 1;
+  const arM = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  const enM = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return '${ar ? arM[i.clamp(0, 11).toInt()] : enM[i.clamp(0, 11).toInt()]} ${p[0]}';
+}
+
+String _blPts(dynamic v) {
+  final n = v is num ? v : num.tryParse('$v') ?? 0;
+  return n == n.roundToDouble() ? '${n.toInt()}' : n.toStringAsFixed(1);
+}
+
+String _blErr(Object e, bool ar) {
+  final s = e.toString();
+  String t(String en, String a) => ar ? a : en;
+  if (s.contains('already_in_team')) return t("You're already in a team this month.", 'إنت في فريق خلاص الشهر ده.');
+  if (s.contains('reserved_name')) return t('This name is not allowed.', 'الاسم ده مش مسموح.');
+  if (s.contains('bad_name')) return t('Name must be 2–24 characters.', 'الاسم لازم يبقى من 2 لـ 24 حرف.');
+  if (s.contains('name_taken')) return t('This name is taken this month.', 'الاسم ده متاخد الشهر ده.');
+  if (s.contains('team_full')) return t('The team is full (5/5).', 'الفريق كامل (5/5).');
+  if (s.contains('code_not_found')) return t('Wrong code.', 'الكود غلط.');
+  if (s.contains('too_many_tries')) return t('Too many tries. Try again in an hour.', 'جربت كتير. جرّب تاني بعد ساعة.');
+  if (s.contains('not_allowed')) return t('Only the captain can do this.', 'الكابتن بس اللي يقدر.');
+  return t('Something went wrong.', 'حصلت مشكلة، جرّب تاني.');
+}
+
+/// درع الفريق: شكل محدّب + لون + رمز
+class LeagueShield extends StatelessWidget {
+  const LeagueShield({super.key, required this.icon, required this.color, this.size = 40});
+  final String icon;
+  final String color;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final c = _blColor(color);
+    return SizedBox(width: size, height: size * 1.12, child: ClipPath(
+      clipper: _ShieldClipper(),
+      child: Container(
+        decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: [c, Color.lerp(c, Colors.black, 0.55)!])),
+        alignment: const Alignment(0, -0.1),
+        child: Text(icon, style: TextStyle(fontSize: size * 0.46)),
+      ),
+    ));
+  }
+}
+
+class _ShieldClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size s) => Path()
+    ..moveTo(s.width / 2, 0)
+    ..lineTo(s.width, s.height * 0.14)
+    ..lineTo(s.width, s.height * 0.58)
+    ..lineTo(s.width / 2, s.height)
+    ..lineTo(0, s.height * 0.58)
+    ..lineTo(0, s.height * 0.14)
+    ..close();
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+/// شريط في صفحة الجولة
+class BadgerLeagueBanner extends StatefulWidget {
+  const BadgerLeagueBanner({super.key, required this.isArabic});
+  final bool isArabic;
+  @override
+  State<BadgerLeagueBanner> createState() => _BadgerLeagueBannerState();
+}
+
+class _BadgerLeagueBannerState extends State<BadgerLeagueBanner> {
+  Map<String, dynamic>? _d;
+  String t(String en, String ar) => widget.isArabic ? ar : en;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final r = await _sb.rpc('badger_league_home');
+      if (mounted && r != null) setState(() => _d = Map<String, dynamic>.from(r as Map));
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = _d;
+    if (d == null) return const SizedBox.shrink();
+    final team = d['team'] as Map?;
+    final total = (d['teams'] as num?)?.toInt() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(color: Colors.transparent, child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () async {
+          await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => badgerLeaguePage()));
+          _load();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: line)),
+          child: Row(children: [
+            team != null
+                ? LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 30)
+                : const Text('🥇', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t('Badger League · ${_blMonthName(d['month'] as String?, false)}', 'دوري بادجر · ${_blMonthName(d['month'] as String?, true)}'),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 2),
+              Text(team != null
+                    ? t('${team['name']} · #${team['rank'] ?? '-'} of $total · ${_blPts(team['points'])} pts',
+                        '${team['name']} · المركز ${team['rank'] ?? '-'} من $total · ${_blPts(team['points'])} نقطة')
+                    : t('Make a team of up to 5 friends and win together.', 'اعمل فريق لحد 5 صحاب واكسبوا مع بعض.'),
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: muted, fontSize: 12, height: 1.3)),
+            ])),
+            Icon(widget.isArabic ? Icons.chevron_left : Icons.chevron_right, color: muted),
+          ]),
+        ),
+      )),
+    );
+  }
+}
+
+/// صفحة الدوري (من صفحة الجولة أو من لينك الدعوة ?b=CODE)
+Widget badgerLeaguePage({String? joinCode}) {
+  final ar = AppLang.isArabic;
+  return Directionality(textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: _BLeaguePage(isArabic: ar, joinCode: joinCode));
+}
+
+class _BLeaguePage extends StatefulWidget {
+  const _BLeaguePage({required this.isArabic, this.joinCode});
+  final bool isArabic;
+  final String? joinCode;
+  @override
+  State<_BLeaguePage> createState() => _BLeaguePageState();
+}
+
+class _BLeaguePageState extends State<_BLeaguePage> {
+  Map<String, dynamic>? _home;
+  bool _loading = true, _failed = false;
+  int _tab = 0; // 0 فريقي · 1 الترتيب
+  final List<Map<String, dynamic>> _board = [];
+  bool _boardMore = false, _boardBusy = false;
+  int _boardTotal = 0;
+  bool get ar => widget.isArabic;
+  String t(String en, String a) => ar ? a : en;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    if (widget.joinCode != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _joinFlow(widget.joinCode!));
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _failed = false; });
+    try {
+      final r = await _sb.rpc('badger_league_home');
+      if (!mounted) return;
+      setState(() { _home = Map<String, dynamic>.from(r as Map); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _failed = true; });
+    }
+  }
+
+  Future<void> _loadBoard({bool reset = false}) async {
+    if (_boardBusy) return;
+    _boardBusy = true;
+    if (reset) _board.clear();
+    try {
+      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board', params: {'p': {'offset': _board.length, 'limit': 30}}) as Map);
+      if (!mounted) return;
+      setState(() {
+        _board.addAll(((r['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
+        _boardMore = r['has_more'] == true;
+        _boardTotal = (r['total'] as num?)?.toInt() ?? 0;
+      });
+    } catch (_) {} finally { _boardBusy = false; }
+  }
+
+  Map? get _team => _home?['team'] as Map?;
+  List<String> get _icons => ((_home?['icons'] as List?)?.map((e) => '$e').toList()) ?? _kBLIcons;
+  List<String> get _colors => ((_home?['colors'] as List?)?.map((e) => '$e').toList()) ?? _kBLColors;
+
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  // ── إنشاء / تعديل ──
+  Future<void> _editTeam({Map? team}) async {
+    final res = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context, isScrollControlled: true, useRootNavigator: true, useSafeArea: true,
+      backgroundColor: const Color(0xFF121317),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (_) => Directionality(textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+          child: _BLTeamForm(isArabic: ar, icons: _icons, colors: _colors, team: team)),
+    );
+    if (res != null && mounted) {
+      setState(() { _home = {...?_home, 'team': res}; _tab = 0; });
+      if (team == null) _invite(res);
+    }
+  }
+
+  // ── انضمام بالكود ──
+  Future<void> _askCode() async {
+    final ctrl = TextEditingController();
+    final code = await showDialog<String>(context: context, builder: (c) => AlertDialog(
+      backgroundColor: cardBg,
+      title: Text(t('Join with a code', 'انضم بكود'), style: const TextStyle(color: Colors.white, fontSize: 17)),
+      content: TextField(controller: ctrl, autofocus: true, maxLength: 6, textCapitalization: TextCapitalization.characters,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white, fontSize: 22, letterSpacing: 6, fontWeight: FontWeight.w900),
+          decoration: InputDecoration(hintText: 'ABC123', hintStyle: const TextStyle(color: muted), counterText: '',
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: line)),
+              focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: _blGold)))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c), child: Text(t('Cancel', 'إلغاء'), style: const TextStyle(color: muted))),
+        TextButton(onPressed: () => Navigator.pop(c, ctrl.text.trim().toUpperCase()),
+            child: Text(t('Next', 'التالي'), style: const TextStyle(color: _blGold, fontWeight: FontWeight.w800))),
+      ],
+    ));
+    if (code != null && code.length == 6) _joinFlow(code);
+  }
+
+  Future<void> _joinFlow(String code) async {
+    try {
+      final p = Map<String, dynamic>.from(await _sb.rpc('badger_league_preview', params: {'p_code': code}) as Map);
+      if (!mounted) return;
+      if (p['error'] != null) { _snack(_blErr(p['error'] as Object, ar)); return; }
+      if (p['my_team'] != null) {
+        _snack(p['my_team'] == p['id'] ? t("You're already in this team.", 'إنت في الفريق ده أصلًا.') : _blErr('already_in_team', ar));
+        return;
+      }
+      final n = (p['members'] as num?)?.toInt() ?? 0;
+      if (n >= 5) { _snack(_blErr('team_full', ar)); return; }
+      final cap = (p['captain'] as Map?)?['name'] ?? '';
+      final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+        backgroundColor: cardBg,
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          LeagueShield(icon: '${p['icon']}', color: '${p['color']}', size: 56),
+          const SizedBox(height: 10),
+          Text('${p['name']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(t('Captain: $cap · $n/5', 'الكابتن: $cap · $n/5'), style: const TextStyle(color: muted, fontSize: 13)),
+          const SizedBox(height: 12),
+          Text(t('Once you join you stay in this team all month.', 'أول ما تنضم هتفضل في الفريق ده الشهر كله.'),
+              textAlign: TextAlign.center, style: const TextStyle(color: _blGold, fontSize: 12.5, height: 1.4)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(t('Cancel', 'إلغاء'), style: const TextStyle(color: muted))),
+          TextButton(onPressed: () => Navigator.pop(c, true),
+              child: Text(t('Join ✓', 'انضم ✓'), style: const TextStyle(color: _blGold, fontWeight: FontWeight.w900))),
+        ],
+      ));
+      if (ok != true || !mounted) return;
+      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_join', params: {'p_code': code}) as Map);
+      if (!mounted) return;
+      if (r['error'] != null) { _snack(_blErr(r['error'] as Object, ar)); return; }
+      HapticFeedback.mediumImpact();
+      setState(() { _home = {...?_home, 'team': r}; _tab = 0; });
+      _snack(t('Welcome to ${r['name']}! 🥇', 'أهلًا بيك في ${r['name']}! 🥇'));
+    } catch (e) {
+      if (mounted) _snack(_blErr(e, ar));
+    }
+  }
+
+  void _invite(Map team) {
+    final code = team['code'];
+    if (code == null) return;
+    final name = team['name'];
+    Share.share(t('Join my team "$name" in the Badger League 🥇\nCode: $code\n${Brand.shareLinkBase}?b=$code',
+        'انضم لفريقي "$name" في دوري بادجر 🥇\nالكود: $code\n${Brand.shareLinkBase}?b=$code'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prize = ar ? (_home?['prize_ar']) : (_home?['prize_en']);
+    return Scaffold(
+      backgroundColor: bg,
+      body: SafeArea(child: _loading && _home == null
+          ? const Center(child: CircularProgressIndicator(color: _blGold))
+          : _failed && _home == null
+              ? Center(child: TextButton(onPressed: _load, child: Text(t('Retry', 'إعادة'), style: const TextStyle(color: _blGold))))
+              : Column(children: [
+                  Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Row(children: [
+                    IconButton(onPressed: () => Navigator.pop(context),
+                        style: IconButton.styleFrom(backgroundColor: cardBg, side: BorderSide(color: line)),
+                        icon: const Icon(Icons.arrow_back, color: Colors.white)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(t('🥇 Badger League', '🥇 دوري بادجر'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+                      Text(_blMonthName(_home?['month'] as String?, ar), style: const TextStyle(color: muted, fontSize: 12)),
+                    ])),
+                  ])),
+                  if (prize != null && '$prize'.isNotEmpty)
+                    Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      decoration: BoxDecoration(color: _blGold.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _blGold.withValues(alpha: 0.5))),
+                      child: Text(t('🎁 Monthly prize (all 5 of the winning team): $prize', '🎁 جايزة الشهر (للخمسة في الفريق الأول): $prize'),
+                          style: const TextStyle(color: _blGold, fontSize: 12.5, fontWeight: FontWeight.w800, height: 1.35)),
+                    )),
+                  Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: line)),
+                    child: Row(children: [
+                      for (final (i, l) in [(0, t('My team', 'فريقي')), (1, t('Table', 'الترتيب'))])
+                        Expanded(child: GestureDetector(
+                          onTap: () { setState(() => _tab = i); if (i == 1 && _board.isEmpty) _loadBoard(); },
+                          child: AnimatedContainer(duration: const Duration(milliseconds: 160),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            decoration: BoxDecoration(color: _tab == i ? surface2 : Colors.transparent, borderRadius: BorderRadius.circular(10)),
+                            alignment: Alignment.center,
+                            child: Text(l, style: TextStyle(color: _tab == i ? Colors.white : muted, fontWeight: FontWeight.w800, fontSize: 13.5))),
+                        )),
+                    ]),
+                  )),
+                  Expanded(child: _tab == 0 ? _myTeamTab() : _boardTab()),
+                ])),
+    );
+  }
+
+  // ── تاب فريقي ──
+  Widget _myTeamTab() {
+    final team = _team;
+    if (team == null) {
+      return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(18), border: Border.all(color: line)),
+          child: Column(children: [
+            const Text('🥇', style: TextStyle(fontSize: 44)),
+            const SizedBox(height: 6),
+            Text(t('Play with your friends', 'العب مع صحابك'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            Text(t('Make a team of up to 5. Your draft points add up all month. The #1 team wins — all 5 get the prize.',
+                   'اعمل فريق لحد 5. نقط الدرافت بتاعتكم بتتجمع على الشهر كله، والفريق الأول يكسب والخمسة ياخدوا الجايزة.'),
+                textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 13, height: 1.45)),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity, height: 48, child: ElevatedButton(
+              onPressed: () => _editTeam(),
+              style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: Text(t('➕ Make a team', '➕ اعمل فريق'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, height: 46, child: OutlinedButton(
+              onPressed: _askCode,
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: BorderSide(color: line),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: Text(t('🔑 Join with a code', '🔑 انضم بكود'), style: const TextStyle(fontWeight: FontWeight.w800)))),
+          ]),
+        ),
+        const SizedBox(height: 14),
+        _rules(),
+      ]);
+    }
+    return RefreshIndicator(color: _blGold, onRefresh: _load,
+        child: _BLTeamView(team: Map<String, dynamic>.from(team), isArabic: ar,
+            onEdit: team['is_captain'] == true ? () => _editTeam(team: team) : null,
+            onInvite: () => _invite(team), footer: _rules()));
+  }
+
+  // ── تاب الترتيب ──
+  Widget _boardTab() {
+    final myId = _team?['id'];
+    if (_board.isEmpty && _boardBusy) return const Center(child: CircularProgressIndicator(color: _blGold));
+    return RefreshIndicator(color: _blGold, onRefresh: () => _loadBoard(reset: true), child: ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+      itemCount: _board.length + 2,
+      itemBuilder: (_, i) {
+        if (i == 0) {
+          return Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(
+              t('$_boardTotal teams · points update when a round is closed', '$_boardTotal فريق · النقط بتتحدّث لما الجولة تتقفل'),
+              style: const TextStyle(color: muted, fontSize: 12)));
+        }
+        if (i == _board.length + 1) {
+          if (!_boardMore) return const SizedBox(height: 8);
+          return Padding(padding: const EdgeInsets.only(top: 10), child: Center(child: TextButton(
+              onPressed: _boardBusy ? null : _loadBoard,
+              child: Text(t('Show more', 'اعرض أكتر'), style: const TextStyle(color: _blGold, fontWeight: FontWeight.w800)))));
+        }
+        final r = _board[i - 1];
+        final mine = r['id'] == myId;
+        final rank = (r['rank'] as num?)?.toInt() ?? 0;
+        return Padding(padding: const EdgeInsets.only(top: 6), child: Material(
+          color: mine ? brandRed.withValues(alpha: 0.10) : cardBg,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Directionality(
+                textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+                child: _BLTeamPage(teamId: '${r['id']}', isArabic: ar)))),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: mine ? brandRed : line)),
+              child: Row(children: [
+                SizedBox(width: 30, child: Text('$rank', textAlign: TextAlign.center,
+                    style: TextStyle(color: rank <= 3 ? _blGold : muted, fontWeight: FontWeight.w900, fontSize: 14))),
+                LeagueShield(icon: '${r['icon']}', color: '${r['color']}', size: 30),
+                const SizedBox(width: 10),
+                Expanded(child: Text('${r['name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800))),
+                Text('${r['members']}/5', style: const TextStyle(color: muted, fontSize: 11.5)),
+                const SizedBox(width: 10),
+                SizedBox(width: 48, child: Text(_blPts(r['points']), textAlign: TextAlign.end,
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900))),
+              ]),
+            ),
+          ),
+        ));
+      },
+    ));
+  }
+
+  Widget _rules() => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: line)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(t('How it works', 'الدوري ماشي إزاي'), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 8),
+      for (final l in [
+        t('A team is 1 to 5 friends. One team per player per month.', 'الفريق من 1 لـ 5 صحاب. فريق واحد بس لكل لاعيب في الشهر.'),
+        t("Your 🎯 draft 7 points add up (local + world) for the whole month.", 'نقط 🎯 الدرافت 7 بتاعتكم (محلي + عالمي) بتتجمع على الشهر كله.'),
+        t('You can add members any time until 5. Nobody can be removed or swapped.', 'تقدر تزوّد أعضاء في أي وقت لحد 5. ماحدش يتشال ولا يتبدّل.'),
+        t('A new member counts from the first round whose deadline is after he joined.', 'العضو الجديد بيتحسب من أول جولة ديدلاينها بعد ما دخل.'),
+        t('No squad in a round = 0 points.', 'اللي ماعملش تشكيلة في جولة = صفر.'),
+        t('Tied? More exact score predictions, then the older team.', 'تعادل؟ اللي توقعاته للنتيجة مظبوطة أكتر، وبعدها الفريق الأقدم.'),
+        t('The #1 team of the month wins: all 5 get the prize.', 'الفريق الأول في الشهر يكسب، والخمسة ياخدوا الجايزة.'),
+      ]) Padding(padding: const EdgeInsets.only(bottom: 5), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('•  ', style: TextStyle(color: _blGold)),
+        Expanded(child: Text(l, style: const TextStyle(color: muted, fontSize: 12.5, height: 1.4))),
+      ])),
+    ]),
+  );
+}
+
+/// فريق حد تاني (من الترتيب)
+class _BLTeamPage extends StatefulWidget {
+  const _BLTeamPage({required this.teamId, required this.isArabic});
+  final String teamId;
+  final bool isArabic;
+  @override
+  State<_BLTeamPage> createState() => _BLTeamPageState();
+}
+
+class _BLTeamPageState extends State<_BLTeamPage> {
+  Map<String, dynamic>? _t;
+  @override
+  void initState() {
+    super.initState();
+    _sb.rpc('badger_league_team', params: {'p_team': widget.teamId}).then((r) {
+      if (mounted && r != null) setState(() => _t = Map<String, dynamic>.from(r as Map));
+    }).catchError((_) {});
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: bg,
+    body: SafeArea(child: Column(children: [
+      Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Row(children: [
+        IconButton(onPressed: () => Navigator.pop(context),
+            style: IconButton.styleFrom(backgroundColor: cardBg, side: BorderSide(color: line)),
+            icon: const Icon(Icons.arrow_back, color: Colors.white)),
+      ])),
+      Expanded(child: _t == null
+          ? const Center(child: CircularProgressIndicator(color: _blGold))
+          : _BLTeamView(team: _t!, isArabic: widget.isArabic)),
+    ])),
+  );
+}
+
+/// شكل الفريق: الدرع والاسم والنقط، وبعدين الأعضاء كأنهم لاعيبة
+class _BLTeamView extends StatelessWidget {
+  const _BLTeamView({required this.team, required this.isArabic, this.onEdit, this.onInvite, this.footer});
+  final Map<String, dynamic> team;
+  final bool isArabic;
+  final VoidCallback? onEdit, onInvite;
+  final Widget? footer;
+  String t(String en, String ar) => isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    final members = ((team['members'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final rounds = ((team['rounds'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final member = team['is_member'] == true;
+    final code = team['code'] as String?;
+    final c = _blColor(team['color'] as String?);
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [c.withValues(alpha: 0.30), cardBg]),
+          border: Border.all(color: c.withValues(alpha: 0.7))),
+        child: Column(children: [
+          Row(children: [
+            const Spacer(),
+            if (onEdit != null) IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20)),
+          ]),
+          LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 66),
+          const SizedBox(height: 8),
+          Text('${team['name']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            _stat(_blPts(team['points']), t('points', 'نقطة')),
+            Container(width: 1, height: 30, color: line, margin: const EdgeInsets.symmetric(horizontal: 18)),
+            _stat('#${team['rank'] ?? '-'}', t('of ${team['teams'] ?? '-'}', 'من ${team['teams'] ?? '-'}')),
+            Container(width: 1, height: 30, color: line, margin: const EdgeInsets.symmetric(horizontal: 18)),
+            _stat('${members.length}/5', t('members', 'أعضاء')),
+          ]),
+        ]),
+      ),
+      if (member && code != null && members.length < 5) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: _blGold.withValues(alpha: 0.6))),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t('Team code', 'كود الفريق'), style: const TextStyle(color: muted, fontSize: 11.5)),
+              GestureDetector(
+                onTap: () { Clipboard.setData(ClipboardData(text: code)); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('Copied ✓', 'اتنسخ ✓')))); },
+                child: Text(code, textDirection: TextDirection.ltr,
+                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 4))),
+            ])),
+            ElevatedButton.icon(
+              onPressed: onInvite,
+              style: ElevatedButton.styleFrom(backgroundColor: _blGold, foregroundColor: Colors.black, elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.ios_share, size: 17),
+              label: Text(t('Invite', 'اعزم'), style: const TextStyle(fontWeight: FontWeight.w900))),
+          ]),
+        ),
+      ],
+      const SizedBox(height: 14),
+      Text(t('PLAYERS', 'اللاعيبة'), style: const TextStyle(color: muted, fontSize: 11.5, letterSpacing: 1.2, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 6),
+      for (final m in members) _memberRow(context, m, rounds),
+      for (var i = members.length; i < 5; i++)
+        Padding(padding: const EdgeInsets.only(top: 6), child: InkWell(
+          onTap: member ? onInvite : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: line)),
+            child: Row(children: [
+              Container(width: 38, height: 38, decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(11)),
+                  child: const Icon(Icons.add, color: muted)),
+              const SizedBox(width: 12),
+              Text(member ? t('Invite a friend', 'اعزم صاحب') : t('Empty spot', 'مكان فاضي'),
+                  style: const TextStyle(color: muted, fontSize: 13.5, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        )),
+      if (footer != null) ...[const SizedBox(height: 16), footer!],
+    ]);
+  }
+
+  Widget _stat(String v, String l) => Column(children: [
+    Text(v, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+    Text(l, style: const TextStyle(color: muted, fontSize: 11.5)),
+  ]);
+
+  Widget _memberRow(BuildContext context, Map<String, dynamic> m, List<Map<String, dynamic>> rounds) {
+    final name = '${m['name'] ?? ''}';
+    final url = m['avatar'] as String?;
+    final me = m['me'] == true;
+    final from = m['from_event'];
+    final fromRound = from == null ? null : rounds.cast<Map?>().firstWhere((r) => r?['event_id'] == from, orElse: () => null);
+    final late = fromRound != null && rounds.isNotEmpty && rounds.first['event_id'] != from;
+    final letter = Center(child: Text(name.isNotEmpty ? name.characters.first.toUpperCase() : '?',
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)));
+    return Padding(padding: const EdgeInsets.only(top: 6), child: Material(
+      color: me ? brandRed.withValues(alpha: 0.10) : cardBg,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _memberRounds(context, m, rounds),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: me ? brandRed : line)),
+          child: Row(children: [
+            Container(width: 38, height: 38, decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(11)),
+                child: ClipRRect(borderRadius: BorderRadius.circular(11),
+                    child: (url != null && url.isNotEmpty) ? _netImage(url, width: 38, height: 38, fit: BoxFit.cover, fallback: letter) : letter)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800))),
+                if (m['captain'] == true) const Padding(padding: EdgeInsetsDirectional.only(start: 6), child: Text('👑', style: TextStyle(fontSize: 13))),
+                if (me) Padding(padding: const EdgeInsetsDirectional.only(start: 6), child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(color: brandRed, borderRadius: BorderRadius.circular(8)),
+                    child: Text(t('You', 'إنت'), style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)))),
+              ]),
+              if (late || fromRound == null)
+                Text(fromRound == null
+                      ? t('Counts from next month’s rounds', 'مفيش جولات ليه الشهر ده')
+                      : t('Counts from ${fromRound['name_en']}', 'بيتحسب من ${fromRound['name_ar']}'),
+                    style: const TextStyle(color: muted, fontSize: 11.5)),
+            ])),
+            Text(_blPts(m['points']), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+          ]),
+        ),
+      ),
+    ));
+  }
+
+  // جولات العضو: كل جولة بنقطها، والدوسة بتفتح تشكيلته (بعد الديدلاين)
+  void _memberRounds(BuildContext context, Map<String, dynamic> m, List<Map<String, dynamic>> rounds) {
+    final by = (m['by_event'] as Map?) ?? const {};
+    final joined = DateTime.tryParse('${m['joined_at']}');
+    showModalBottomSheet<void>(
+      context: context, useRootNavigator: true, useSafeArea: true,
+      backgroundColor: const Color(0xFF121317),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (sheetCtx) => Directionality(textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr, child: SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('${m['name'] ?? ''}', style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(t('Draft rounds this month', 'جولات الدرافت في الشهر ده'), style: const TextStyle(color: muted, fontSize: 12)),
+          const SizedBox(height: 8),
+          if (rounds.isEmpty)
+            Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(t('No draft rounds yet.', 'مفيش جولات درافت لسه.'),
+                textAlign: TextAlign.center, style: const TextStyle(color: muted))),
+          for (final r in rounds) Builder(builder: (_) {
+            final dl = DateTime.tryParse('${r['deadline_at']}');
+            final counts = joined == null || dl == null || joined.isBefore(dl);
+            final open = r['open'] == true;
+            final pts = by['${r['event_id']}'];
+            final arena = r['arena'] == 'LOCAL' ? t('Local', 'محلي') : t('World', 'عالمي');
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              enabled: open,
+              onTap: open ? () {
+                Navigator.pop(sheetCtx);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => _UserSquadPage(
+                    userId: '${m['user_id']}', userName: '${m['name'] ?? ''}', eventId: '${r['event_id']}',
+                    roundName: isArabic ? '${r['name_ar']}' : '${r['name_en']}', username: m['username'] as String?,
+                    avatarUrl: m['avatar'] as String?, points: pts, isArabic: isArabic, draft: true)));
+              } : null,
+              title: Text('${isArabic ? r['name_ar'] : r['name_en']} · $arena',
+                  style: TextStyle(color: open ? Colors.white : muted, fontSize: 14, fontWeight: FontWeight.w700)),
+              subtitle: Text(!counts
+                    ? t("Before he joined (doesn't count)", 'قبل ما يدخل (مش بتتحسب)')
+                    : !open ? t('Squad shows after the deadline', 'التشكيلة بتبان بعد الديدلاين')
+                    : r['finished'] == true ? t('Final', 'نهائي') : t('Points come when the round is closed', 'النقط بتنزل لما الجولة تتقفل'),
+                  style: const TextStyle(color: muted, fontSize: 11.5)),
+              trailing: Text(counts && pts != null ? _blPts(pts) : '—',
+                  style: TextStyle(color: counts ? Colors.white : muted, fontSize: 15, fontWeight: FontWeight.w900)),
+            );
+          }),
+        ]),
+      ))),
+    );
+  }
+}
+
+/// فورم الإنشاء / التعديل: الاسم + الرمز + اللون، ومعاينة الدرع
+class _BLTeamForm extends StatefulWidget {
+  const _BLTeamForm({required this.isArabic, required this.icons, required this.colors, this.team});
+  final bool isArabic;
+  final List<String> icons, colors;
+  final Map? team;
+  @override
+  State<_BLTeamForm> createState() => _BLTeamFormState();
+}
+
+class _BLTeamFormState extends State<_BLTeamForm> {
+  late final TextEditingController _name = TextEditingController(text: widget.team?['name'] as String? ?? '');
+  late String _icon = widget.team?['icon'] as String? ?? widget.icons.first;
+  late String _color = (widget.team?['color'] as String? ?? widget.colors.first).toUpperCase();
+  bool _busy = false;
+  String? _err;
+  String t(String en, String ar) => widget.isArabic ? ar : en;
+
+  Future<void> _save() async {
+    if (_busy) return;
+    final name = _name.text.trim();
+    if (name.length < 2) { setState(() => _err = _blErr('bad_name', widget.isArabic)); return; }
+    setState(() { _busy = true; _err = null; });
+    try {
+      final edit = widget.team != null;
+      final r = await _sb.rpc(edit ? 'badger_league_update' : 'badger_league_create', params: {'p': {
+        if (edit) 'team_id': widget.team!['id'], 'name': name, 'icon': _icon, 'color': _color}});
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+      Navigator.pop(context, Map<String, dynamic>.from(r as Map));
+    } catch (e) {
+      if (mounted) setState(() { _busy = false; _err = _blErr(e, widget.isArabic); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 14, 18, 18 + MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 14),
+        Text(widget.team == null ? t('New team', 'فريق جديد') : t('Edit team', 'تعديل الفريق'),
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 14),
+        Center(child: LeagueShield(icon: _icon, color: _color, size: 72)),
+        const SizedBox(height: 8),
+        Center(child: Text(_name.text.trim().isEmpty ? t('Team name', 'اسم الفريق') : _name.text.trim(),
+            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800))),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _name, maxLength: 24, onChanged: (_) => setState(() {}),
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+          decoration: InputDecoration(
+            labelText: t('Team name', 'اسم الفريق'), labelStyle: const TextStyle(color: muted),
+            counterStyle: const TextStyle(color: muted),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: line)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _blGold))),
+        ),
+        const SizedBox(height: 6),
+        Text(t('Symbol', 'الرمز'), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final i in widget.icons) GestureDetector(
+            onTap: () => setState(() => _icon = i),
+            child: Container(width: 44, height: 44, alignment: Alignment.center,
+              decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _icon == i ? _blGold : line, width: _icon == i ? 1.6 : 1)),
+              child: Text(i, style: const TextStyle(fontSize: 21))),
+          ),
+        ]),
+        const SizedBox(height: 14),
+        Text(t('Colour', 'اللون'), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 10, runSpacing: 10, children: [
+          for (final c in widget.colors) GestureDetector(
+            onTap: () => setState(() => _color = c.toUpperCase()),
+            child: Container(width: 34, height: 34,
+              decoration: BoxDecoration(color: _blColor(c), shape: BoxShape.circle,
+                  border: Border.all(color: _color == c.toUpperCase() ? Colors.white : Colors.transparent, width: 2.5))),
+          ),
+        ]),
+        if (_err != null) ...[const SizedBox(height: 12), Text(_err!, style: const TextStyle(color: brandRed, fontSize: 13))],
+        const SizedBox(height: 16),
+        SizedBox(height: 50, child: ElevatedButton(
+          onPressed: _busy ? null : _save,
+          style: ElevatedButton.styleFrom(backgroundColor: brandRed, foregroundColor: Colors.white, elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          child: _busy
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4))
+              : Text(widget.team == null ? t('Create team', 'اعمل الفريق') : t('Save', 'حفظ'),
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))),
+      ])),
+    );
+  }
+}

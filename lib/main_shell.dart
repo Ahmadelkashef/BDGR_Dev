@@ -13,7 +13,7 @@ import 'competitions/competition_sports.dart' show competitionPreselect;
 import 'competitions/competitions_page.dart';
 import 'deep_links.dart';
 import 'feed/feed_page.dart';
-import 'fantasy.dart' show FantasyShell, fantasyLeaguePage;
+import 'fantasy.dart' show FantasyShell, fantasyLeaguePage, badgerLeaguePage;
 import 'home/home_page.dart' show HomePage, HomeActions;
 import 'profile/profile_page.dart';
 import 'settings/help_support_page.dart' show supportThreadRoute;
@@ -136,6 +136,7 @@ class _MainShellState extends State<MainShell> {
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.addListener(_joinPendingLeague);
     DeepLinks.pendingTeamCode.addListener(_openPendingTeam);
+    DeepLinks.pendingBLeagueCode.addListener(_openPendingBLeague);
     DeepLinks.pendingPostId.addListener(_goToPendingPost);
     DeepLinks.pendingUgcId.addListener(_goToPendingPost);
     // لو اللينك جه قبل اللوجن أو قبل ما الشاشة دي تتبني
@@ -143,7 +144,7 @@ class _MainShellState extends State<MainShell> {
     PushService.opened.addListener(_onPushOpened);
     Ads.deepLink.addListener(_openAdLink);   // إعلان لينكه جوه التطبيق
     Ads.ensure();
-    WidgetsBinding.instance.addPostFrameCallback((_) { _openPendingMoment(); _joinPendingLeague(); _openPendingTeam(); _goToPendingPost(); _showPriceAlerts(); _cancelPendingDeletion(); _checkLegalUpdate().then((_) => _pushOnOpen()); });
+    WidgetsBinding.instance.addPostFrameCallback((_) { _openPendingMoment(); _joinPendingLeague(); _openPendingTeam(); _openPendingBLeague(); _goToPendingPost(); _showPriceAlerts(); _cancelPendingDeletion(); _checkLegalUpdate().then((_) => _pushOnOpen()); });
   }
 
   // الشروط اتحدّثت بعد ما اليوزر وافق: نطلب موافقته على النسخة الجديدة (مرة واحدة)
@@ -302,6 +303,7 @@ class _MainShellState extends State<MainShell> {
     DeepLinks.pendingMomentId.removeListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.removeListener(_joinPendingLeague);
     DeepLinks.pendingTeamCode.removeListener(_openPendingTeam);
+    DeepLinks.pendingBLeagueCode.removeListener(_openPendingBLeague);
     DeepLinks.pendingPostId.removeListener(_goToPendingPost);
     DeepLinks.pendingUgcId.removeListener(_goToPendingPost);
     _feedActive.dispose();
@@ -314,6 +316,21 @@ class _MainShellState extends State<MainShell> {
     if (supa.auth.currentSession == null) return;   // بعد اللوجن
     setState(() => _index = _feedTab);
     WidgetsBinding.instance.addPostFrameCallback((_) => _navKeys[_feedTab].currentState?.popUntil((r) => r.isFirst));
+  }
+
+  // ── دعوة فريق دوري بادجر (الفانتازي): نروح للفانتازي ونفتح الدوري بالكود ──
+  void _openPendingBLeague() {
+    final code = DeepLinks.pendingBLeagueCode.value;
+    if (code == null || !mounted) return;
+    if (supa.auth.currentSession == null) return;   // بعد اللوجن
+    DeepLinks.consumeBLeague();
+    const tab = 1;
+    setState(() => _index = tab);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = _navKeys[tab].currentState;
+      nav?.popUntil((r) => r.isFirst);
+      nav?.push(MaterialPageRoute<void>(builder: (_) => badgerLeaguePage(joinCode: code)));
+    });
   }
 
   // ── دعوة فريق (مسابقات): نروح للمسابقات ونفتح صفحة الانضمام بالكود ──
