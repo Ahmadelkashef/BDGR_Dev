@@ -508,6 +508,41 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
     );
   }
 
+  bool _recapBusy = false;
+  /// "You" card → the recap of the round on screen (dynamic: normal / draft of any size / both)
+  Future<void> _openMyRoundRecap() async {
+    final ev = _selectedRound?['event_id']?.toString();
+    if (ev == null || _recapBusy) return;
+    _recapBusy = true;
+    try {
+      var rc = _recapByEvent[ev];
+      if (rc == null) {
+        final r = await _sb.rpc('fantasy_round_recap', params: {'p_type': _type, 'p_event': ev});
+        if (r is Map && r['none'] != true) { rc = Map<String, dynamic>.from(r); _recapByEvent[ev] = rc; }
+      }
+      if (rc == null || !mounted) return;
+      final act = await showModalBottomSheet<String>(
+        context: context, useRootNavigator: true, useSafeArea: true, isScrollControlled: true, backgroundColor: bg,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+        builder: (_) => _RecapSheet(recap: rc!, isArabic: widget.isArabic, canBuild: false));
+      if (!mounted || act == null || !act.startsWith('squad:')) return;
+      final parts = act.split(':');
+      final mode = parts[1];
+      final eid = parts.length > 2 ? parts[2] : ev;
+      final r2 = _recapByEvent[eid] ?? rc;
+      final m = ((r2['modes'] as List?) ?? const []).cast<Map>().firstWhere((x) => x['mode'] == mode, orElse: () => const {});
+      final me = _sb.auth.currentUser?.id;
+      if (me == null) return;
+      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (_) => _UserSquadPage(
+        userId: me, userName: t('You', 'إنت'), eventId: eid,
+        roundName: widget.isArabic ? '${r2['name_ar'] ?? r2['name_en']}' : '${r2['name_en']}',
+        rank: (m['rank'] as num?)?.toInt(), points: m['points'], isArabic: widget.isArabic, draft: mode == 'draft')));
+    } catch (_) {
+    } finally {
+      _recapBusy = false;
+    }
+  }
+
   // my card: red, picture · points · rank · of
   Widget _myStrip() {
     final me = _board?['me'] as Map?;
@@ -518,7 +553,8 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
       Text(value, maxLines: 1, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
     ]));
     return GestureDetector(
-      onTap: () => openMyFantasyStats(context, widget.isArabic, type: _type, onToggleLanguage: widget.onToggleLanguage),
+      // a round: that round's recap with the squad(s) it was played with (draft / normal / both); month & season: no tap
+      onTap: _period == 'round' && _board?['me'] != null ? _openMyRoundRecap : null,
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
         decoration: BoxDecoration(
