@@ -332,6 +332,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     if (!_isOwner) _visitorIsFollowing = widget.visitTarget!.isFollowing;
     _loadProfile();
     AppLang.changes.addListener(_onLangChanged);
+    ProfileUi.changes.addListener(_onLangChanged);
+    ProfileUi.warm();
     _profileAuthSub = _sb.auth.onAuthStateChange.listen(_onProfileAuthChange);
   }
 
@@ -339,6 +341,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     AppLang.changes.removeListener(_onLangChanged);
+    ProfileUi.changes.removeListener(_onLangChanged);
     _profileAuthSub?.cancel();
     _limitErrorTimer?.cancel();
     _limitErrorOverlay?.remove();
@@ -567,6 +570,18 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   /// كارت الفانتازي مكان دايرة الصورة (السويتش profile_card = card | circle)
   bool get _cardMode => !_isOfficial && ProfileTrophies.cardOn;
+
+  /// visible tabs (DB switches, owner 27 Nov): Posts only when `profile_posts` = show,
+  /// Career / Stats only when `profile_competitions` = show. Hidden tabs stay in the code.
+  List<int> get _tabIds => [
+        if (ProfileUi.posts) 0,
+        if (ProfileUi.competitions) ...[3, 4],
+        if (ProfileUi.competitions) ...[1, 2] else ...[2, 1],
+      ];
+  int get _tab => _tabIds.contains(_ptab) ? _ptab : _tabIds.first;
+
+  /// page colour: launch (no cover) = soft graphite instead of near-black
+  Color get _pageBg => _cardMode && !ProfileUi.cover ? const Color(0xFF17181D) : _kBg;
 
   Future<void> _loadProfile() async {
     if (await _checkBlocked()) return;
@@ -1205,7 +1220,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     }
     if (!_isOwner && (_iBlocked || _blockedMe)) return _buildBlockedScreen();
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: _pageBg,
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader()),
@@ -1218,16 +1233,16 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             // تابات البروفايل (27 نوفمبر): بوستات · إنجازات · فانتازي
             // (المسيرة / الإحصائيات / الفيديوهات بتتضاف لما يبقى ليها داتا)
             SliverToBoxAdapter(child: _buildProfileTabs()),
-            if (_ptab == 1)
+            if (_tab == 1)
               SliverToBoxAdapter(child: TrophiesTab(
                 t: _trophies, isOwner: _isOwner,
                 onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
-            else if (_ptab == 2)
+            else if (_tab == 2)
               SliverToBoxAdapter(child: FantasyProfileTab(
                 t: _trophies, isOwner: _isOwner,
                 onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
-            else if (_ptab == 3 || _ptab == 4)
-              SliverToBoxAdapter(child: ProfileSoonTab(kind: _ptab == 3 ? 'career' : 'stats', t: _trophies))
+            else if (_tab == 3 || _tab == 4)
+              SliverToBoxAdapter(child: ProfileSoonTab(kind: _tab == 3 ? 'career' : 'stats', t: _trophies))
             else if (_lockedForMe)
               SliverToBoxAdapter(child: _buildLockedProfile())
             // بوستات اليوزر (UGC) — بدل المومنتس القديمة
@@ -1347,7 +1362,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               child: Container(
                 width: 30, height: 30,
                 decoration: BoxDecoration(color: _kAccent, shape: BoxShape.circle,
-                    border: Border.all(color: _kBg, width: 2.5)),
+                    border: Border.all(color: _pageBg, width: 2.5)),
                 child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
               ),
             ),
@@ -1372,22 +1387,25 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             Text('@$_username', style: const TextStyle(color: _kGray, fontSize: 13)),
           const SizedBox(height: 10),
           _buildStatsLine(),
-          if (_hasSocialLinks) ...[
+          // social icons / bio / sports chips = DB switches (hidden on launch, code kept)
+          if (_hasSocialLinks && ProfileUi.socials) ...[
             const SizedBox(height: 14),
             _buildSocialLinks(),
           ],
-          const SizedBox(height: 14),
-          Text(
-            _bio.isNotEmpty ? _bio : _s('Unranked. Unafraid.', 'غير مصنف. لا يهاب.'),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _bio.isNotEmpty ? Colors.white70 : Colors.white38,
-              fontSize: 14, height: 1.5,
-              fontStyle: _bio.isNotEmpty ? FontStyle.normal : FontStyle.italic,
+          if (ProfileUi.bio) ...[
+            const SizedBox(height: 14),
+            Text(
+              _bio.isNotEmpty ? _bio : _s('Unranked. Unafraid.', 'غير مصنف. لا يهاب.'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _bio.isNotEmpty ? Colors.white70 : Colors.white38,
+                fontSize: 14, height: 1.5,
+                fontStyle: _bio.isNotEmpty ? FontStyle.normal : FontStyle.italic,
+              ),
             ),
-          ),
+          ],
           _buildMetaLine(),
-          if (_sportNames.isNotEmpty) ...[
+          if (_sportNames.isNotEmpty && ProfileUi.competitions) ...[
             const SizedBox(height: 12),
             _buildSportsSection(),
           ],
@@ -1446,16 +1464,18 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   Widget _buildProfileTabs() {
     // ترتيب العرض: بوستات · المشوار (قريب) · الإحصائيات (قريب) · إنجازات · فانتازي
     // (_ptab: 0 بوستات · 1 إنجازات · 2 فانتازي · 3 المشوار · 4 الإحصائيات)
-    final tabs = <(int, String, bool)>[
-      (0, _s('Posts', 'البوستات'), false),
-      (3, _s('Career', 'المشوار'), true),
-      (4, _s('Stats', 'الإحصائيات'), true),
-      (1, _s('Trophies', 'الإنجازات'), false),
-      (2, _s('Fantasy', 'الفانتازي'), false),
-    ];
+    final all = <int, (String, bool)>{
+      0: (_s('Posts', 'البوستات'), false),
+      3: (_s('Career', 'المشوار'), true),
+      4: (_s('Stats', 'الإحصائيات'), true),
+      1: (_s('Trophies', 'الإنجازات'), false),
+      2: (_s('Fantasy', 'الفانتازي'), false),
+    };
+    final tabs = <(int, String, bool)>[for (final i in _tabIds) (i, all[i]!.$1, all[i]!.$2)];
+    final cur = _tab;
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF222228)))),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0x1AFFFFFF)))),
       child: Row(children: [
         for (final (i, label, soon) in tabs)
           Expanded(child: GestureDetector(
@@ -1465,8 +1485,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               const SizedBox(height: 12),
               SizedBox(height: 20, child: FittedBox(fit: BoxFit.scaleDown, child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(label, style: TextStyle(
-                    color: _ptab == i ? Colors.white : _kGray, fontSize: 14,
-                    fontWeight: _ptab == i ? FontWeight.w800 : FontWeight.w500)),
+                    color: cur == i ? Colors.white : _kGray, fontSize: 14,
+                    fontWeight: cur == i ? FontWeight.w800 : FontWeight.w500)),
                 if (soon) ...[
                   const SizedBox(width: 3),
                   Container(
@@ -1478,7 +1498,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               ]))),
               const SizedBox(height: 8),
               AnimatedContainer(duration: const Duration(milliseconds: 200),
-                  height: 2.5, width: _ptab == i ? 40 : 0,
+                  height: 2.5, width: cur == i ? 40 : 0,
                   decoration: BoxDecoration(color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
             ]),
           )),
@@ -1609,6 +1629,24 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   Widget _buildCover() {
     final top = MediaQuery.of(context).padding.top;
+    // `profile_cover` = hide (launch): no cover photo, a soft graphite top with a red glow + the faint badger
+    if (_cardMode && !ProfileUi.cover) {
+      return SizedBox(
+        height: 160 + top,
+        child: Stack(children: [
+          Positioned.fill(child: Container(decoration: BoxDecoration(gradient: RadialGradient(
+            center: const Alignment(0, -1.1), radius: 1.25,
+            colors: [const Color(0xFF3A1C1F), _pageBg], stops: const [0, 0.72])))),
+          Positioned(left: 0, right: 0, top: top + 4, height: 96,
+            child: Center(child: Opacity(opacity: 0.08,
+                child: Image.asset('assets/badger_white.png', fit: BoxFit.contain)))),
+          if (!_isOwner)
+            Positioned(top: top + 10, left: 12, child: _backBtn()),
+          if (!_isOwner && !_isPreviewingOwnProfile && !_isOfficial)
+            Positioned(top: top + 10, right: 12, child: _iconBtn(Icons.more_horiz, _openVisitorMenu)),
+        ]),
+      );
+    }
     final stack = SizedBox(
       height: 160 + top,
       child: Stack(clipBehavior: Clip.none, children: [
@@ -2105,8 +2143,10 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   }
 
   Widget _buildOwnerButtons() => Row(children: [
-    Expanded(child: _outlineBtn(Icons.edit_outlined,
-        _s('Edit Profile', 'تعديل البروفايل'), _openEdit)),
+    // `profile_edit` = photo (launch): the button only changes the photo; full = the old Edit Profile sheet
+    Expanded(child: _cardMode && !ProfileUi.fullEdit
+        ? _outlineBtn(Icons.photo_camera_outlined, _s('Change photo', 'غيّر الصورة'), _pickAvatar)
+        : _outlineBtn(Icons.edit_outlined, _s('Edit Profile', 'تعديل البروفايل'), _openEdit)),
     const SizedBox(width: 10),
     Expanded(child: _outlineBtn(Icons.visibility_outlined,
         _s('View as Visitor', 'مشاهدة كزائر'), _openVisitorPreview)),

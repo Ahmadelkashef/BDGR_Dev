@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -44,6 +45,7 @@ class ProfileTrophies {
       if (r is! Map) return null;
       final t = ProfileTrophies(Map<String, dynamic>.from(r));
       cardOn = (t.j['card'] ?? 'card') != 'circle';
+      if (t.j['ui'] is Map) ProfileUi.set(Map<String, dynamic>.from(t.j['ui'] as Map));
       if (t.j['blocked'] == true) return null;
       return t;
     } catch (e) {
@@ -360,8 +362,8 @@ class _TrophiesTabState extends State<TrophiesTab> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _filterMenu(),
-        const SizedBox(height: 14),
+        // competitions hidden → only fantasy exists, so no filter menu (kept in the code)
+        if (ProfileUi.competitions) ...[_filterMenu(), const SizedBox(height: 14)] else const SizedBox(height: 4),
         if (t == null)
           const Padding(padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator(color: Color(0xFFFF2B2B), strokeWidth: 2)))
@@ -597,6 +599,41 @@ class FantasyProfileTab extends StatelessWidget {
 // الداتا من نفس `profile_trophies` → `cards` {pick, since, sports[{id, fav, position, teams, captain, matches}]}.
 // ═════════════════════════════════════════════════════════════════════════
 
+/// Profile look switches from the DB (`app_settings.profile_*`, owner 27 Nov: launch = fantasy only).
+/// Nothing is deleted: hidden parts stay in the code and come back when the switch says show.
+/// Defaults = the launch look; the last server values are kept on the phone (no jump on the next open).
+class ProfileUi {
+  static bool competitions = false; // sport cards + Competitions card + Career/Stats tabs + sports chips
+  static bool posts = false;        // Posts tab + "+ post"
+  static bool cover = false;        // cover photo (hide = soft dark top with the faint badger)
+  static bool fullEdit = false;     // Edit Profile sheet (false = change photo only)
+  static bool bio = false;
+  static bool socials = false;
+  static final ValueNotifier<int> changes = ValueNotifier(0);
+
+  static void set(Map<String, dynamic> m, {bool save = true}) {
+    bool on(String k, bool d) => m[k] == null ? d : m[k].toString() == 'show';
+    competitions = on('competitions', competitions);
+    posts = on('posts', posts);
+    cover = on('cover', cover);
+    fullEdit = m['edit'] == null ? fullEdit : m['edit'].toString() == 'full';
+    bio = on('bio', bio);
+    socials = on('socials', socials);
+    changes.value++;
+    if (save) LocalStore.setStr('profile_ui', jsonEncode(m));
+  }
+
+  static bool _warmed = false;
+  static Future<void> warm() async {
+    if (_warmed) return;
+    _warmed = true;
+    try {
+      final s = await LocalStore.getStr('profile_ui');
+      if (s != null) set(Map<String, dynamic>.from(jsonDecode(s) as Map), save: false);
+    } catch (_) {}
+  }
+}
+
 extension ProfileCardsData on ProfileTrophies {
   Map<String, dynamic> get cards => j['cards'] is Map ? Map<String, dynamic>.from(j['cards'] as Map) : const {};
   String? get cardPick => cards['pick']?.toString();
@@ -758,7 +795,7 @@ Widget _rankLine(double w, int rank, String tag, Color c) => Row(mainAxisSize: M
 
 /// الكارت الأساسي BADGER: صورة اليوزر + رياضاته + معانا من إمتى. لكل الناس.
 Widget badgerProfileCard(double w, ProfileTrophies? t, {ImageProvider? photo, String? name}) {
-  final sports = t?.cardSports ?? const [];
+  final sports = ProfileUi.competitions ? (t?.cardSports ?? const []) : const <Map<String, dynamic>>[];
   final since = t?.memberSince?.toLocal();
   return ProfileCardFace(
     width: w, frame: _idFrame, text: _idText, photo: photo, name: name,
@@ -871,7 +908,7 @@ class ProfileCardCarousel extends StatefulWidget {
   /// عدد الكروت (عشان الهيدر يسيب مكان سطر النقط)
   static int count(ProfileTrophies? t) {
     if (t == null) return 1;
-    final sports = t.cardSports.length;
+    final sports = ProfileUi.competitions ? t.cardSports.length : 0;
     final fantasy = t.playedFantasy ? 1 + t.arenaRatings.length : 0;
     return 1 + (sports > 0 ? sports + 1 : 0) + fantasy;
   }
@@ -932,7 +969,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     final right = <_CardItem>[];
     if (t != null) {
       // ── المسابقات: الرانك العام جنب BADGER، وبعده كل رياضة (المفضلة الأقرب)
-      final sports = t.cardSports;
+      final sports = ProfileUi.competitions ? t.cardSports : const <Map<String, dynamic>>[];
       if (sports.isNotEmpty) {
         left.add(_CardItem(AppLang.t('Competitions', 'المسابقات'), (w) => competitionsProfileCard(w, t), () => _sheet(
             (w) => competitionsProfileCard(w, t, name: name), AppLang.t('Competitions', 'المسابقات'), _sportText,
@@ -960,7 +997,8 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
       if (t.playedFantasy) {
         final tt = _tierOf(t.tier);
         final r = t.rating;
-        right.add(_CardItem(AppLang.t('Fantasy', 'الفانتازي'), (w) => fantasyOverallCard(w, t), () => _sheet(
+        // competitions hidden → Fantasy sits on the left so BADGER keeps cards on both sides
+        (ProfileUi.competitions ? right : left).add(_CardItem(AppLang.t('Fantasy', 'الفانتازي'), (w) => fantasyOverallCard(w, t), () => _sheet(
             (w) => fantasyOverallCard(w, t, name: name), AppLang.t('${tt.en} card', 'كارت ${tt.ar}'), tt.text,
             _fantasyHint(t),
             sub: r == null ? null : AppLang.t(
@@ -978,7 +1016,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
       }
     }
     final since = t?.memberSince?.toLocal();
-    final sportNames = (t?.cardSports ?? const []).map((s) => _sportOf(s['id']?.toString() ?? '')?.name(AppLang.isArabic))
+    final sportNames = (!ProfileUi.competitions ? const <Map<String, dynamic>>[] : t?.cardSports ?? const []).map((s) => _sportOf(s['id']?.toString() ?? '')?.name(AppLang.isArabic))
         .whereType<String>().join(' · ');
     final badger = _CardItem('BADGER', (w) => badgerProfileCard(w, t, photo: widget.photo), () => _sheet(
         (w) => badgerProfileCard(w, t, photo: widget.photo, name: name), 'BADGER', _idText,
