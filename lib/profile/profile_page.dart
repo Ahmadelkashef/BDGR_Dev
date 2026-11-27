@@ -228,7 +228,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   int?    _userId;
   int     _cupTitles = 0;   // 🏆 كاس بادجر اللي كسبها
   ProfileTrophies? _trophies; // كارت الفانتازي + الإنجازات + التصنيف
-  int _ptab = 0;              // 0 بوستات · 1 إنجازات · 2 فانتازي
+  int _ptab = 0;              // 0 بوستات · 1 إنجازات · 2 فانتازي · 3 المشوار · 4 الإحصائيات
   String  _displayName    = '';
   String  _username       = '';
   String? _avatarUrl;
@@ -1221,6 +1221,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               SliverToBoxAdapter(child: FantasyProfileTab(
                 t: _trophies, isOwner: _isOwner,
                 onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
+            else if (_ptab == 3 || _ptab == 4)
+              SliverToBoxAdapter(child: ProfileSoonTab(kind: _ptab == 3 ? 'career' : 'stats', t: _trophies))
             else if (_lockedForMe)
               SliverToBoxAdapter(child: _buildLockedProfile())
             // بوستات اليوزر (UGC) — بدل المومنتس القديمة
@@ -1304,6 +1306,9 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   // ── هيدر الكارت (27 نوفمبر): كارت الفانتازي مكان الدايرة، الاسم جنبه،
   // والأرقام سطر صغير تحت. باقي الهيدر زي ما هو.
+  /// مكان سطر النقط تحت الكارت (لو فيه أكتر من كارت بس)
+  double get _dotsH => ProfileCardCarousel.count(_trophies) > 1 ? ProfileCardCarousel.dotsH : 0;
+
   Widget _buildCardHeader() {
     // الكارت في نص الصفحة على حرف الغلاف، وكل اللي تحته في النص (الرسم اللي اتوافق عليه 27 نوفمبر)
     const cw = 108.0;
@@ -1315,11 +1320,18 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       Stack(children: [
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _buildCover(),
-          SizedBox(height: ch - lift + 6),
+          SizedBox(height: ch - lift + 6 + _dotsH),
         ]),
+        // كروت البروفايل بتتقلب (PROFILE v3): نفس مكان ومقاس الكارت، والكروت اللي جنبه باهتة
         Positioned(
-          left: (sw - cw) / 2, top: coverH - lift,
-          child: _buildCardThumb(cw),
+          left: 0, right: 0, top: coverH - lift,
+          child: ProfileCardCarousel(
+            key: ValueKey('cards-${_trophies == null ? 0 : 1}-${_trophies?.cardSports.length ?? 0}'),
+            width: cw, t: _trophies,
+            name: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+            isOwner: _isOwner, photo: _avatarImage,
+            onChangePhoto: _isOwner ? _pickAvatar : null,
+          ),
         ),
         // زرار الكاميرا بره طرف الكارت (ما يغطيش الكلام اللي جوه)
         if (_isOwner)
@@ -1400,18 +1412,6 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCardThumb(double w) {
-    return GestureDetector(
-      onTap: () => openProfileCardSheet(context,
-          t: _trophies,
-          name: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
-          photo: _avatarImage,
-          onChangePhoto: _isOwner ? _pickAvatar : null),
-      child: FantasyProfileCard(
-          width: w, tier: _trophies?.tier ?? 'new', rating: _trophies?.rating, photo: _avatarImage),
-    );
-  }
-
   /// متابعين · بيتابع · إنجازات (سطر واحد في النص). الإنجازات = كل اللي كسبه في أي نشاط → تاب الإنجازات.
   Widget _buildStatsLine() {
     Widget one(String v, String label, VoidCallback? onTap) => GestureDetector(
@@ -1433,23 +1433,41 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   /// صف التابات تحت الهيدر
   Widget _buildProfileTabs() {
-    final tabs = [_s('Posts', 'البوستات'), _s('Trophies', 'الإنجازات'), _s('Fantasy', 'الفانتازي')];
+    // ترتيب العرض: بوستات · المشوار (قريب) · الإحصائيات (قريب) · إنجازات · فانتازي
+    // (_ptab: 0 بوستات · 1 إنجازات · 2 فانتازي · 3 المشوار · 4 الإحصائيات)
+    final tabs = <(int, String, bool)>[
+      (0, _s('Posts', 'البوستات'), false),
+      (3, _s('Career', 'المشوار'), true),
+      (4, _s('Stats', 'الإحصائيات'), true),
+      (1, _s('Trophies', 'الإنجازات'), false),
+      (2, _s('Fantasy', 'الفانتازي'), false),
+    ];
     return Container(
       margin: const EdgeInsets.only(top: 8),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF222228)))),
       child: Row(children: [
-        for (var i = 0; i < tabs.length; i++)
+        for (final (i, label, soon) in tabs)
           Expanded(child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => _ptab = i),
             child: Column(children: [
               const SizedBox(height: 12),
-              Text(tabs[i], style: TextStyle(
-                  color: _ptab == i ? Colors.white : _kGray, fontSize: 14,
-                  fontWeight: _ptab == i ? FontWeight.w800 : FontWeight.w500)),
-              const SizedBox(height: 10),
+              SizedBox(height: 20, child: FittedBox(fit: BoxFit.scaleDown, child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(label, style: TextStyle(
+                    color: _ptab == i ? Colors.white : _kGray, fontSize: 14,
+                    fontWeight: _ptab == i ? FontWeight.w800 : FontWeight.w500)),
+                if (soon) ...[
+                  const SizedBox(width: 3),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(color: const Color(0xFF2A2A30), borderRadius: BorderRadius.circular(5)),
+                    child: Text(_s('soon', 'قريب'), style: const TextStyle(color: Colors.white54, fontSize: 8.5)),
+                  ),
+                ],
+              ]))),
+              const SizedBox(height: 8),
               AnimatedContainer(duration: const Duration(milliseconds: 200),
-                  height: 2.5, width: _ptab == i ? 44 : 0,
+                  height: 2.5, width: _ptab == i ? 40 : 0,
                   decoration: BoxDecoration(color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
             ]),
           )),
