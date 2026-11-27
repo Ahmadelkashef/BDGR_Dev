@@ -135,6 +135,7 @@ class _MainShellState extends State<MainShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() {}); });
     Diag.sendPending();
     AppUsage.trackOpen(); // user_apps: اليوزر فتح التطبيق ده
+    HomeActions.showFantasyTab = () { if (mounted && _index != 1) setState(() => _index = 1); };
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.addListener(_joinPendingLeague);
     DeepLinks.pendingTeamCode.addListener(_openPendingTeam);

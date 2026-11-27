@@ -307,6 +307,8 @@ class HomeActions {
   static Widget Function(Widget child)? menu;
   /// قبل ما صفحة تتفتح من القايمة الجانبية: الموقع بيروح لتاب الهوم (الصفحة بتتفتح جواه)
   static VoidCallback? showHomeTab;
+  /// يروح لتاب الفانتازي (من دولاب الإنجازات في البروفايل)
+  static VoidCallback? showFantasyTab;
   /// الهوم هو التاب الظاهر دلوقتي (صف الرياضات بيتحرك لوحده بس وهو ظاهر)
   static final ValueNotifier<bool> active = ValueNotifier<bool>(true);
 }
