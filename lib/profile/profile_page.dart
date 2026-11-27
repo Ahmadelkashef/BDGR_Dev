@@ -1612,11 +1612,18 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
                         fit: BoxFit.contain))),
                 ]),
         ),
+        // كروت البروفايل (27 نوفمبر): الكوفر بيغمق وبينزل لحد ما يبقى نفس لون الصفحة،
+        // فالكروت تقعد على غامق والكوفر يبقى جو بس.
         Positioned.fill(child: Container(
-          decoration: BoxDecoration(gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withOpacity(0.5)],
-          )),
+          decoration: BoxDecoration(gradient: _cardMode
+              ? LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Colors.black.withOpacity(0.35), Colors.black.withOpacity(0.55), _kBg],
+                  stops: const [0, 0.45, 1])
+              : LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black.withOpacity(0.5)],
+                )),
         )),
         if (_isOwner)
           Positioned(top: top + 10, right: 12,

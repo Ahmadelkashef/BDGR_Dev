@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_lang.dart';
 import '../brand.dart';
 import '../competitions/competition_sports.dart';
+import '../media_cache.dart';
 
 /// كارت الفانتازي + تابات الإنجازات والفانتازي في البروفايل (27 نوفمبر 2026).
 /// كله من `profile_trophies(user)` (قراية بس، مفيش ملفات = إيجرس تقريباً صفر).
@@ -624,7 +625,7 @@ String _posName(String? p) => switch (p) {
 /// وش كارت عام بنفس شكل ومقاسات كارت الفانتازي (إطار + صورة + شريط تحت).
 class ProfileCardFace extends StatelessWidget {
   const ProfileCardFace({super.key, required this.width, required this.frame, required this.text,
-      required this.pill, this.corner, required this.main, required this.label, this.photo, this.name});
+      required this.pill, this.corner, required this.main, required this.label, this.photo, this.name, this.bg});
   final double width;
   final List<Color> frame;
   final Color text;
@@ -634,6 +635,7 @@ class ProfileCardFace extends StatelessWidget {
   final String label;
   final ImageProvider? photo;
   final String? name; // في الكبير بس
+  final ImageProvider? bg; // صورة اللعبة (الكارت كله، من غير صورة اليوزر)
 
   @override
   Widget build(BuildContext context) {
@@ -657,6 +659,15 @@ class ProfileCardFace extends StatelessWidget {
               begin: Alignment.topCenter, end: Alignment.bottomCenter,
               colors: [Color(0xFF1A1414), Color(0xFF0B0909)],
             ))),
+            if (bg != null) ...[
+              Image(image: bg!, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+              DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [Colors.black.withOpacity(0.15), Colors.black.withOpacity(0.35), Colors.black.withOpacity(0.88)],
+                stops: const [0, 0.45, 1],
+              ))),
+            ] else
             Positioned(left: 0, right: 0, top: 0, height: h * 0.68,
               child: ShaderMask(
                 shaderCallback: (rc) => const LinearGradient(
@@ -720,33 +731,37 @@ const _sportText = Color(0xFFFFD2D2);
 const _idFrame = [Color(0xFFFFFFFF), Color(0xFF8C8C8C), Color(0xFFE6E6E6)];
 const _idText = Color(0xFFF2F2F2);
 
-/// كارت رياضة: الرياضة + المركز (كورة) + عدد الماتشات (0 لحد ما البطولات تبدأ).
-Widget sportProfileCard(double w, Map<String, dynamic> s, {ImageProvider? photo, String? name}) {
-  final sp = _sportOf(s['id']?.toString() ?? '');
-  final matches = (s['matches'] as num?)?.toInt() ?? 0;
-  return ProfileCardFace(
-    width: w, frame: _sportFrame, text: _sportText, photo: photo, name: name,
-    pill: matches == 0 ? 'NEW' : 'PLAYER',
-    corner: _posCode(s['position']?.toString()),
-    main: (w) => Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(sp?.icon ?? Icons.sports, color: Colors.white, size: w * 0.12),
-      SizedBox(width: w * 0.03),
-      Text((sp?.en ?? 'SPORT').toUpperCase(), style: TextStyle(color: Colors.white, fontSize: w * 0.105,
-          fontWeight: FontWeight.w900, height: 1)),
-    ]),
-    label: '$matches ${matches == 1 ? 'MATCH' : 'MATCHES'}',
-  );
-}
+const _kFantasyImg = 'https://huggingface.co/datasets/Meekkii/IPLAY/resolve/main/Images/Fantasy';
 
-/// BDGR ID: لكل يوزر. رياضاته (أيقونات) + معانا من إمتى.
-Widget idProfileCard(double w, ProfileTrophies? t, {ImageProvider? photo, String? name}) {
+/// صورة اللعبة (Hugging Face، بتتحفظ على الموبايل، ومتصغّرة عشان الذاكرة).
+ImageProvider _bgImage(String url) => ResizeImage(MediaCache.image(url), width: 360, policy: ResizeImagePolicy.fit);
+ImageProvider? _sportBg(String id) {
+  final sp = _sportOf(id);
+  return sp == null ? null : _bgImage(sp.imageUrl);
+}
+ImageProvider _arenaBg(dynamic arena) => _bgImage('$_kFantasyImg/${arena == 'WORLD' ? 'World' : 'Local'}.jpg');
+
+Widget _iconTitle(double w, IconData icon, String title) => Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, color: Colors.white, size: w * 0.12),
+      SizedBox(width: w * 0.03),
+      Text(title, style: TextStyle(color: Colors.white, fontSize: w * 0.105, fontWeight: FontWeight.w900, height: 1)),
+    ]);
+
+Widget _rankLine(double w, int rank, String tag, Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('#${fmtInt(rank)}', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1)),
+      SizedBox(width: w * 0.03),
+      Text(tag, style: TextStyle(color: c, fontSize: w * 0.075, fontWeight: FontWeight.w900)),
+    ]);
+
+/// الكارت الأساسي BADGER: صورة اليوزر + رياضاته + معانا من إمتى. لكل الناس.
+Widget badgerProfileCard(double w, ProfileTrophies? t, {ImageProvider? photo, String? name}) {
   final sports = t?.cardSports ?? const [];
   final since = t?.memberSince?.toLocal();
   return ProfileCardFace(
     width: w, frame: _idFrame, text: _idText, photo: photo, name: name,
-    pill: 'BDGR ID',
+    pill: 'BADGER',
     main: (w) => sports.isEmpty
-        ? Text('🦡', style: TextStyle(fontSize: w * 0.12, height: 1))
+        ? Image.asset('assets/badger_white.png', height: w * 0.13)
         : Row(mainAxisSize: MainAxisSize.min, children: [
             for (final s in sports.take(4)) Padding(
               padding: EdgeInsets.symmetric(horizontal: w * 0.015),
@@ -756,14 +771,87 @@ Widget idProfileCard(double w, ProfileTrophies? t, {ImageProvider? photo, String
   );
 }
 
+/// كارت رياضة: صورة الرياضة + المركز (كورة) + عدد الماتشات (0 لحد ما البطولات تبدأ).
+Widget sportProfileCard(double w, Map<String, dynamic> s, {String? name}) {
+  final id = s['id']?.toString() ?? '';
+  final sp = _sportOf(id);
+  final matches = (s['matches'] as num?)?.toInt() ?? 0;
+  return ProfileCardFace(
+    width: w, frame: _sportFrame, text: _sportText, bg: _sportBg(id), name: name,
+    pill: matches == 0 ? 'NEW' : 'PLAYER',
+    corner: _posCode(s['position']?.toString()),
+    main: (w) => _iconTitle(w, sp?.icon ?? Icons.sports, (sp?.en ?? 'SPORT').toUpperCase()),
+    label: '$matches ${matches == 1 ? 'MATCH' : 'MATCHES'}',
+  );
+}
+
+/// المسابقات (رانك عام): لسه مفيش بطولات → NEW + "SOON".
+Widget competitionsProfileCard(double w, ProfileTrophies t, {String? name}) {
+  final fav = t.cardSports.isEmpty ? null : t.cardSports.first['id']?.toString();
+  return ProfileCardFace(
+    width: w, frame: _sportFrame, text: _sportText, bg: fav == null ? null : _sportBg(fav), name: name,
+    pill: 'NEW',
+    main: (w) => _iconTitle(w, Icons.emoji_events, 'COMPETITIONS'),
+    label: 'RANK · SOON',
+  );
+}
+
+/// الفانتازي (رانك عام = الأحسن بين مصر والعالم).
+Widget fantasyOverallCard(double w, ProfileTrophies t, {String? name}) {
+  final tt = _tierOf(t.tier);
+  final r = t.rating;
+  final rank = (r?['rank'] as num?)?.toInt();
+  return ProfileCardFace(
+    width: w, frame: tt.colors, text: tt.text, bg: _arenaBg(r?['arena']), name: name,
+    pill: tt.en,
+    main: (w) => rank == null
+        ? _iconTitle(w, Icons.sports_soccer, 'FANTASY')
+        : _rankLine(w, rank, _arenaShort(r?['arena']), tt.text),
+    label: rank == null ? 'FANTASY' : 'FANTASY RATING',
+  );
+}
+
+/// أرينا لوحدها (مصر / العالم).
+Widget fantasyArenaCard(double w, ProfileTrophies t, Map<String, dynamic> a, {String? name}) {
+  final tt = _tierOf(t.tier);
+  final rank = (a['rank'] as num?)?.toInt() ?? 0;
+  final world = a['arena'] == 'WORLD';
+  return ProfileCardFace(
+    width: w, frame: tt.colors, text: tt.text, bg: _arenaBg(a['arena']), name: name,
+    pill: world ? 'WORLD' : 'EGYPT',
+    main: (w) => _rankLine(w, rank, world ? '🌍' : 'EG', tt.text),
+    label: '${a['rating'] ?? 0} PTS · ${a['rounds'] ?? 0} GW',
+  );
+}
+
+extension ProfileRatingsData on ProfileTrophies {
+  List<Map<String, dynamic>> get arenaRatings =>
+      ((j['ratings'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+}
+
+String _fantasyHint(ProfileTrophies t) {
+  final rounds = t.rounds;
+  return switch (t.tier) {
+    'new' => AppLang.t('Play ${3 - rounds.clamp(0, 3)} more round(s) to get your Bronze card',
+        'العب ${3 - rounds.clamp(0, 3)} جولة كمان وكارتك يبقى برونز'),
+    'bronze' => AppLang.t('Finish in the top 10% of a round → Silver', 'ادخل التوب 10% في جولة → فضة'),
+    'silver' => AppLang.t('Top 3 in a round, or win a cup or the Badger League → Gold',
+        'توب 3 في جولة، أو اكسب كاس أو دوري بادجر → دهب'),
+    _ => AppLang.t('The highest level. Keep it 🔥', 'أعلى مستوى. حافظ عليه 🔥'),
+  };
+}
+
 class _CardItem {
-  _CardItem(this.key, this.label, this.face, this.open);
-  final String key, label;
+  _CardItem(this.label, this.face, this.open);
+  final String label;
   final Widget Function(double w) face;
   final void Function() open;
 }
 
-/// كروت البروفايل بتتقلب: نفس مكان ومقاس الكارت، والكروت اللي جنبه صغيرة وباهتة.
+/// كروت البروفايل (PROFILE v3, 27 نوفمبر): نفس مكان ومقاس الكارت.
+/// النص = BADGER (لكل الناس، بيفتح عليه دايماً). شمال = المسابقات (رانك عام) ثم كل رياضة،
+/// يمين = الفانتازي (رانك عام) ثم كل أرينا. صورة اليوزر في BADGER بس، والباقي خلفيته صورة اللعبة.
+/// الكروت اللي جنبه أصغر وباهتة.
 class ProfileCardCarousel extends StatefulWidget {
   const ProfileCardCarousel({super.key, required this.width, required this.t, required this.name,
       required this.isOwner, this.photo, this.onChangePhoto});
@@ -780,7 +868,9 @@ class ProfileCardCarousel extends StatefulWidget {
   /// عدد الكروت (عشان الهيدر يسيب مكان سطر النقط)
   static int count(ProfileTrophies? t) {
     if (t == null) return 1;
-    return (t.playedFantasy ? 1 : 0) + t.cardSports.length + 1;
+    final sports = t.cardSports.length;
+    final fantasy = t.playedFantasy ? 1 + t.arenaRatings.length : 0;
+    return 1 + (sports > 0 ? sports + 1 : 0) + fantasy;
   }
 
   @override
@@ -791,13 +881,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
   PageController? _pc;
   double _vf = 0;
   int _page = 0;
-  String? _pick; // آخر اختيار (بيتحدث من غير ما نعيد تحميل)
-
-  @override
-  void initState() {
-    super.initState();
-    _pick = widget.t?.cardPick;
-  }
+  int _center = 0;
 
   @override
   void dispose() {
@@ -805,74 +889,75 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     super.dispose();
   }
 
-  Future<void> _setPick(String key) async {
-    await Supabase.instance.client.rpc('profile_card_pick_set', params: {'p_pick': key});
-    final c = widget.t?.j['cards'];
-    if (c is Map) c['pick'] = key;
-    if (mounted) setState(() => _pick = key);
+  String get _share => AppLang.t('My BDGR card 🦡 ${Brand.shareLinkBase}', 'كارتي في BDGR 🦡 ${Brand.shareLinkBase}');
+
+  void _sheet(Widget Function(double w) face, String title, Color c, String hint, {String? sub, bool photo = false}) {
+    _openCardSheet(context, face: face, title: title, titleColor: c, hint: hint, sub: sub, shareText: _share,
+        onChangePhoto: photo && widget.isOwner ? widget.onChangePhoto : null);
   }
 
   List<_CardItem> _items() {
     final t = widget.t;
-    final photo = widget.photo;
-    final owner = widget.isOwner;
-    final items = <_CardItem>[];
-    for (final s in t?.cardSports ?? const <Map<String, dynamic>>[]) {
-      final id = s['id']?.toString() ?? '';
-      final sp = _sportOf(id);
-      final key = 'sport:$id';
-      final teams = (s['teams'] as num?)?.toInt() ?? 0;
-      final pos = _posName(s['position']?.toString());
-      final hintLine = [
-        if (pos.isNotEmpty) pos,
-        if (teams > 0) AppLang.t('$teams team${teams == 1 ? '' : 's'}${s['captain'] == true ? ' · captain' : ''}',
-            '$teams ${teams == 1 ? 'فريق' : 'فرق'}${s['captain'] == true ? ' · كابتن' : ''}'),
-      ].join(' · ');
-      items.add(_CardItem(key, sp?.name(AppLang.isArabic) ?? id, (w) => sportProfileCard(w, s, photo: photo), () {
-        _openCardSheet(context,
-            face: (w) => sportProfileCard(w, s, photo: photo, name: widget.name),
-            title: '${sp?.name(AppLang.isArabic) ?? id}${s['fav'] == true ? ' ⭐' : ''}',
-            titleColor: _sportText,
-            hint: hintLine.isEmpty ? AppLang.t('Registered for this sport', 'مسجّل في الرياضة دي') : hintLine,
-            sub: AppLang.t('Matches and stats appear after your first tournament (soon)',
-                'الماتشات والإحصائيات هتظهر بعد أول بطولة (قريب)'),
-            shareText: AppLang.t('My BDGR card 🦡 ${Brand.shareLinkBase}', 'كارتي في BDGR 🦡 ${Brand.shareLinkBase}'),
-            onChangePhoto: owner ? widget.onChangePhoto : null,
-            picked: _pick == key, onPick: owner ? () => _setPick(key) : null);
-      }));
-    }
-    if (t == null || t.playedFantasy) {
-      items.add(_CardItem('fantasy', AppLang.t('Fantasy', 'الفانتازي'),
-          (w) => FantasyProfileCard(width: w, tier: t?.tier ?? 'new', rating: t?.rating, photo: photo),
-          () => openProfileCardSheet(context, t: t, name: widget.name, photo: photo,
-              onChangePhoto: owner ? widget.onChangePhoto : null,
-              picked: _pick == 'fantasy', onPick: owner ? () => _setPick('fantasy') : null)));
-    }
+    final name = widget.name;
+    final left = <_CardItem>[];
+    final right = <_CardItem>[];
     if (t != null) {
-      final since = t.memberSince?.toLocal();
-      items.add(_CardItem('id', 'BDGR ID', (w) => idProfileCard(w, t, photo: photo), () {
-        _openCardSheet(context,
-            face: (w) => idProfileCard(w, t, photo: photo, name: widget.name),
-            title: 'BDGR ID', titleColor: _idText,
-            hint: since == null ? AppLang.t('BDGR member', 'عضو في BDGR')
-                : AppLang.t('Member since ${_months[since.month - 1]} ${since.year}',
-                    'معانا من ${_monthsAr[since.month - 1]} ${since.year}'),
-            shareText: AppLang.t('My BDGR ID 🦡 ${Brand.shareLinkBase}', 'كارت BDGR بتاعي 🦡 ${Brand.shareLinkBase}'),
-            onChangePhoto: owner ? widget.onChangePhoto : null,
-            picked: _pick == 'id', onPick: owner ? () => _setPick('id') : null);
-      }));
+      // ── المسابقات: الرانك العام جنب BADGER، وبعده كل رياضة (المفضلة الأقرب)
+      final sports = t.cardSports;
+      if (sports.isNotEmpty) {
+        left.add(_CardItem(AppLang.t('Competitions', 'المسابقات'), (w) => competitionsProfileCard(w, t), () => _sheet(
+            (w) => competitionsProfileCard(w, t, name: name), AppLang.t('Competitions', 'المسابقات'), _sportText,
+            AppLang.t('Your overall rank across all your sports', 'رانكك العام في كل رياضاتك'),
+            sub: AppLang.t('Starts with the first tournament (soon)', 'هيبدأ مع أول بطولة (قريب)'))));
+        for (final s in sports) {
+          final id = s['id']?.toString() ?? '';
+          final sp = _sportOf(id);
+          final teams = (s['teams'] as num?)?.toInt() ?? 0;
+          final pos = _posName(s['position']?.toString());
+          final hint = [
+            if (pos.isNotEmpty) pos,
+            if (teams > 0) AppLang.t('$teams team${teams == 1 ? '' : 's'}${s['captain'] == true ? ' · captain' : ''}',
+                '$teams ${teams == 1 ? 'فريق' : 'فرق'}${s['captain'] == true ? ' · كابتن' : ''}'),
+          ].join(' · ');
+          final title = '${sp?.name(AppLang.isArabic) ?? id}${s['fav'] == true ? ' ⭐' : ''}';
+          left.add(_CardItem(sp?.name(AppLang.isArabic) ?? id, (w) => sportProfileCard(w, s), () => _sheet(
+              (w) => sportProfileCard(w, s, name: name), title, _sportText,
+              hint.isEmpty ? AppLang.t('Registered for this sport', 'مسجّل في الرياضة دي') : hint,
+              sub: AppLang.t('Matches and stats appear after your first tournament (soon)',
+                  'الماتشات والإحصائيات هتظهر بعد أول بطولة (قريب)'))));
+        }
+      }
+      // ── الفانتازي: الرانك العام جنب BADGER، وبعده كل أرينا
+      if (t.playedFantasy) {
+        final tt = _tierOf(t.tier);
+        final r = t.rating;
+        right.add(_CardItem(AppLang.t('Fantasy', 'الفانتازي'), (w) => fantasyOverallCard(w, t), () => _sheet(
+            (w) => fantasyOverallCard(w, t, name: name), AppLang.t('${tt.en} card', 'كارت ${tt.ar}'), tt.text,
+            _fantasyHint(t),
+            sub: r == null ? null : AppLang.t(
+                'Badger Rating ${r['rating']} · #${fmtInt((r['rank'] as num).toInt())} of ${fmtInt((r['players'] as num?)?.toInt() ?? 0)} · ${_arenaName(r['arena'])}\nYour last 10 rounds',
+                'تصنيف بادجر ${r['rating']} · #${fmtInt((r['rank'] as num).toInt())} من ${fmtInt((r['players'] as num?)?.toInt() ?? 0)} · ${_arenaName(r['arena'])}\nآخر 10 جولات ليك'))));
+        for (final a in t.arenaRatings) {
+          final an = _arenaName(a['arena']);
+          right.add(_CardItem(an, (w) => fantasyArenaCard(w, t, a), () => _sheet(
+              (w) => fantasyArenaCard(w, t, a, name: name), AppLang.t('Fantasy · $an', 'الفانتازي · $an'), tt.text,
+              AppLang.t('#${fmtInt((a['rank'] as num?)?.toInt() ?? 0)} of ${fmtInt((a['players'] as num?)?.toInt() ?? 0)} · ${a['rounds'] ?? 0} rounds',
+                  '#${fmtInt((a['rank'] as num?)?.toInt() ?? 0)} من ${fmtInt((a['players'] as num?)?.toInt() ?? 0)} · ${a['rounds'] ?? 0} جولة'),
+              sub: AppLang.t('Badger Rating ${a['rating'] ?? 0} = your last 10 rounds',
+                  'تصنيف بادجر ${a['rating'] ?? 0} = آخر 10 جولات ليك'))));
+        }
+      }
     }
-    return items;
-  }
-
-  /// أول كارت يظهر: اللي صاحب البروفايل اختاره، وإلا الفانتازي لو لعب، وإلا رياضته المفضلة، وإلا BDGR ID.
-  int _startIndex(List<_CardItem> items) {
-    int find(bool Function(_CardItem) f) => items.indexWhere(f);
-    final pick = widget.t?.cardPick;
-    var i = pick == null ? -1 : find((x) => x.key == pick);
-    if (i < 0) i = find((x) => x.key == 'fantasy');
-    if (i < 0) i = find((x) => x.key.startsWith('sport:'));
-    return i < 0 ? 0 : i;
+    final since = t?.memberSince?.toLocal();
+    final sportNames = (t?.cardSports ?? const []).map((s) => _sportOf(s['id']?.toString() ?? '')?.name(AppLang.isArabic))
+        .whereType<String>().join(' · ');
+    final badger = _CardItem('BADGER', (w) => badgerProfileCard(w, t, photo: widget.photo), () => _sheet(
+        (w) => badgerProfileCard(w, t, photo: widget.photo, name: name), 'BADGER', _idText,
+        since == null ? AppLang.t('BDGR member', 'عضو في BDGR')
+            : AppLang.t('Member since ${_months[since.month - 1]} ${since.year}', 'معانا من ${_monthsAr[since.month - 1]} ${since.year}'),
+        sub: sportNames.isEmpty ? null : sportNames, photo: true));
+    _center = left.length;
+    return [...left.reversed, badger, ...right];
   }
 
   @override
@@ -886,7 +971,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     return LayoutBuilder(builder: (context, c) {
       final vf = ((cw + 14) / c.maxWidth).clamp(0.1, 1.0).toDouble();
       if (_pc == null || _vf != vf) {
-        final start = _pc == null ? _startIndex(items) : _page;
+        final start = _pc == null ? _center : _page;
         _pc?.dispose();
         _pc = PageController(viewportFraction: vf, initialPage: start);
         _vf = vf;
@@ -909,7 +994,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
                   final p = pc.hasClients && pc.position.haveDimensions ? (pc.page ?? _page.toDouble()) : _page.toDouble();
                   final d = (p - i).abs().clamp(0.0, 1.0).toDouble();
                   final side = (i - p).sign; // الكروت اللي جنبه بتقرّب من النص شوية
-                  return Opacity(opacity: 1 - 0.62 * d,
+                  return Opacity(opacity: 1 - 0.5 * d,
                       child: Transform.translate(offset: Offset(-side * d * cw * 0.14, 0),
                           child: Transform.scale(scale: 1 - 0.24 * d, child: child)));
                 },
@@ -931,7 +1016,8 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
                   margin: const EdgeInsets.symmetric(horizontal: 2.5),
                   width: i == _page ? 14 : 5, height: 5,
                   decoration: BoxDecoration(
-                    color: i == _page ? Colors.white : Colors.white24, borderRadius: BorderRadius.circular(3)),
+                    color: i == _page ? Colors.white : (i == _center ? Colors.white54 : Colors.white24),
+                    borderRadius: BorderRadius.circular(3)),
                 ),
               const SizedBox(width: 8),
               Text(items[_page.clamp(0, items.length - 1)].label,
