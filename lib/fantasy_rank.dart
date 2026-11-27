@@ -146,8 +146,7 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, c) {
       _viewH = c.maxHeight;
-      return RefreshIndicator(
-      color: brandRed,
+      return BadgerRefresh(
       onRefresh: () => _loadBoard(),
       child: CustomScrollView(slivers: [
         // الفلاتر ثابتة فوق: مصر/عالمي · أسبوع/شهر/موسم · أنهي جولة · مين
@@ -550,7 +549,14 @@ class _FantasyRankTabState extends State<FantasyRankTab> {
     Widget stat(String label, String value) => Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w600)),
       const SizedBox(height: 3),
-      Text(value, maxLines: 1, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+      // الأرقام بتتعد (موشن المرحلة ١): "#123" → يتعد الرقم ويفضل الـ #
+      Builder(builder: (_) {
+        const st = TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800);
+        final hash = value.startsWith('#');
+        final n = int.tryParse(hash ? value.substring(1) : value);
+        if (n == null) return Text(value, maxLines: 1, style: st);
+        return CountUp(n, ms: 900, style: st, format: (v) => hash ? '#$v' : '$v');
+      }),
     ]));
     return GestureDetector(
       // a round: that round's recap with the squad(s) it was played with (draft / normal / both); month & season: no tap

@@ -19,6 +19,7 @@ import '../app_config.dart';
 import '../app_lang.dart';
 import '../brand.dart';
 import '../local_store.dart';
+import '../motion_kit.dart';
 import '../official_account.dart';
 import '../feed/official_posts_grid.dart';
 import '../ugc/ugc_profile_section.dart';
@@ -558,6 +559,10 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     if (id == null) return;
     final t = await ProfileTrophies.load(id);
     if (mounted) setState(() => _trophies = t);
+    // لحظة الترقية: صاحب البروفايل بس، مرة واحدة لكل مستوى جديد
+    if (mounted && t != null && _isOwner && !_isPreviewingOwnProfile) {
+      Future.delayed(const Duration(milliseconds: 900), () { if (mounted) maybeShowTierUp(context, t); });
+    }
   }
 
   /// كارت الفانتازي مكان دايرة الصورة (السويتش profile_card = card | circle)
@@ -1414,14 +1419,20 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   /// متابعين · بيتابع · إنجازات (سطر واحد في النص). الإنجازات = كل اللي كسبه في أي نشاط → تاب الإنجازات.
   Widget _buildStatsLine() {
-    Widget one(String v, String label, VoidCallback? onTap) => GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Text.rich(TextSpan(children: [
-        TextSpan(text: v, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800)),
-        TextSpan(text: ' $label', style: const TextStyle(color: _kGray, fontSize: 13)),
-      ])),
-    );
+    // الأرقام بتتعد لما الصفحة تفتح (موشن المرحلة ١)
+    Widget one(String v, String label, VoidCallback? onTap) {
+      const numStyle = TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800);
+      final n = int.tryParse(v.replaceAll(',', ''));
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          n == null ? Text(v, style: numStyle)
+              : CountBetween(from: 0, to: n, ms: 900, style: numStyle, format: (x) => '$x'),
+          Text(' $label', style: const TextStyle(color: _kGray, fontSize: 13)),
+        ]),
+      );
+    }
     const dot = Padding(padding: EdgeInsets.symmetric(horizontal: 8),
         child: Text('·', style: TextStyle(color: _kGray, fontSize: 13)));
     return Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [

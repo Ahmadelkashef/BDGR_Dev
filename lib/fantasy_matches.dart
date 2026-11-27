@@ -125,7 +125,7 @@ class _FixturesPageState extends State<_FixturesPage> {
                   child: Text(_mt('Could not load. Tap to retry.', 'مش قادرين نحمّل. دوس وجرّب تاني.'), style: const TextStyle(color: muted))))
               : matches.isEmpty
                 ? Center(child: Text(_mt('No matches in this round.', 'مفيش ماتشات في الجولة دي.'), style: const TextStyle(color: muted)))
-                : RefreshIndicator(color: brandRed, onRefresh: _load, child: ListView(
+                : BadgerRefresh( onRefresh: _load, child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                     children: [
                       for (final e in byDay.entries)

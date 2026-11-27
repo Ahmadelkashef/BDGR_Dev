@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_app/motion_kit.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -212,9 +213,7 @@ class _FeedPageState extends State<FeedPage> {
           backgroundColor: Brand.background,
           body: SafeArea(
             bottom: false,
-            child: RefreshIndicator(
-              color: _gold,
-              backgroundColor: const Color(0xFF16171C),
+            child: BadgerRefresh(
               onRefresh: _refresh,
               child: CustomScrollView(
                 controller: _scroll,

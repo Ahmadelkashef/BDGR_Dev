@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -8,7 +9,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_lang.dart';
 import '../brand.dart';
 import '../competitions/competition_sports.dart';
+import '../local_store.dart';
 import '../media_cache.dart';
+import '../motion_kit.dart';
 
 /// كارت الفانتازي + تابات الإنجازات والفانتازي في البروفايل (27 نوفمبر 2026).
 /// كله من `profile_trophies(user)` (قراية بس، مفيش ملفات = إيجرس تقريباً صفر).
@@ -882,11 +885,37 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
   double _vf = 0;
   int _page = 0;
   int _center = 0;
+  bool _entering = true; // the cards rise in once when the page opens
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 1100), () { if (mounted) setState(() => _entering = false); });
+  }
 
   @override
   void dispose() {
     _pc?.dispose();
     super.dispose();
+  }
+
+  Widget _faceAt(List<_CardItem> items, int i, double cw) {
+    final gold = widget.t?.tier == 'gold';
+    Widget f = HoloCard(
+      key: ValueKey('holo-$i'),
+      enabled: i == _page,
+      radius: cw * 0.12,
+      strength: gold ? 1.5 : 1,
+      child: items[i].face(cw),
+    );
+    if (_entering && (i - _center).abs() <= 1) {
+      f = CardEntrance(
+        fromSide: (i - _center).sign.toDouble(),
+        delayMs: i == _center ? 60 : 260,
+        child: f,
+      );
+    }
+    return f;
   }
 
   String get _share => AppLang.t('My BDGR card 🦡 ${Brand.shareLinkBase}', 'كارتي في BDGR 🦡 ${Brand.shareLinkBase}');
@@ -966,7 +995,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     final cw = widget.width;
     final ch = cw * FantasyProfileCard.ratio;
     if (items.length == 1) {
-      return GestureDetector(onTap: items.first.open, child: Center(child: items.first.face(cw)));
+      return GestureDetector(onTap: items.first.open, child: Center(child: _faceAt(items, 0, cw)));
     }
     return LayoutBuilder(builder: (context, c) {
       final vf = ((cw + 14) / c.maxWidth).clamp(0.1, 1.0).toDouble();
@@ -987,7 +1016,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
               controller: pc,
               clipBehavior: Clip.none,
               itemCount: items.length,
-              onPageChanged: (i) => setState(() => _page = i),
+              onPageChanged: (i) { Buzz.tap(); setState(() => _page = i); },
               itemBuilder: (_, i) => AnimatedBuilder(
                 animation: pc,
                 builder: (_, child) {
@@ -1002,7 +1031,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
                   onTap: () => i == _page
                       ? items[i].open()
                       : pc.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOut),
-                  child: Center(child: items[i].face(cw)),
+                  child: Center(child: _faceAt(items, i, cw)),
                 ),
               ),
             ),
@@ -1091,6 +1120,117 @@ class ProfileSoonTab extends StatelessWidget {
           ]),
         ),
       ]),
+    );
+  }
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════
+// لحظة الترقية (27 نوفمبر، موشن المرحلة ١): لما كارت الفانتازي يطلع مستوى (new → bronze → silver → gold)
+// صاحب البروفايل يشوفها مرة واحدة: الكارت القديم يلف ويقلب للجديد وينوّر.
+// آخر مستوى اتشاف محفوظ على الموبايل (`card_tier_seen`). أول مرة = بيتحفظ من غير ما يظهر حاجة.
+// ═════════════════════════════════════════════════════════════════════════
+const _tierOrder = ['new', 'bronze', 'silver', 'gold'];
+
+Future<void> maybeShowTierUp(BuildContext context, ProfileTrophies t) async {
+  if (!t.playedFantasy) return;
+  final now = t.tier;
+  final seen = await LocalStore.getStr('card_tier_seen');
+  await LocalStore.setStr('card_tier_seen', now);
+  if (seen == null || !context.mounted) return;
+  if (_tierOrder.indexOf(now) <= _tierOrder.indexOf(seen)) return;
+  final old = ProfileTrophies({...t.j, 'tier': seen});
+  await showGeneralDialog(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: true,
+    barrierLabel: 'tier',
+    barrierColor: Colors.black.withOpacity(0.85),
+    transitionDuration: const Duration(milliseconds: 200),
+    pageBuilder: (_, __, ___) => _TierUpView(old: old, now: t),
+  );
+}
+
+class _TierUpView extends StatefulWidget {
+  const _TierUpView({required this.old, required this.now});
+  final ProfileTrophies old, now;
+  @override
+  State<_TierUpView> createState() => _TierUpViewState();
+}
+
+class _TierUpViewState extends State<_TierUpView> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200));
+  bool _buzzed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _c.addListener(() {
+      if (!_buzzed && _c.value > 0.55) { _buzzed = true; Buzz.medium(); }
+    });
+    Future.delayed(const Duration(milliseconds: 350), () { if (mounted) _c.forward(); });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = (MediaQuery.of(context).size.width * 0.56).clamp(170.0, 240.0).toDouble();
+    final tt = _tierOf(widget.now.tier);
+    final calm = calmMotion(context);
+    return Material(
+      type: MaterialType.transparency,
+      child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        AnimatedBuilder(
+          animation: _c,
+          builder: (_, __) {
+            final v = calm ? 1.0 : _c.value;
+            // 0 → 0.55: spins (2 turns, slows down) · old card until half way, then the new one
+            final spin = Curves.easeOutCubic.transform((v / 0.55).clamp(0.0, 1.0).toDouble());
+            final angle = spin * math.pi * 4;
+            final showNew = spin > 0.5;
+            final glow = v < 0.55 ? 0.0 : math.sin(((v - 0.55) / 0.45).clamp(0.0, 1.0).toDouble() * math.pi);
+            final face = fantasyOverallCard(w, showNew ? widget.now : widget.old);
+            return Stack(alignment: Alignment.center, children: [
+              // light burst behind the card
+              Container(
+                width: w * 1.9, height: w * 1.9,
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [
+                  tt.text.withOpacity(0.55 * glow), tt.text.withOpacity(0)])),
+              ),
+              Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()..setEntry(3, 2, 0.0015)..rotateY(angle),
+                child: Transform.scale(scale: 1 + 0.08 * glow, child: face),
+              ),
+            ]);
+          },
+        ),
+        const SizedBox(height: 26),
+        AnimatedBuilder(
+          animation: _c,
+          builder: (_, child) => Opacity(opacity: calm ? 1 : ((_c.value - 0.6) / 0.3).clamp(0.0, 1.0).toDouble(), child: child),
+          child: Column(children: [
+            Text(AppLang.t('Your card is now ${tt.en}!', 'كارتك بقى ${tt.ar}!'),
+                style: TextStyle(color: tt.text, fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Text(_fantasyHint(widget.now), textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.4)),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF0000), foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 34, vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: Text(AppLang.t('Nice!', 'حلو!'), style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ]),
+        ),
+      ])),
     );
   }
 }

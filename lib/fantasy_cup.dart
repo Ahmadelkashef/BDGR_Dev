@@ -129,7 +129,7 @@ class _BadgerCupPageState extends State<_BadgerCupPage> {
                   const SizedBox(height: 10),
                   TextButton(onPressed: _load, child: Text(t('Retry', 'إعادة'), style: const TextStyle(color: _cupGold))),
                 ]))
-              : RefreshIndicator(color: _cupGold, onRefresh: _load, child: ListView(
+              : BadgerRefresh( onRefresh: _load, child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
                     Row(children: [

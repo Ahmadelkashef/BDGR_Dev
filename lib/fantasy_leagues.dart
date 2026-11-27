@@ -78,8 +78,7 @@ class _FantasyLeaguesTabState extends State<FantasyLeaguesTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: brandRed));
-    return RefreshIndicator(
-      color: brandRed,
+    return BadgerRefresh(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
         const AdSlot('fantasy_leagues', padding: EdgeInsets.only(bottom: 12)),
@@ -1252,7 +1251,7 @@ class _LeagueDirectoryPageState extends State<_LeagueDirectoryPage> {
                 ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
                     _q.text.trim().isNotEmpty || _cat != null ? t('No leagues found.', 'مفيش ليجز بالشكل ده.') : _scopeEmpty(_scope, widget.isArabic),
                     textAlign: TextAlign.center, style: const TextStyle(color: muted))))
-                : RefreshIndicator(color: brandRed, onRefresh: () => _fetch(),
+                : BadgerRefresh( onRefresh: () => _fetch(),
                     child: ListView.builder(
                       controller: _scroll, padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                       itemCount: _items.length + 1,

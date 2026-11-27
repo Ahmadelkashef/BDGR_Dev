@@ -468,7 +468,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
         _rules(),
       ]);
     }
-    return RefreshIndicator(color: _blGold, onRefresh: _load,
+    return BadgerRefresh( onRefresh: _load,
         child: _BLTeamView(team: Map<String, dynamic>.from(team), isArabic: ar,
             onEdit: team['is_captain'] == true ? () => _editTeam(team: team) : null,
             onInvite: () => _invite(team), footer: _rules(), animate: true));
@@ -481,7 +481,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     final mine = _mine;
     final mineShown = mine != null && _board.any((r) => r['id'] == mine['id']);
     return Column(children: [
-      Expanded(child: RefreshIndicator(color: _blGold, onRefresh: () => _loadBoard(reset: true), child: ListView.builder(
+      Expanded(child: BadgerRefresh( onRefresh: () => _loadBoard(reset: true), child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
         itemCount: _board.length + 2,
         itemBuilder: (_, i) {

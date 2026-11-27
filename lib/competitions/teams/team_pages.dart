@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_app/motion_kit.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -715,8 +716,7 @@ class _TeamPageState extends State<TeamPage> {
     return _dir(Scaffold(
       backgroundColor: Brand.background,
       appBar: _bar(_t('My team', 'فريقي')),
-      body: RefreshIndicator(
-        color: brandRed, onRefresh: _load,
+      body: BadgerRefresh( onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 28), children: [
           if (widget.justCreated) Container(
             margin: const EdgeInsets.only(bottom: 12),

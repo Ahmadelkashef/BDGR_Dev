@@ -390,16 +390,19 @@ class _RecapSheetState extends State<_RecapSheet> {
         const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Text('#', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
-          CountUp(rank ?? 0, ms: 1100, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900,
+          // الترتيب بيتحرك من ترتيبك اللي فات للجديد (موشن المرحلة ١)
+          CountBetween(from: prev ?? rank ?? 0, to: rank ?? 0, ms: 1400, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900,
             fontFeatures: [FontFeature.tabularFigures()]), format: (v) => _fmtInt(v)),
           Text(t('  of ${_fmtInt(m['total'] as num?)}', '  من ${_fmtInt(m['total'] as num?)}'),
             style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
           if (up != null && up != 0) ...[
             const SizedBox(width: 8),
-            Icon(up > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-              color: up > 0 ? Brand.green : const Color(0xFFFF5C5C), size: 18),
-            Text(_fmtInt(up.abs()), style: TextStyle(color: up > 0 ? Brand.green : const Color(0xFFFF5C5C),
-              fontSize: 13, fontWeight: FontWeight.w900)),
+            PopIn(delayMs: 1300, child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(up > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                color: up > 0 ? Brand.green : const Color(0xFFFF5C5C), size: 18),
+              Text(_fmtInt(up.abs()), style: TextStyle(color: up > 0 ? Brand.green : const Color(0xFFFF5C5C),
+                fontSize: 13, fontWeight: FontWeight.w900)),
+            ])),
           ],
         ]),
       ]),

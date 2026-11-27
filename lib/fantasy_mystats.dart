@@ -200,8 +200,7 @@ class _MyStatsState extends State<FantasyMyStatsPage> with TickerProviderStateMi
           ? const Center(child: CircularProgressIndicator(color: brandRed, strokeWidth: 2.4))
           : _err != null
             ? _errorView()
-            : RefreshIndicator(
-                color: brandRed, backgroundColor: cardBg,
+            : BadgerRefresh(
                 onRefresh: () async { _cache.remove(_type); _squads.clear(); await _load(); },
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
