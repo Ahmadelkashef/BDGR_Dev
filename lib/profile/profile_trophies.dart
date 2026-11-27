@@ -503,10 +503,12 @@ class _TrophiesTabState extends State<TrophiesTab> {
 
 // ── تاب الفانتازي ───────────────────────────────────────────────────────────
 class FantasyProfileTab extends StatelessWidget {
-  const FantasyProfileTab({super.key, required this.t, required this.isOwner, this.onPlay});
+  const FantasyProfileTab({super.key, required this.t, required this.isOwner, this.onPlay, this.arena});
   final ProfileTrophies? t;
   final bool isOwner;
   final VoidCallback? onPlay;
+  /// 'LOCAL' / 'WORLD' = one arena only (launch tabs Egypt · World); null = both (old Fantasy tab)
+  final String? arena;
 
   @override
   Widget build(BuildContext context) {
@@ -515,8 +517,19 @@ class FantasyProfileTab extends StatelessWidget {
       return const Padding(padding: EdgeInsets.all(32),
           child: Center(child: CircularProgressIndicator(color: Color(0xFFFF2B2B), strokeWidth: 2)));
     }
-    final rating = t.rating;
-    final rows = t.roundsList;
+    final arena = this.arena;
+    Map<String, dynamic>? rating = t.rating;
+    var rows = t.roundsList;
+    var rounds = t.rounds;
+    if (arena != null) {
+      rating = null;
+      for (final a in t.arenaRatings) {
+        if (a['arena'] == arena && a['rank'] != null) rating = a;
+      }
+      rows = rows.where((r) => r['arena'] == arena).toList();
+      rounds = rows.length;
+      if (rating == null && rows.isEmpty) return _notPlayed(arena);
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -526,9 +539,9 @@ class FantasyProfileTab extends StatelessWidget {
               border: Border.all(color: Colors.white10)),
           child: Row(children: [
             Expanded(child: _num(rating != null ? '#${fmtInt((rating['rank'] as num).toInt())}' : '—',
-                AppLang.t('Badger Rating', 'تصنيف بادجر') + (rating != null ? ' · ${_arenaShort(rating['arena'])}' : ''))),
+                AppLang.t('Badger Rating', 'تصنيف بادجر') + (rating != null && arena == null ? ' · ${_arenaShort(rating['arena'])}' : ''))),
             Expanded(child: _num(rating != null ? '${rating['rating']}' : '—', AppLang.t('Rating pts', 'نقط التصنيف'))),
-            Expanded(child: _num('${t.rounds}', AppLang.t('Rounds', 'جولات'))),
+            Expanded(child: _num('$rounds', AppLang.t('Rounds', 'جولات'))),
           ]),
         ),
         const SizedBox(height: 6),
@@ -562,6 +575,38 @@ class FantasyProfileTab extends StatelessWidget {
             ]),
           ),
       ]),
+    );
+  }
+
+  /// never played this arena: a calm message (+ Play for the owner)
+  Widget _notPlayed(String arena) {
+    final world = arena == 'WORLD';
+    final an = _arenaName(arena);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 20),
+        decoration: BoxDecoration(color: const Color(0x99141418), borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white12)),
+        child: Column(children: [
+          Text(world ? '🌍' : '🇪🇬', style: const TextStyle(fontSize: 30)),
+          const SizedBox(height: 10),
+          Text(isOwner ? AppLang.t("You haven't played $an yet", 'لسه ما لعبتش $an')
+                       : AppLang.t("Hasn't played $an yet", 'لسه ما لعبش $an'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w700)),
+          if (isOwner && onPlay != null) ...[
+            const SizedBox(height: 14),
+            ElevatedButton(
+              onPressed: onPlay,
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF0000), foregroundColor: Colors.white,
+                  elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10)),
+              child: Text(AppLang.t('Play $an ›', 'العب $an ›'), style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ]),
+      ),
     );
   }
 
@@ -609,6 +654,11 @@ class ProfileUi {
   static bool fullEdit = false;     // Edit Profile sheet (false = change photo only)
   static bool bio = false;
   static bool socials = false;
+  static bool fantasyCard = false;  // the overall Fantasy card in the carousel (hide = Egypt · BADGER · World)
+  static bool cardPills = false;    // NEW / EGYPT / WORLD / BADGER pills on top of the cards
+  static bool ownerButtons = false; // Change photo / View as Visitor (hide = FANTASY title only; photo = camera badge)
+  static bool arenaTabs = true;     // tabs = FANTASY + Egypt / World (false = old Fantasy · Trophies)
+  static bool bgMotion = true;      // moving glow + sparks behind the profile (colour = card tier)
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
   static void set(Map<String, dynamic> m, {bool save = true}) {
@@ -619,6 +669,11 @@ class ProfileUi {
     fullEdit = m['edit'] == null ? fullEdit : m['edit'].toString() == 'full';
     bio = on('bio', bio);
     socials = on('socials', socials);
+    fantasyCard = on('fantasy_card', fantasyCard);
+    cardPills = on('card_pills', cardPills);
+    ownerButtons = on('owner_buttons', ownerButtons);
+    arenaTabs = m['tabs'] == null ? arenaTabs : m['tabs'].toString() == 'arena';
+    bgMotion = on('bg_motion', bgMotion);
     changes.value++;
     if (save) LocalStore.setStr('profile_ui', jsonEncode(m));
   }
@@ -722,6 +777,7 @@ class ProfileCardFace extends StatelessWidget {
                         child: Image.asset('assets/badger_white.png', color: text.withOpacity(0.55), fit: BoxFit.contain)),
               ),
             ),
+            if (ProfileUi.cardPills && pill.isNotEmpty)
             Positioned(top: h * 0.035, left: w * 0.07,
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: w * 0.06, vertical: w * 0.015),
@@ -854,13 +910,16 @@ Widget fantasyOverallCard(double w, ProfileTrophies t, {String? name}) {
 /// أرينا لوحدها (مصر / العالم).
 Widget fantasyArenaCard(double w, ProfileTrophies t, Map<String, dynamic> a, {String? name}) {
   final tt = _tierOf(t.tier);
-  final rank = (a['rank'] as num?)?.toInt() ?? 0;
+  final rank = (a['rank'] as num?)?.toInt();
   final world = a['arena'] == 'WORLD';
   return ProfileCardFace(
     width: w, frame: tt.colors, text: tt.text, bg: _arenaBg(a['arena']), name: name,
     pill: world ? 'WORLD' : 'EGYPT',
-    main: (w) => _rankLine(w, rank, world ? '🌍' : 'EG', tt.text),
-    label: '${a['rating'] ?? 0} PTS · ${a['rounds'] ?? 0} GW',
+    main: (w) => rank == null
+        ? Text('—', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1))
+        : ProfileUi.cardPills ? _rankLine(w, rank, world ? '🌍' : 'EG', tt.text)
+        : Text('#${fmtInt(rank)}', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1)),
+    label: rank == null ? 'NOT PLAYED' : '${a['rating'] ?? 0} PTS · ${a['rounds'] ?? 0} GW',
   );
 }
 
@@ -909,7 +968,7 @@ class ProfileCardCarousel extends StatefulWidget {
   static int count(ProfileTrophies? t) {
     if (t == null) return 1;
     final sports = ProfileUi.competitions ? t.cardSports.length : 0;
-    final fantasy = t.playedFantasy ? 1 + t.arenaRatings.length : 0;
+    final fantasy = !ProfileUi.fantasyCard ? 2 : t.playedFantasy ? 1 + t.arenaRatings.length : 0;
     return 1 + (sports > 0 ? sports + 1 : 0) + fantasy;
   }
 
@@ -993,6 +1052,23 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
                   'الماتشات والإحصائيات هتظهر بعد أول بطولة (قريب)'))));
         }
       }
+      // ── launch (owner 27 Nov): Egypt on the left, World on the right, always (not played = "—")
+      if (!ProfileUi.fantasyCard) {
+        final tt = _tierOf(t.tier);
+        for (final arena in const ['LOCAL', 'WORLD']) {
+          final a = t.arenaRatings.firstWhere((x) => x['arena'] == arena, orElse: () => <String, dynamic>{'arena': arena});
+          final an = _arenaName(arena);
+          final played = a['rank'] != null;
+          (arena == 'LOCAL' ? left : right).add(_CardItem(an, (w) => fantasyArenaCard(w, t, a), () => _sheet(
+              (w) => fantasyArenaCard(w, t, a, name: name), AppLang.t('Fantasy · $an', 'الفانتازي · $an'), tt.text,
+              played
+                  ? AppLang.t('#${fmtInt((a['rank'] as num?)?.toInt() ?? 0)} of ${fmtInt((a['players'] as num?)?.toInt() ?? 0)} · ${a['rounds'] ?? 0} rounds',
+                      '#${fmtInt((a['rank'] as num?)?.toInt() ?? 0)} من ${fmtInt((a['players'] as num?)?.toInt() ?? 0)} · ${a['rounds'] ?? 0} جولة')
+                  : AppLang.t('No $an rounds yet', 'لسه ما لعبش $an'),
+              sub: played ? AppLang.t('Badger Rating ${a['rating'] ?? 0} = your last 10 rounds',
+                  'تصنيف بادجر ${a['rating'] ?? 0} = آخر 10 جولات ليك') : null)));
+        }
+      } else
       // ── الفانتازي: الرانك العام جنب BADGER، وبعده كل أرينا
       if (t.playedFantasy) {
         final tt = _tierOf(t.tier);

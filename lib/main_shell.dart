@@ -23,6 +23,7 @@ import 'widgets/bottom_nav.dart';
 import 'push/push_banner.dart';
 import 'push/push_service.dart';
 import 'local_store.dart';
+import 'profile/profile_ambient.dart';
 import 'web/web_layout.dart';
 import 'web/web_side_rail.dart';
 
@@ -81,6 +82,7 @@ class _MainShellState extends State<MainShell> {
     _feedActive.value = _index == _feedTab;
     HomeActions.active.value = _index == 0;
     FantasyMotion.tabActive.value = _index == 1;   // launch: the fantasy intro plays the first time
+    ShellTab.current.value = _index;                // profile background moves only in the visible tab
   }
 
   // كل تاب ليه Navigator: أي صفحة بتتفتح جوه التاب والشريط اللي تحت يفضل ظاهر
@@ -539,10 +541,13 @@ class _MainShellState extends State<MainShell> {
   /// أقصى عرض لكل تاب على الكمبيوتر (null = الصفحة نفسها بتتصرف في العرض)
   static const List<double?> _webMaxWidth = [null, 860, 640, 1080, 980];
 
-  Widget _tabNavigator(int i) => Navigator(
-        key: _navKeys[i],
-        observers: [_heroCtrls[i], AdsRouteGuard()],
-        onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (_) => _pages[i]),
+  Widget _tabNavigator(int i) => ShellTabScope(
+        index: i,
+        child: Navigator(
+          key: _navKeys[i],
+          observers: [_heroCtrls[i], AdsRouteGuard()],
+          onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (_) => _pages[i]),
+        ),
       );
 
   Widget _webColumn(int i) => DecoratedBox(

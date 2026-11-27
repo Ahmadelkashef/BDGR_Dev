@@ -25,6 +25,7 @@ import '../feed/official_posts_grid.dart';
 import '../ugc/ugc_profile_section.dart';
 import '../home/home_page.dart' show HomeActions;
 import 'profile_trophies.dart';
+import 'profile_ambient.dart';
 import '../settings/help_support_page.dart' show HelpSupportPage;
 import 'visitor_profile_sheet.dart';
 
@@ -573,7 +574,11 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   /// visible tabs (DB switches, owner 27 Nov): Posts only when `profile_posts` = show,
   /// Career / Stats only when `profile_competitions` = show. Hidden tabs stay in the code.
-  List<int> get _tabIds => [
+  // `profile_tabs` = arena (launch): FANTASY title + Egypt (5) / World (6); classic = the tabs below
+  bool get _arenaTabs => _cardMode && ProfileUi.arenaTabs;
+  // `profile_bg_motion` = show: moving glow + sparks behind the page (only with no cover)
+  bool get _ambient => _cardMode && !ProfileUi.cover && ProfileUi.bgMotion;
+  List<int> get _tabIds => _arenaTabs ? const [5, 6] : [
         if (ProfileUi.posts) 0,
         if (ProfileUi.competitions) ...[3, 4],
         if (ProfileUi.competitions) ...[1, 2] else ...[2, 1],
@@ -1219,9 +1224,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           body: Center(child: CircularProgressIndicator(color: _kAccent)));
     }
     if (!_isOwner && (_iBlocked || _blockedMe)) return _buildBlockedScreen();
-    return Scaffold(
-      backgroundColor: _pageBg,
-      body: CustomScrollView(
+    final scroll = CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader()),
           // إعلان على بروفايلي أنا بس (مش على بروفايل حد تاني)
@@ -1233,7 +1236,12 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             // تابات البروفايل (27 نوفمبر): بوستات · إنجازات · فانتازي
             // (المسيرة / الإحصائيات / الفيديوهات بتتضاف لما يبقى ليها داتا)
             SliverToBoxAdapter(child: _buildProfileTabs()),
-            if (_tab == 1)
+            if (_tab == 5 || _tab == 6)
+              SliverToBoxAdapter(child: FantasyProfileTab(
+                key: ValueKey('arena-$_tab'),
+                t: _trophies, isOwner: _isOwner, arena: _tab == 6 ? 'WORLD' : 'LOCAL',
+                onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
+            else if (_tab == 1)
               SliverToBoxAdapter(child: TrophiesTab(
                 t: _trophies, isOwner: _isOwner,
                 onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
@@ -1256,7 +1264,13 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           ],
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
-      ),
+      );
+    return Scaffold(
+      backgroundColor: _pageBg,
+      body: !_ambient ? scroll : Stack(children: [
+        Positioned.fill(child: ProfileAmbient(tier: _trophies?.tier ?? 'new', base: _pageBg)),
+        scroll,
+      ]),
     );
   }
 
@@ -1409,9 +1423,10 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             const SizedBox(height: 12),
             _buildSportsSection(),
           ],
-          const SizedBox(height: 14),
-          if (_isOwner)                                        _buildOwnerButtons(),
-          if (!_isOwner && !_isPreviewingOwnProfile)          _buildVisitorButtons(),
+          // `profile_owner_buttons` = hide (launch): no Change photo / View as Visitor (the camera badge changes the photo)
+          if (_isOwner && ProfileUi.ownerButtons) ...[const SizedBox(height: 14), _buildOwnerButtons()],
+          if (!_isOwner && !_isPreviewingOwnProfile) ...[const SizedBox(height: 14),
+            ProfileUi.ownerButtons ? _buildVisitorButtons() : Center(child: SizedBox(width: 230, child: _buildVisitorButtons()))],
           const SizedBox(height: 4),
         ]),
       ),
@@ -1456,12 +1471,13 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     return Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [
       one(_followersCount, _s('Followers', 'متابعون'), _isOwner ? () => _openUserList('followers') : null), dot,
       one(_followingCount, _s('Following', 'يتابع'), _isOwner ? () => _openUserList('following') : null), dot,
-      one('${_trophies?.trophies ?? 0}', _s('Trophies', 'إنجازات'), () => setState(() => _ptab = 1)),
+      one('${_trophies?.trophies ?? 0}', _s('Trophies', 'إنجازات'), _tabIds.contains(1) ? () => setState(() => _ptab = 1) : null),
     ]);
   }
 
   /// صف التابات تحت الهيدر
   Widget _buildProfileTabs() {
+    if (_arenaTabs) return _buildArenaTabs();
     // ترتيب العرض: بوستات · المشوار (قريب) · الإحصائيات (قريب) · إنجازات · فانتازي
     // (_ptab: 0 بوستات · 1 إنجازات · 2 فانتازي · 3 المشوار · 4 الإحصائيات)
     final all = <int, (String, bool)>{
@@ -1502,6 +1518,49 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
                   decoration: BoxDecoration(color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
             ]),
           )),
+      ]),
+    );
+  }
+
+  /// launch tabs (owner 27 Nov): FANTASY title in the middle + Egypt / World switch under it
+  Widget _buildArenaTabs() {
+    final cur = _tab;
+    Widget seg(int i, String flag, String label) {
+      final on = cur == i;
+      return Expanded(child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () { if (!on) { Buzz.tap(); setState(() => _ptab = i); } },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(color: on ? const Color(0xFF2E2F37) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10)),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text(flag, style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(color: on ? Colors.white : _kGray, fontSize: 14,
+                fontWeight: on ? FontWeight.w800 : FontWeight.w500)),
+          ]),
+        ),
+      ));
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Column(children: [
+        Text(_s('FANTASY', 'الفانتازي'), style: TextStyle(color: Colors.white, fontSize: 15,
+            fontWeight: FontWeight.w900, letterSpacing: _isArabic ? 0 : 4)),
+        const SizedBox(height: 6),
+        Container(width: 36, height: 3, decoration: BoxDecoration(
+            color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(color: const Color(0xD9202127), borderRadius: BorderRadius.circular(13)),
+          child: Row(children: [
+            seg(5, '🇪🇬', _s('Egypt', 'محلي')),
+            seg(6, '🌍', _s('World', 'دولي')),
+          ]),
+        ),
       ]),
     );
   }
@@ -1634,6 +1693,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       return SizedBox(
         height: 160 + top,
         child: Stack(children: [
+          if (!_ambient)
           Positioned.fill(child: Container(decoration: BoxDecoration(gradient: RadialGradient(
             center: const Alignment(0, -1.1), radius: 1.25,
             colors: [const Color(0xFF3A1C1F), _pageBg], stops: const [0, 0.72])))),
