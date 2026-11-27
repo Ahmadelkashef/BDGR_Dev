@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'local_store.dart';
 
 /// لغة التطبيق في مكان واحد.
@@ -8,11 +10,19 @@ class AppLang {
 
   static bool isArabic = false;
 
+  /// بيتغير مع كل تغيير لغة، عشان الصفحات المفتوحة (زي البروفايل) تتحدث على طول
+  /// بدل ما تفضل بنسخة قديمة من اللغة (27 نوفمبر: البروفايل طلع نص عربي ونص إنجليزي).
+  static final ValueNotifier<bool> changes = ValueNotifier<bool>(false);
+
   static Future<void> load() async {
     isArabic = await LocalStore.getLang() == 'ar';
+    changes.value = isArabic;
   }
 
-  static void set(String lang) => isArabic = lang == 'ar';
+  static void set(String lang) {
+    isArabic = lang == 'ar';
+    changes.value = isArabic;
+  }
 
   static String t(String en, String ar) => isArabic ? ar : en;
 }

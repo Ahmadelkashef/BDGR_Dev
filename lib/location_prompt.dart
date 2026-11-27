@@ -20,7 +20,6 @@ class _LocationNeededCardState extends State<LocationNeededCard> {
 
   Future<void> _go() async {
     setState(() => _busy = true);
-    AppLang.isArabic = widget.isArabic;
     final r = await captureVerifiedLocation(context);
     if (!mounted) return;
     setState(() => _busy = false);

@@ -227,7 +227,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   // ── Profile data ──
   int?    _userId;
   int     _cupTitles = 0;   // 🏆 كاس بادجر اللي كسبها
-  ProfileTrophies? _trophies; // كارت الفانتازي + دولاب الإنجازات
+  ProfileTrophies? _trophies; // كارت الفانتازي + الإنجازات + التصنيف
+  int _ptab = 0;              // 0 بوستات · 1 إنجازات · 2 فانتازي
   String  _displayName    = '';
   String  _username       = '';
   String? _avatarUrl;
@@ -295,8 +296,10 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       !_isOwner && !_isPreviewingOwnProfile && _followersOnly && !_visitorIsFollowing;
 
   // ── Language toggle ──
-  bool _isArabic = false;
+  // اللغة = لغة التطبيق دايماً (مش نسخة متخزنة وقت فتح الصفحة)
+  bool get _isArabic => AppLang.isArabic;
   String _s(String en, String ar) => _isArabic ? ar : en;
+  void _onLangChanged() { if (mounted) setState(() {}); }
 
   bool get _isOwner => widget.visitTarget == null;
   int? get _ugcOwnerId => _isOwner ? _myUserId : int.tryParse(widget.visitTarget!.userId);
@@ -327,13 +330,14 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     if (!_isOwner) _visitorIsFollowing = widget.visitTarget!.isFollowing;
     _loadProfile();
-    _isArabic = AppLang.isArabic;
+    AppLang.changes.addListener(_onLangChanged);
     _profileAuthSub = _sb.auth.onAuthStateChange.listen(_onProfileAuthChange);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AppLang.changes.removeListener(_onLangChanged);
     _profileAuthSub?.cancel();
     _limitErrorTimer?.cancel();
     _limitErrorOverlay?.remove();
@@ -1203,23 +1207,31 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           // إعلان على بروفايلي أنا بس (مش على بروفايل حد تاني)
           if (_isOwner && !_isOfficial)
             const SliverToBoxAdapter(child: AdSlot('profile_own', padding: EdgeInsets.fromLTRB(16, 4, 16, 12))),
-          if (!_isOfficial && _trophies != null)
-            SliverToBoxAdapter(child: TrophyShelf(
-              t: _trophies!, isOwner: _isOwner,
-              onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null,
-            )),
           if (_isOfficial)
             const SliverToBoxAdapter(child: OfficialPostsGrid())
-          else if (_lockedForMe)
-            SliverToBoxAdapter(child: _buildLockedProfile())
-          // بوستات اليوزر (UGC) — بدل المومنتس القديمة
-          else if (_ugcOwnerId != null)
-            SliverToBoxAdapter(child: UgcProfileSection(
-              key: ValueKey('ugc-$_ugcOwnerId'),
-              ownerId: _ugcOwnerId!,
-              isOwner: _isOwner,
-              ownerName: _displayName.isNotEmpty ? _displayName : (widget.visitTarget?.displayName ?? ''),
-            )),
+          else ...[
+            // تابات البروفايل (27 نوفمبر): بوستات · إنجازات · فانتازي
+            // (المسيرة / الإحصائيات / الفيديوهات بتتضاف لما يبقى ليها داتا)
+            SliverToBoxAdapter(child: _buildProfileTabs()),
+            if (_ptab == 1)
+              SliverToBoxAdapter(child: TrophiesTab(
+                t: _trophies, isOwner: _isOwner,
+                onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
+            else if (_ptab == 2)
+              SliverToBoxAdapter(child: FantasyProfileTab(
+                t: _trophies, isOwner: _isOwner,
+                onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
+            else if (_lockedForMe)
+              SliverToBoxAdapter(child: _buildLockedProfile())
+            // بوستات اليوزر (UGC) — بدل المومنتس القديمة
+            else if (_ugcOwnerId != null)
+              SliverToBoxAdapter(child: UgcProfileSection(
+                key: ValueKey('ugc-$_ugcOwnerId'),
+                ownerId: _ugcOwnerId!,
+                isOwner: _isOwner,
+                ownerName: _displayName.isNotEmpty ? _displayName : (widget.visitTarget?.displayName ?? ''),
+              )),
+          ],
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
@@ -1293,87 +1305,117 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   // ── هيدر الكارت (27 نوفمبر): كارت الفانتازي مكان الدايرة، الاسم جنبه،
   // والأرقام سطر صغير تحت. باقي الهيدر زي ما هو.
   Widget _buildCardHeader() {
-    const cw = 88.0;
-    const ch = cw * FantasyProfileCard.ratio; // ~120
-    const lift = 62.0;
-    // كله في Stack واحد عشان الجزء اللي فوق الغلاف من الكارت يستقبل اللمس
+    // الكارت في نص الصفحة على حرف الغلاف، وكل اللي تحته في النص (الرسم اللي اتوافق عليه 27 نوفمبر)
+    const cw = 108.0;
+    const ch = cw * FantasyProfileCard.ratio; // ~147
+    const lift = 84.0;
     final coverH = 160 + MediaQuery.of(context).padding.top;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    final sw = MediaQuery.of(context).size.width;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Stack(children: [
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _buildCover(),
           SizedBox(height: ch - lift + 6),
         ]),
         Positioned(
-          left: 16 + cw + 12, right: 12, top: coverH + 8,
-          child: _buildNameRow(),
-        ),
-        Positioned(
-          left: 16, top: coverH - lift,
+          left: (sw - cw) / 2, top: coverH - lift,
           child: _buildCardThumb(cw),
         ),
+        // زرار الكاميرا بره طرف الكارت (ما يغطيش الكلام اللي جوه)
+        if (_isOwner)
+          Positioned(
+            left: (sw + cw) / 2 - 10, top: coverH - lift + ch - 26,
+            child: GestureDetector(
+              onTap: _pickAvatar,
+              child: Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(color: _kAccent, shape: BoxShape.circle,
+                    border: Border.all(color: _kBg, width: 2.5)),
+                child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
       ]),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Flexible(child: Text(
+              _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+              textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 22,
+                  fontWeight: FontWeight.w800, letterSpacing: -0.5),
+            )),
+            if (_isVerified && Brand.showVerifiedBadge) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.verified, color: Brand.green, size: 18),
+            ],
+          ]),
+          if (_username.isNotEmpty)
+            Text('@$_username', style: const TextStyle(color: _kGray, fontSize: 13)),
+          const SizedBox(height: 10),
           _buildStatsLine(),
-          const SizedBox(height: 14),
           if (_hasSocialLinks) ...[
-            _buildSocialLinks(),
             const SizedBox(height: 14),
+            _buildSocialLinks(),
           ],
+          const SizedBox(height: 14),
           Text(
             _bio.isNotEmpty ? _bio : _s('Unranked. Unafraid.', 'غير مصنف. لا يهاب.'),
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: _bio.isNotEmpty ? Colors.white70 : Colors.white38,
               fontSize: 14, height: 1.5,
               fontStyle: _bio.isNotEmpty ? FontStyle.normal : FontStyle.italic,
             ),
           ),
-          const SizedBox(height: 12),
-          _buildMeta(),
-          const SizedBox(height: 12),
+          _buildMetaLine(),
           if (_sportNames.isNotEmpty) ...[
-            _buildSportsSection(),
             const SizedBox(height: 12),
+            _buildSportsSection(),
           ],
+          const SizedBox(height: 14),
           if (_isOwner)                                        _buildOwnerButtons(),
           if (!_isOwner && !_isPreviewingOwnProfile)          _buildVisitorButtons(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
         ]),
       ),
     ]);
   }
 
+  /// المكان · السن في سطر واحد في النص
+  Widget _buildMetaLine() {
+    final parts = <String>[];
+    final loc = [_city, _governorate, _country].where((x) => x.isNotEmpty).toSet().join(', ');
+    if (loc.isNotEmpty) parts.add('📍 $loc');
+    if (_birthDate != null) {
+      final age = DateTime.now().year - _birthDate!.year;
+      parts.add(_s('🎂 $age', '🎂 $age سنة'));
+    }
+    if (parts.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(parts.join('  ·  '), textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+    );
+  }
+
   Widget _buildCardThumb(double w) {
-    final card = FantasyProfileCard(
-      width: w, tier: _trophies?.tier ?? 'new', rounds: _trophies?.rounds ?? 0, photo: _avatarImage);
     return GestureDetector(
       onTap: () => openProfileCardSheet(context,
           t: _trophies,
           name: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
           photo: _avatarImage,
           onChangePhoto: _isOwner ? _pickAvatar : null),
-      child: Stack(clipBehavior: Clip.none, children: [
-        card,
-        if (_isOwner)
-          Positioned(bottom: 4, right: 4, child: GestureDetector(
-            onTap: _pickAvatar,
-            child: Container(
-              width: 26, height: 26,
-              decoration: BoxDecoration(color: _kAccent, shape: BoxShape.circle,
-                  border: Border.all(color: _kBg, width: 2)),
-              child: const Icon(Icons.camera_alt, size: 13, color: Colors.white),
-            ),
-          )),
-      ]),
+      child: FantasyProfileCard(
+          width: w, tier: _trophies?.tier ?? 'new', rating: _trophies?.rating, photo: _avatarImage),
     );
   }
 
-  /// الأرقام التلاتة في سطر واحد صغير (تحت الاسم)
+  /// متابعين · بيتابع · إنجازات (سطر واحد في النص). الإنجازات = كل اللي كسبه في أي نشاط → تاب الإنجازات.
   Widget _buildStatsLine() {
-    Widget one(String v, String label, String type) => GestureDetector(
-      onTap: _isOwner ? () => _openUserList(type) : null,
+    Widget one(String v, String label, VoidCallback? onTap) => GestureDetector(
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Text.rich(TextSpan(children: [
         TextSpan(text: v, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800)),
@@ -1382,11 +1424,37 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     );
     const dot = Padding(padding: EdgeInsets.symmetric(horizontal: 8),
         child: Text('·', style: TextStyle(color: _kGray, fontSize: 13)));
-    return Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-      one(_followersCount, _s('Followers', 'متابعون'), 'followers'), dot,
-      one(_followingCount, _s('Following', 'يتابع'), 'following'), dot,
-      one(_fansCount, _s('Fans', 'معجبون'), 'fans'),
+    return Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      one(_followersCount, _s('Followers', 'متابعون'), _isOwner ? () => _openUserList('followers') : null), dot,
+      one(_followingCount, _s('Following', 'يتابع'), _isOwner ? () => _openUserList('following') : null), dot,
+      one('${_trophies?.trophies ?? 0}', _s('Trophies', 'إنجازات'), () => setState(() => _ptab = 1)),
     ]);
+  }
+
+  /// صف التابات تحت الهيدر
+  Widget _buildProfileTabs() {
+    final tabs = [_s('Posts', 'البوستات'), _s('Trophies', 'الإنجازات'), _s('Fantasy', 'الفانتازي')];
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF222228)))),
+      child: Row(children: [
+        for (var i = 0; i < tabs.length; i++)
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _ptab = i),
+            child: Column(children: [
+              const SizedBox(height: 12),
+              Text(tabs[i], style: TextStyle(
+                  color: _ptab == i ? Colors.white : _kGray, fontSize: 14,
+                  fontWeight: _ptab == i ? FontWeight.w800 : FontWeight.w500)),
+              const SizedBox(height: 10),
+              AnimatedContainer(duration: const Duration(milliseconds: 200),
+                  height: 2.5, width: _ptab == i ? 44 : 0,
+                  decoration: BoxDecoration(color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
+            ]),
+          )),
+      ]),
+    );
   }
 
   // ── صفحة BDGR الرسمية: شكل مختلف عن أي بروفايل ─────────────────────────
@@ -1647,7 +1715,8 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     children: [
       Expanded(child: _stat(_followingCount, _s('Following', 'يتابع'),   () => _openUserList('following'))),
       Expanded(child: _stat(_followersCount, _s('Followers', 'متابعون'), () => _openUserList('followers'))),
-      Expanded(child: _stat(_fansCount,      _s('Fans', 'معجبون'),       () => _openUserList('fans'))),
+      Expanded(child: GestureDetector(onTap: () => setState(() => _ptab = 1),
+          child: _stat('${_trophies?.trophies ?? 0}', _s('Trophies', 'إنجازات'), () => setState(() => _ptab = 1)))),
     ],
   );
 
@@ -2058,7 +2127,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
 
   // ── Language toggle button ────────────────────────────────────────────────
   Widget _langBtn() => GestureDetector(
-    onTap: () => setState(() => _isArabic = !_isArabic),
+    onTap: () { AppLang.set(_isArabic ? 'en' : 'ar'); LocalStore.setLang(AppLang.isArabic ? 'ar' : 'en'); },
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(

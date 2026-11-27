@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_lang.dart';
 import '../brand.dart';
 import 'profile_page.dart'; // for ProfilePage + ProfileVisitTarget
+import 'profile_trophies.dart';
 import '../official_account.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ class _VisitorProfileSheetState extends State<VisitorProfileSheet> {
   bool    _isVerified           = false;
   int     _followingCount       = 0;
   int     _followersCount       = 0;
-  int     _fansCount            = 0;
+  int     _trophiesCount        = 0;
   bool    _isFollowing          = false;
   bool    _requireFollowToView  = false;
 
@@ -99,11 +100,15 @@ class _VisitorProfileSheetState extends State<VisitorProfileSheet> {
         _isVerified           = (row['is_verified']  as bool?)   ?? false;
         _followingCount       = (row['following_count'] as num?)?.toInt() ?? 0;
         _followersCount       = (row['followers_count'] as num?)?.toInt() ?? 0;
-        _fansCount            = (row['fans_count']      as num?)?.toInt() ?? 0;
         _isFollowing          = (row['is_following']             as bool?) ?? false;
         _requireFollowToView  = (row['require_follow_to_view']   as bool?) ?? false;
         _loading = false;
       });
+      // الإنجازات مكان الفانز (27 نوفمبر)
+      final uid = int.tryParse('${widget.userId}');
+      if (uid != null) {
+        ProfileTrophies.load(uid).then((t) { if (mounted && t != null) setState(() => _trophiesCount = t.trophies); });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
@@ -307,9 +312,9 @@ class _VisitorProfileSheetState extends State<VisitorProfileSheet> {
                   // stats row — نفس شكل البروفايل
                   Row(
                     children: [
-                      _stat(_fmt(_followingCount), AppLang.t('Following', 'يتابع')),
                       _stat(_fmt(_followersCount), AppLang.t('Followers', 'متابعون')),
-                      _stat(_fmt(_fansCount), AppLang.t('Fans', 'معجبون')),
+                      _stat(_fmt(_followingCount), AppLang.t('Following', 'يتابع')),
+                      _stat(_fmt(_trophiesCount), AppLang.t('Trophies', 'إنجازات')),
                     ],
                   ),
 
