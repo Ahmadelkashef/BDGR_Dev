@@ -247,8 +247,9 @@ extension _BuilderV2 on _FancyPageState {
           secondsOf: (i) => ads[i].boardS ?? 8,
           itemBuilder: (c, i) => _boardItem(ads[i])),
         rowBuilder: (i, w, h) {
-          final shirt = (h - 36).clamp(28.0, 50.0).toDouble();
-          final cardW = (w / 5 - 4).clamp(52.0, 70.0).toDouble();
+          // bigger when the row has room (my-squad view got the space above the pitch, owner 27 Nov)
+          final shirt = (h - 36).clamp(28.0, 64.0).toDouble();
+          final cardW = (w / 5 - 4).clamp(52.0, 78.0).toDouble();
           final start = rows.take(i).fold<int>(0, (a, r) => a + r.length);
           // left/right are pitch sides: never flipped by the Arabic (RTL) layout
           return Center(child: FittedBox(fit: BoxFit.scaleDown,

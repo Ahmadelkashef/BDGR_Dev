@@ -1986,42 +1986,24 @@ class _FancyPageState extends State<FancyPage> {
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13.5))),
             ]))
         else
-          Container(width: double.infinity, padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: const Color(0xFF0D2B0D), borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF1A5E1A))),
-            child: Row(children: [
-              const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 20), const SizedBox(width: 8),
-              Text(t('Team saved! ✓','تم حفظ الفريق! ✓'), style: const TextStyle(color: Color(0xFF4CAF50), fontWeight: FontWeight.w800, fontSize: 14)),
-              const Spacer(),
-              TextButton(onPressed: () => setState(() => saved = false),
-                child: Text(t('Edit','تعديل'), style: const TextStyle(color: muted, fontSize: 12))),
-            ])),
-        // قبل الديدلاين: لازم يعرف هيتفرز إزاي لو اتعادل
-        if (phaseOf(currentEvent) == 'open') ...[
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () => showTieBreakSheet(context, isArabic, period: 'round', draft: isDraft),
-            child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(color: const Color(0xFF221B0A), borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0x66FFB300))),
-              child: Row(children: [
-                const Text('⚖️', style: TextStyle(fontSize: 16)), const SizedBox(width: 8),
-                Expanded(child: Text(
-                  isDraft
-                    ? (_predMatches.isEmpty
-                        ? t('Tied on points? Whoever saved first wins.', 'لو اتعادلت في النقط: اللي حفظ الأول يكسب.')
-                        : t('Tied on points? More right score predictions wins, then who saved first.',
-                            'لو اتعادلت في النقط: اللي توقعاته للنتيجة أصح يكسب، بعدها اللي حفظ الأول.'))
-                    : t('Tied on points? More money left wins, then captain points, then who saved first.',
-                        'لو اتعادلت في النقط: الفلوس المتبقية الأكتر تكسب، بعدها نقط الكابتن، بعدها اللي حفظ الأول.'),
-                  style: const TextStyle(color: Colors.white, fontSize: 12.5, height: 1.35))),
-                ...[
-                  const SizedBox(width: 6),
-                  Text(t('Details', 'التفاصيل'), style: const TextStyle(color: Color(0xFFFFB300), fontSize: 12, fontWeight: FontWeight.w800)),
-                ],
-              ])),
-          ),
-        ],
+          // launch (owner 27 Nov): one slim line — saved ✓ · tie rule (ⓘ) · small Edit pill — so the pitch gets the space
+          Row(children: [
+            const Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50), size: 18), const SizedBox(width: 6),
+            Text(t('Team saved', 'الفريق متسجل'), style: const TextStyle(color: Color(0xFF4CAF50), fontWeight: FontWeight.w800, fontSize: 13)),
+            const SizedBox(width: 4),
+            IconButton(onPressed: () => showTieBreakSheet(context, isArabic, period: 'round', draft: isDraft),
+              tooltip: t('If you tie on points', 'لو اتعادلت في النقط'),
+              icon: const Icon(Icons.balance_rounded, color: Colors.white38, size: 17),
+              visualDensity: VisualDensity.compact, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32)),
+            const Spacer(),
+            Pressable(child: GestureDetector(onTap: () => setState(() => saved = false),
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: surface2, borderRadius: BorderRadius.circular(20), border: Border.all(color: line)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.edit_rounded, color: Colors.white70, size: 14), const SizedBox(width: 5),
+                  Text(t('Edit', 'تعديل'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                ])))),
+          ]),
         if (isDraft && _predMatches.isNotEmpty) ...[const SizedBox(height: 8), this.d7MyPredStrip()],
         if (phaseOf(currentEvent) != 'open' && currentEvent != null && _sb.auth.currentUser != null) ...[
           const SizedBox(height: 8),
