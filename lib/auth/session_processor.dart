@@ -32,7 +32,8 @@ Future<void> _runDeviceMatchCheck(DeviceTelemetry t) async {
 }
 
 /// المنطق الكامل بعد تأكيد الـ OTP
-Future<AuthResult> processAuthSession(Session session) async {
+/// [provider] = google / facebook / x / tiktok لو الدخول بحساب، null لو بالـ OTP
+Future<AuthResult> processAuthSession(Session session, {String? provider}) async {
   try {
     // 1) هل اليوزر عنده حساب؟
     AccountInfo account;
@@ -64,14 +65,23 @@ Future<AuthResult> processAuthSession(Session session) async {
 
       await _runDeviceMatchCheck(telemetry);
 
+      if (provider != null) {
+        try {
+          await supa.rpc('sync_login_credential', params: {'p_provider': provider});
+        } catch (e) {
+          debugPrint('sync_login_credential error: $e'); // مش بيمنع الدخول
+        }
+      }
+
       return account.onboardingCompleted
           ? const AuthResult.home()
           : const AuthResult.onboarding();
     }
 
-    // 3) يوزر جديد: أنشئ الحساب بالموبايل
+    // 3) يوزر جديد: أنشئ الحساب بالموبايل أو بالحساب (جوجل/فيسبوك/X/تيك توك)
     try {
-      await supa.rpc('complete_phone_signup', params: {
+      await supa.rpc(provider == null ? 'complete_phone_signup' : 'complete_social_signup', params: {
+        if (provider != null) 'p_provider': provider,
         'p_platform':         telemetry.platform,
         'p_app_version':      telemetry.appVersion,
         'p_client_device_id': telemetry.clientDeviceId,
@@ -81,7 +91,7 @@ Future<AuthResult> processAuthSession(Session session) async {
         'p_model':            telemetry.model,
       });
     } catch (e) {
-      debugPrint('complete_phone_signup error: $e');
+      debugPrint('signup error: $e');
       return const AuthResult.error('signup_rpc_error');
     }
 

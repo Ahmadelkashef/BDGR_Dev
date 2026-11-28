@@ -29,6 +29,21 @@ class LoginConfig {
       'https://huggingface.co/datasets/Meekkii/IPLAY/resolve/main'
       '/BDGR/welcome/videos/welcome_intro.mp4';
 
+  /// طريقة الدخول من الداتابيز (app_settings.login_method): otp | social
+  static String loginMethod = 'otp';
+  /// الحسابات اللي تظهر في صفحة social (app_settings.login_providers)
+  static List<String> loginProviders = const ['google', 'facebook', 'x', 'tiktok'];
+  static String tiktokClientKey = '';
+  static bool _loaded = false;
+
+  /// الويب يفضل على الـ OTP (الدخول بالحسابات معمول للتطبيق بس)
+  static bool get useSocial => !kIsWeb && loginMethod == 'social' && loginProviders.isNotEmpty;
+
+  /// قبل فتح صفحة الدخول: لو الإعدادات لسه ما وصلتش نستناها (5 ثواني بالكتير)
+  static Future<void> ensureLoaded() async {
+    if (!_loaded) await load();
+  }
+
   /// بنقبل روابط https بس
   static String? _url(dynamic value) {
     if (value is! String) {
@@ -79,6 +94,16 @@ class LoginConfig {
       }
 
       loginPoster = _url(data['login_poster']) ?? loginPoster;
+
+      final m = '${data['login_method'] ?? ''}'.trim();
+      if (m == 'otp' || m == 'social') loginMethod = m;
+      if (data['login_providers'] is String) {
+        const ok = ['google', 'facebook', 'x', 'tiktok'];
+        final list = '${data['login_providers']}'.split(',').map((e) => e.trim()).where(ok.contains).toList();
+        loginProviders = list;
+      }
+      tiktokClientKey = '${data['tiktok_client_key'] ?? ''}'.trim();
+      _loaded = true;
     } catch (_) {
       debugPrint('Login config unavailable, using defaults');
     }

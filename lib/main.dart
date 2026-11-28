@@ -10,12 +10,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_config.dart';
 import 'app_lang.dart';
+import 'auth/auth_callback_screen.dart';
 import 'auth/landing_screen.dart';
 import 'auth/login_config.dart';
 import 'auth/video_preloader.dart';
 import 'brand.dart';
 import 'deep_links.dart';
 import 'diag.dart';
+import 'local_store.dart';
 import 'main_shell.dart';
 import 'push/push_service.dart';
 
@@ -148,7 +150,56 @@ class App extends StatefulWidget {
   State<App> createState() => _AppState();
 }
 
+/// للتنقل من برّه الشاشات (الرجوع من المتصفح بعد الدخول بحساب)
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 class _AppState extends State<App> {
+  StreamSubscription<AuthState>? _authSub;
+  bool _handlingSignIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = supa.auth.onAuthStateChange.listen(_onAuthState, onError: _onAuthError);
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  /// المتصفح رجّعنا بجلسة جديدة بعد الدخول بجوجل / فيسبوك / X / تيك توك (نفس كود iPLAY)
+  Future<void> _onAuthState(AuthState state) async {
+    final session = state.session;
+    if (state.event != AuthChangeEvent.signedIn || session == null || _handlingSignIn) return;
+    _handlingSignIn = true;
+    try {
+      final provider = await LocalStore.getValidPendingProvider();
+      if (provider == null) return; // جلسة راجعة من التخزين أو دخول بالـ OTP
+      await LocalStore.clearPendingProvider();
+      appNavigatorKey.currentState?.pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(builder: (_) => AuthCallbackScreen(session: session, provider: provider)),
+        (route) => false,
+      );
+    } finally {
+      _handlingSignIn = false;
+    }
+  }
+
+  /// أخطاء الدخول الراجعة من المتصفح (مثلاً اليوزر رفض)
+  Future<void> _onAuthError(Object error) async {
+    final provider = await LocalStore.getValidPendingProvider();
+    if (provider == null) return;
+    await LocalStore.clearPendingProvider();
+    debugPrint('social sign-in error ($provider): $error');
+    final ctx = appNavigatorKey.currentContext;
+    if (ctx == null) return;
+    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(
+      content: Text(AppLang.isArabic ? 'الدخول ما كملش، حاول تاني' : 'Sign-in was not completed. Try again.'),
+    ));
+  }
+
   /// الشاشة الأولى: لو فيه جلسة محفوظة روح للهوم على طول
   Widget get _home {
     if (supa.auth.currentSession != null) {
@@ -165,6 +216,7 @@ class _AppState extends State<App> {
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Brand.background,
       ),
+      navigatorKey: appNavigatorKey,
       home: _home,
       // الويب: السحب بالماوس/التراك باد بيشتغل في القوايم الجانبية والريلز
       scrollBehavior: kIsWeb

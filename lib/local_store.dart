@@ -29,6 +29,34 @@ class LocalStore {
     await prefs.setString(_deviceIdKey, id);
   }
 
+  /// محاولة دخول بحساب (جوجل/فيسبوك/X/تيك توك) شغالة: صالحة 10 دقايق
+  static const String _pendingProviderKey = 'app_pending_provider';
+  static const String _pendingAtKey       = 'app_pending_provider_at';
+
+  static Future<void> setPendingProvider(String provider) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pendingProviderKey, provider);
+    await prefs.setInt(_pendingAtKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  static Future<String?> getValidPendingProvider() async {
+    final prefs = await SharedPreferences.getInstance();
+    final provider = prefs.getString(_pendingProviderKey);
+    final at = prefs.getInt(_pendingAtKey);
+    if (provider == null || provider.isEmpty || at == null) return null;
+    if (DateTime.now().millisecondsSinceEpoch - at > const Duration(minutes: 10).inMilliseconds) {
+      await clearPendingProvider();
+      return null;
+    }
+    return provider;
+  }
+
+  static Future<void> clearPendingProvider() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pendingProviderKey);
+    await prefs.remove(_pendingAtKey);
+  }
+
   /// الموافقات بتتحفظ قبل إرسال الـ OTP، علشان تتبعت لـ complete_onboarding بعدين
   static Future<void> setPendingConsents({
     required bool terms,

@@ -6,16 +6,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_config.dart';
 import '../brand.dart';
 import '../main_shell.dart';
+import '../app_lang.dart';
 import 'login_screen.dart';
+import 'provider_login_screen.dart';
 import 'session_processor.dart';
 import 'welcome_screen.dart';
 
 /// شاشة "جاري تسجيل الدخول..." بعد تأكيد الـ OTP.
 /// بتشغّل processAuthSession وتوجّه اليوزر على حسب النتيجة.
 class AuthCallbackScreen extends StatefulWidget {
-  const AuthCallbackScreen({super.key, required this.session});
+  const AuthCallbackScreen({super.key, required this.session, this.provider});
 
   final Session session;
+  /// google / facebook / x / tiktok لو الدخول بحساب
+  final String? provider;
 
   @override
   State<AuthCallbackScreen> createState() => _AuthCallbackScreenState();
@@ -36,7 +40,7 @@ class _AuthCallbackScreenState extends State<AuthCallbackScreen>
   }
 
   Future<void> _process() async {
-    final result = await processAuthSession(widget.session);
+    final result = await processAuthSession(widget.session, provider: widget.provider);
 
     if (!mounted) return;
 
@@ -51,10 +55,10 @@ class _AuthCallbackScreenState extends State<AuthCallbackScreen>
         if (!mounted) return;
         next = error == null
             ? const WelcomeScreen()
-            : LoginScreen(lang: 'en', errorReason: error);
+            : _errorPage(error);
         break;
       case AuthDestination.error:
-        next = LoginScreen(lang: 'en', errorReason: result.reason);
+        next = _errorPage(result.reason);
         break;
     }
 
@@ -65,6 +69,10 @@ class _AuthCallbackScreenState extends State<AuthCallbackScreen>
       (route) => false,
     );
   }
+
+  Widget _errorPage(String? reason) => widget.provider != null
+      ? ProviderLoginScreen(lang: AppLang.isArabic ? 'ar' : 'en', errorReason: reason)
+      : LoginScreen(lang: 'en', errorReason: reason);
 
   @override
   void dispose() {

@@ -6,7 +6,9 @@ import '../app_config.dart';
 import '../app_lang.dart';
 import '../brand.dart';
 import '../local_store.dart';
+import 'login_config.dart';
 import 'login_screen.dart';
+import 'provider_login_screen.dart';
 import 'video_preloader.dart';
 import '../web/web_layout.dart';
 
@@ -45,9 +47,23 @@ class _LandingScreenState extends State<LandingScreen> {
     await LocalStore.setLang(next);
   }
 
-  void _openLogin() {
+  bool _opening = false;
+
+  /// الداتابيز بتقرر: صفحة الـ OTP أو صفحة الحسابات (app_settings.login_method)
+  Future<void> _openLogin() async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await LoginConfig.ensureLoaded();
+    } catch (_) {}
+    _opening = false;
+    if (!mounted) return;
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => LoginScreen(lang: _lang)),
+      MaterialPageRoute<void>(
+        builder: (_) => LoginConfig.useSocial
+            ? ProviderLoginScreen(lang: _lang)
+            : LoginScreen(lang: _lang),
+      ),
     );
   }
 
