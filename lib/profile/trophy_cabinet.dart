@@ -15,7 +15,7 @@ import 'profile_trophies.dart';
 // Drawn in code (no files, no egress). Locked (faded + 🔒) goals only for the owner.
 // ═════════════════════════════════════════════════════════════════════════
 
-enum TrophyShape { ball, cup, shield, plaque, boot, shirt, flame, medal }
+enum TrophyShape { ball, cup, shield, plaque, boot, shirt, flame, medal, ticket, profile }
 
 enum _Metal { gold, silver, bronze, crystal, red, dim }
 
@@ -112,8 +112,8 @@ class CabinetData {
     // rounds played = rounds with a SAVED squad (owner 28 Nov: the first trophy comes at the first save)
     final savedAll = t.savedRounds('LOCAL') + t.savedRounds('WORLD');
     final n = savedAll > rows.length ? savedAll : rows.length;
-    final debut = tr('debut', TrophyShape.boot, _Metal.silver, 'First round', 'أول جولة',
-        'Played his first round', 'لعب أول جولة')..count = n > 0 ? 1 : 0;
+    final debut = tr('debut', TrophyShape.ticket, _Metal.silver, 'First round', 'أول جولة',
+        'Played his first round', 'لعب أول جولة', mark: 'GW1')..count = n > 0 ? 1 : 0;
     const steps = [5, 10, 25, 50];
     final reached = steps.where((s) => n >= s).toList();
     final nextStep = steps.firstWhere((s) => n < s, orElse: () => 0);
@@ -143,9 +143,9 @@ class CabinetData {
     final pb = tr('best', TrophyShape.medal, _Metal.silver, 'Best: ${bestTxt ?? '—'} pts', 'أحسن: ${bestTxt ?? '—'} نقطة',
         'His best points in one round', 'أعلى نقط جابها في جولة', mark: '★')..count = bestRow == null ? 0 : 1;
     if (bestRow != null) pb.rounds.add(bestRow);
-    final prof = tr('profile', TrophyShape.medal, _Metal.crystal, 'Complete profile', 'بروفايل كامل',
+    final prof = tr('profile', TrophyShape.profile, _Metal.crystal, 'Complete profile', 'بروفايل كامل',
         'Name, username, governorate and birth date are all set', 'الاسم واليوزرنيم والمحافظة وتاريخ الميلاد كلهم متسجلين',
-        mark: 'ID')..count = t.profileComplete ? 1 : 0;
+        mark: '100%')..count = t.profileComplete ? 1 : 0;
     // owner 28 Nov: a badge for the level reached (higher of Egypt / World), name always English
     final lvl = [ArenaLevel.of(t, 'LOCAL').level, ArenaLevel.of(t, 'WORLD').level].reduce((a, b) => a > b ? a : b);
     final lvlName = levelName(lvl);
@@ -181,7 +181,7 @@ class CabinetData {
       _Shelf('Titles', 'الألقاب', pick([app1, cup, bl, gov1, lg1], [app1, cup, bl])),
       _Shelf('Podium', 'المنصة', pick([r2, r3, p1], [r2, r3])),
       _Shelf('Elite', 'النخبة', pick([p5, p10, p25, p50], anyTop10 ? [] : [p10])),
-      _Shelf('Journey', 'المشوار', pick([lvBadge, debut, shirt, streak, pb, prof], [debut, shirt, streak, prof])),
+      _Shelf('Journey', 'المشوار', pick([lvBadge, debut, shirt, pb, prof], [debut, shirt, prof])),
     ].where((s) => s.items.isNotEmpty).toList();
     final total = shelves.expand((s) => s.items).where((x) => !x.locked).fold<int>(0, (a, x) => a + x.count);
     return CabinetData._(shelves, total, n > 0);
@@ -435,9 +435,9 @@ class TrophyPainter extends CustomPainter {
     final glow = Paint()..color = (metal == _Metal.dim ? Colors.transparent : const Color(0x22FFDC8C))
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
-    void text(String t, Offset at, double size) {
+    void text(String t, Offset at, double size, {Color color = const Color(0x8C000000)}) {
       if (t.isEmpty) return;
-      final tp = TextPainter(text: TextSpan(text: t, style: TextStyle(fontFamily: 'Roboto', color: const Color(0x8C000000), fontSize: size,
+      final tp = TextPainter(text: TextSpan(text: t, style: TextStyle(fontFamily: 'Roboto', color: color, fontSize: size,
           fontWeight: FontWeight.w900)), textDirection: TextDirection.ltr)..layout();
       tp.paint(c, at - Offset(tp.width / 2, tp.height / 2));
     }
@@ -499,7 +499,7 @@ class TrophyPainter extends CustomPainter {
         c.drawPath(Path()..moveTo(20, 10)..lineTo(8, 18)..lineTo(13, 28)..lineTo(20, 24)..close(), f);
         c.drawPath(Path()..moveTo(40, 10)..lineTo(52, 18)..lineTo(47, 28)..lineTo(40, 24)..close(), f);
         c.drawOval(const Rect.fromLTRB(25, 9, 35, 15), Paint()..color = const Color(0xFF1A1B20));
-        text(mark, const Offset(30, 38), mark.length > 1 ? 14 : 16);
+        text(mark, const Offset(30, 37), mark.length > 1 ? 9.5 : 11);   // owner: small numbers
         c.drawRRect(RRect.fromLTRBR(14, 64, 46, 75, const Radius.circular(1.5)), base);
       case TrophyShape.flame:
         c.drawCircle(const Offset(30, 38), 22, glow);
@@ -517,6 +517,35 @@ class TrophyPainter extends CustomPainter {
         c.drawCircle(const Offset(30, 38), 16, fill(Rect.fromCircle(center: const Offset(30, 38), radius: 16)));
         text(mark, const Offset(30, 38), mark.length > 2 ? 9.5 : 12);
         c.drawRRect(RRect.fromLTRBR(16, 64, 44, 75, const Radius.circular(1.5)), base);
+      case TrophyShape.ticket:
+        // First round = a match ticket "GW1" (owner 28 Nov): body + two side notches as dark circles on top
+        c.drawCircle(const Offset(30, 34), 22, glow);
+        final tk = RRect.fromLTRBR(8, 20, 52, 48, const Radius.circular(5));
+        c.drawRRect(tk, fill(tk.outerRect));
+        final notch = Paint()..color = const Color(0xFF1B1C21);
+        c.drawCircle(const Offset(8, 34), 5, notch);
+        c.drawCircle(const Offset(52, 34), 5, notch);
+        final dash = Paint()..color = const Color(0x55000000)..strokeWidth = 1;
+        for (var y = 23.0; y < 46; y += 4) { c.drawLine(Offset(40, y), Offset(40, y + 2), dash); }
+        text(mark, const Offset(24, 34), 10.5);
+        c.drawRRect(RRect.fromLTRBR(16, 64, 44, 75, const Radius.circular(1.5)), base);
+      case TrophyShape.profile:
+        // Complete profile = medal with a person, "100%" under it and a green ✓ badge (owner: all three)
+        c.drawCircle(const Offset(30, 38), 20, glow);
+        final rib2 = Paint()..color = metal == _Metal.dim ? const Color(0xFF2A2B31) : const Color(0xFFC8102E);
+        c.drawPath(Path()..moveTo(20, 4)..lineTo(28, 4)..lineTo(32, 22)..lineTo(24, 22)..close(), rib2);
+        c.drawPath(Path()..moveTo(40, 4)..lineTo(32, 4)..lineTo(28, 22)..lineTo(36, 22)..close(), rib2);
+        c.drawCircle(const Offset(30, 38), 16, fill(Rect.fromCircle(center: const Offset(30, 38), radius: 16)));
+        final ink = Paint()..color = metal == _Metal.dim ? const Color(0x66000000) : const Color(0xFF23344A);
+        c.drawCircle(const Offset(30, 32.5), 4.2, ink);
+        c.drawOval(const Rect.fromLTRB(22.5, 37.5, 37.5, 46), ink);
+        if (metal != _Metal.dim) {
+          c.drawCircle(const Offset(42, 49), 5.5, Paint()..color = const Color(0xFF2ECC71));
+          c.drawPath(Path()..moveTo(39.5, 49)..lineTo(41.5, 51)..lineTo(44.8, 47), Paint()
+            ..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.6..strokeCap = StrokeCap.round);
+        }
+        c.drawRRect(RRect.fromLTRBR(14, 62, 46, 76, const Radius.circular(1.5)), base);
+        text(mark, const Offset(30, 69), 8, color: metal == _Metal.dim ? const Color(0x55FFFFFF) : const Color(0xFFBFF5D6));
     }
     c.restore();
   }
@@ -552,7 +581,17 @@ const _rowNames = <String, (String, String)>{
   'league1': ('#1 League', '#1 الليج'), 'cup': ('Badger Cup', 'كاس بادجر'), 'bl': ('Badger League', 'دوري بادجر'),
   'round': ('Rounds played', 'جولات لعبها'),
   'profile': ('Complete profile', 'بروفايل كامل'),
+  'streak': ('Streak 🔥', 'الستريك 🔥'),
 };
+
+/// streak milestones → points (they add up; owner 28 Nov). DB `profile_streak_pts` wins.
+const _defStreak = <int, int>{2: 5, 3: 10, 4: 15, 5: 25, 10: 60, 15: 100, 20: 150};
+Map<int, int> streakSteps() {
+  final m = ProfileUi.streakPts.isNotEmpty ? ProfileUi.streakPts : _defStreak;
+  return Map.fromEntries(m.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+}
+/// level points earned by a best streak (sum of every milestone reached)
+int streakPointsFor(int best) => streakSteps().entries.where((e) => best >= e.key).fold(0, (a, e) => a + e.value);
 
 class ArenaLevel {
   ArenaLevel._(this.points, this.level, this.floor, this.next, this.rows);
@@ -590,8 +629,11 @@ class ArenaLevel {
     }
     if (t.profileComplete) add('profile');   // counts in both arenas (owner 28 Nov)
     final rows = <(String, int, int)>[
-      for (final k in _rowNames.keys) if ((c[k] ?? 0) > 0) (k, c[k]!, pts[k] ?? 0),
+      for (final k in _rowNames.keys) if (k != 'streak' && (c[k] ?? 0) > 0) (k, c[k]!, pts[k] ?? 0),
     ];
+    // streak (both arenas, best ever, milestones add up): shown as "best N" × its total points
+    final sp = streakPointsFor(t.streakBest);
+    if (sp > 0) rows.add(('streak', 1, sp));
     final total = rows.fold<int>(0, (a, r) => a + r.$2 * r.$3);
     var lv = 0;
     for (var i = 0; i < steps.length; i++) {
@@ -665,8 +707,8 @@ class _ArenaLevelCardState extends State<ArenaLevelCard> {
             for (final (k, n, each) in lv.rows)
               Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [
                 Expanded(child: Text(AppLang.t(_rowNames[k]!.$1, _rowNames[k]!.$2), style: const TextStyle(color: Colors.white70, fontSize: 12.5))),
-                SizedBox(width: 44, child: Text('×$n', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 12.5, fontWeight: FontWeight.w800))),
-                SizedBox(width: 52, child: Text('${fmtInt(each)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white38, fontSize: 12))),
+                SizedBox(width: 44, child: Text(k == 'streak' ? '${widget.t.streakBest}🔥' : '×$n', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 12.5, fontWeight: FontWeight.w800))),
+                SizedBox(width: 52, child: Text(k == 'streak' ? '—' : fmtInt(each), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white38, fontSize: 12))),
                 SizedBox(width: 56, child: Text(fmtInt(n * each), textAlign: TextAlign.end, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
               ])),
             const Divider(color: Colors.white10, height: 12),
@@ -763,4 +805,4 @@ class _DropGlowState extends State<_DropGlow> with SingleTickerProviderStateMixi
 
 /// the "First round" trophy drawing, for screens outside the cabinet (first-achievement moment)
 Widget debutTrophyArt(double w) => SizedBox(width: w, height: w * 80 / 60,
-    child: CustomPaint(painter: TrophyPainter(TrophyShape.boot, _Metal.silver, '')));
+    child: CustomPaint(painter: TrophyPainter(TrophyShape.ticket, _Metal.silver, 'GW1')));

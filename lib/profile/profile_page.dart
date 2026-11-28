@@ -30,6 +30,7 @@ import 'trophy_cabinet.dart';
 import 'level_looks.dart';
 import 'complete_profile.dart' show showCompleteProfileSheet;
 import 'first_achievement.dart' show ProfileFocus, FirstAchievementCard;
+import 'streak_card.dart' show StreakCard;
 import '../fantasy.dart' show openProfileRoundSquad;
 import '../settings/help_support_page.dart' show HelpSupportPage;
 import 'visitor_profile_sheet.dart';
@@ -1623,6 +1624,9 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           if (_firstFocus && _isOwner && _trophies != null)
             FirstAchievementCard(t: _trophies!, onCompleteProfile: _completeFromCabinet,
                 onClose: () => setState(() => _firstFocus = false)),
+        // streak = the fuel: its own card above the cabinet (owner + visitors with a streak)
+        if (ProfileUi.cabinet && _trophies != null)
+          StreakCard(t: _trophies!, isOwner: _isOwner),
         if (ProfileUi.cabinet)
           TrophyCabinet(key: _cabinetKey, t: _trophies, isOwner: _isOwner, onRound: _openRound,
               highlight: _firstFocus ? 'debut' : null,

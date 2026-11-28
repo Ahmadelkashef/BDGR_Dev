@@ -19,6 +19,7 @@ import 'profile/visitor_profile_sheet.dart';
 import 'profile/complete_profile.dart' show maybePromptCompleteProfile;
 import 'profile/level_looks.dart' show maybeLevelUpAfterSave;
 import 'profile/first_achievement.dart' show maybeFirstAchievement;
+import 'profile/streak_card.dart' show StreakLobbyLine;
 import 'home/home_page.dart' show HomeActions;
 import 'fantasy_stadium.dart';
 import 'fantasy_motion.dart';

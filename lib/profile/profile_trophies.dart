@@ -46,6 +46,9 @@ class ProfileTrophies {
   /// rounds with a saved squad in an arena (LOCAL / WORLD), counted at save time
   int savedRounds(String arena) => j['saved'] is Map ? (((j['saved'] as Map)[arena] as num?)?.toInt() ?? 0) : 0;
   bool get profileComplete => j['profile'] is Map && (j['profile'] as Map)['complete'] == true;
+  /// gameweeks in a row with a saved squad (Egypt or World): current run + best ever (server `_streak_of`)
+  int get streakCurrent => j['streak'] is Map ? (((j['streak'] as Map)['current'] as num?)?.toInt() ?? 0) : 0;
+  int get streakBest => j['streak'] is Map ? (((j['streak'] as Map)['best'] as num?)?.toInt() ?? 0) : 0;
 
   static Future<ProfileTrophies?> load(int userId) async {
     try {
@@ -686,6 +689,8 @@ class ProfileUi {
   /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
   static Map<String, int> levelPts = const {};
   static List<int> levelSteps = const [];
+  /// streak milestone → level points (`profile_streak_pts`), they add up; empty = app defaults
+  static Map<int, int> streakPts = const {};
   static List<String> levelNames = const [];   // profile_level_names (English, comma list of 8)       // the strip above the bottom bar takes the profile colour (no 2-colour line)
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
@@ -715,6 +720,10 @@ class ProfileUi {
       }
       final ls = m['level_steps'];
       if (ls is String && ls.isNotEmpty) levelSteps = (jsonDecode(ls) as List).map((v) => (v as num).toInt()).toList();
+      final sp = m['streak_pts'];
+      if (sp is String && sp.isNotEmpty) {
+        streakPts = (jsonDecode(sp) as Map).map((k, v) => MapEntry(int.parse('$k'), (v as num).toInt()));
+      }
       final ln = m['level_names'];
       if (ln is String && ln.isNotEmpty) levelNames = ln.split(',').map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
     } catch (_) {}

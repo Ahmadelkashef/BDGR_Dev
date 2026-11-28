@@ -157,6 +157,9 @@ extension _LaunchLobby on _FancyPageState {
           ]);
         })),
         const SizedBox(height: 8),
+        // streak line above the button (compact lobby, open round)
+        if (_FancyPageState._lobbyCompact && ph == 'open' && _squadChecked)
+          StreakLobbyLine(key: ValueKey('streak_${event.eventId}_$has'), saved: has),
         StaggerIn(index: 3, dy: 40, durationMs: 560, child: _lButton(event, ph, has)),
       ]),
     ));
