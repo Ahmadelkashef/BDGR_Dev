@@ -168,8 +168,7 @@ class MomentAvatar extends StatelessWidget {
     final a = user.avatar;
     final letter = Text(user.name.isEmpty ? 'B' : user.name.characters.first.toUpperCase(),
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: size * 0.4));
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.28),
+    return ClipOval(
       child: Container(
         width: size, height: size, alignment: Alignment.center,
         decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFC97B45), Color(0xFF8A4A20), Color(0xFF6B3514)])),
@@ -307,70 +306,82 @@ class _MomentCardState extends State<MomentCard> {
     final m = widget.m;
     final tone = _tone(m);
     final cap = momentCaption(m.caption);
+    // owner 28 Nov: post layout = avatar circle + name OUTSIDE, caption above the achievement box, reactions under it
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          GestureDetector(
+            onTap: () => _openProfile(context, m.user),
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: tone.$3.withValues(alpha: 0.7), width: 1.5)),
+              child: MomentAvatar(user: m.user, size: 40),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openProfile(context, m.user),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(m.user.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 1),
+              Text('${m.user.username == null ? '' : '@${m.user.username} · '}${FeedApi.ago(m.at)}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 11.5)),
+            ]),
+          )),
+          // owner 28 Nov: "Follow" only when I don't follow him yet (and it's not me)
+          if (!m.isMe && !m.iFollow)
+            GestureDetector(
+              onTap: _following ? null : _follow,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFFFF1A1A), borderRadius: BorderRadius.circular(20)),
+                child: Text(AppLang.t('Follow', 'تابع'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+              ),
+            ),
+        ]),
+        if (cap.isNotEmpty)
+          Padding(padding: const EdgeInsets.fromLTRB(2, 10, 2, 0),
+              child: Text(cap, style: const TextStyle(color: Colors.white, fontSize: 14.5, height: 1.35))),
+        const SizedBox(height: 10),
         Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: tone.$2),
-            gradient: RadialGradient(center: const Alignment(0.5, -1.2), radius: 1.4,
-                colors: [tone.$1, const Color(0xFF1A1214), const Color(0xFF0E0E10)]),
+            gradient: RadialGradient(center: const Alignment(0, -1.1), radius: 1.3,
+                colors: [tone.$1, const Color(0xFF17111A), const Color(0xFF0E0E10)]),
+            boxShadow: [BoxShadow(color: tone.$1.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-              child: Row(children: [
-                GestureDetector(onTap: () => _openProfile(context, m.user), child: MomentAvatar(user: m.user)),
-                const SizedBox(width: 10),
-                Expanded(child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _openProfile(context, m.user),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(m.user.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
-                    Text('${m.user.username == null ? '' : '@${m.user.username} · '}${FeedApi.ago(m.at)}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                  ]),
-                )),
-                // owner 28 Nov: "Follow" only when I don't follow him yet (and it's not me)
-                if (!m.isMe && !m.iFollow) ...[
-                  GestureDetector(
-                    onTap: _following ? null : _follow,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: const Color(0xFFFF1A1A), borderRadius: BorderRadius.circular(20)),
-                      child: Text(AppLang.t('Follow', 'تابع'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                _stamp(),
-              ]),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+              child: Align(alignment: AlignmentDirectional.centerEnd, child: _stamp()),
             ),
             momentBody(m),
           ]),
         ),
-        if (cap.isNotEmpty)
-          Padding(padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
-              child: Text(cap, style: const TextStyle(color: Color(0xFFDDDDDD), fontSize: 13.5))),
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
         Row(children: [
           for (final (k, e) in _reactions) Padding(
             padding: const EdgeInsetsDirectional.only(end: 6),
             child: GestureDetector(
               onTap: () => _react(k),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: m.mine == k ? const Color(0x33FF1A1A) : const Color(0xFF1C1D22),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: m.mine == k ? const Color(0xFFFF1A1A) : Colors.white12),
+              child: AnimatedScale(
+                scale: m.mine == k ? 1.08 : 1, duration: const Duration(milliseconds: 160),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: m.mine == k ? const Color(0x33FF1A1A) : const Color(0xFF17181C),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: m.mine == k ? const Color(0xFFFF1A1A) : Colors.white10),
+                  ),
+                  child: Text((m.counts[k] ?? 0) > 0 ? '$e ${FeedApi.count(m.counts[k]!)}' : e,
+                      style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
-                child: Text((m.counts[k] ?? 0) > 0 ? '$e ${FeedApi.count(m.counts[k]!)}' : e,
-                    style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700)),
               ),
             ),
           ),
@@ -380,6 +391,9 @@ class _MomentCardState extends State<MomentCard> {
             if (!m.isMe) _action('⚔️', AppLang.t('Challenge', 'تحدّاه'), () => showMomentChallenge(context, m)),
           ],
         ]),
+        const SizedBox(height: 14),
+        const Divider(height: 1, thickness: 1, color: Color(0x14FFFFFF)),
+        const SizedBox(height: 14),
       ]),
     );
   }
