@@ -38,6 +38,8 @@ class ProfileTrophies {
   List<Map<String, dynamic>> get titles => _list('titles');
   List<Map<String, dynamic>> get badges => _list('badges');
   List<Map<String, dynamic>> get roundsList => _list('rounds_list');
+  /// the user's login id (same id the leaderboards already show) — to open his squads
+  String? get uid => j['uid']?.toString();
 
   static Future<ProfileTrophies?> load(int userId) async {
     try {
@@ -503,12 +505,17 @@ class _TrophiesTabState extends State<TrophiesTab> {
 
 // ── تاب الفانتازي ───────────────────────────────────────────────────────────
 class FantasyProfileTab extends StatelessWidget {
-  const FantasyProfileTab({super.key, required this.t, required this.isOwner, this.onPlay, this.arena});
+  const FantasyProfileTab({super.key, required this.t, required this.isOwner, this.onPlay, this.arena,
+      this.showNumbers = true, this.onRound});
   final ProfileTrophies? t;
   final bool isOwner;
   final VoidCallback? onPlay;
   /// 'LOCAL' / 'WORLD' = one arena only (launch tabs Egypt · World); null = both (old Fantasy tab)
   final String? arena;
+  /// false = the trophy cabinet shows above instead of the numbers box
+  final bool showNumbers;
+  /// tap a round → that user's squad in that round
+  final void Function(Map<String, dynamic> round)? onRound;
 
   @override
   Widget build(BuildContext context) {
@@ -533,6 +540,7 @@ class FantasyProfileTab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (showNumbers) ...[
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(color: const Color(0xFF141418), borderRadius: BorderRadius.circular(16),
@@ -548,6 +556,7 @@ class FantasyProfileTab extends StatelessWidget {
         Text(AppLang.t('Rating = your places in the last 10 rounds + titles', 'التصنيف = مراكزك في آخر 10 جولات + الألقاب'),
             style: const TextStyle(color: Colors.white38, fontSize: 11.5)),
         const SizedBox(height: 16),
+        ],
         if (rows.isEmpty)
           Container(
             padding: const EdgeInsets.all(16),
@@ -570,7 +579,8 @@ class FantasyProfileTab extends StatelessWidget {
             child: Column(children: [
               for (var i = 0; i < rows.length; i++) ...[
                 if (i > 0) const Divider(height: 1, color: Colors.white10),
-                _row(rows[i]),
+                onRound == null ? _row(rows[i])
+                    : GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => onRound!(rows[i]), child: _row(rows[i], tap: true)),
               ],
             ]),
           ),
@@ -616,7 +626,7 @@ class FantasyProfileTab extends StatelessWidget {
     Text(l, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 11)),
   ]);
 
-  Widget _row(Map<String, dynamic> r) {
+  Widget _row(Map<String, dynamic> r, {bool tap = false}) {
     final rank = (r['rank'] as num?)?.toInt() ?? 0;
     final n = (r['players'] as num?)?.toInt() ?? 0;
     final pts = r['points'];
@@ -632,6 +642,7 @@ class FantasyProfileTab extends StatelessWidget {
         const SizedBox(width: 12),
         Text(AppLang.t('#${fmtInt(rank)} of ${fmtInt(n)}', '#${fmtInt(rank)} من ${fmtInt(n)}'),
             style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        if (tap) const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
       ]),
     );
   }
@@ -659,6 +670,7 @@ class ProfileUi {
   static bool ownerButtons = false; // Change photo / View as Visitor (hide = FANTASY title only; photo = camera badge)
   static bool arenaTabs = true;     // tabs = FANTASY + Egypt / World (false = old Fantasy · Trophies)
   static bool bgMotion = true;      // moving glow + sparks behind the profile (colour = card tier)
+  static bool cabinet = true;       // trophy cabinet under FANTASY (hide = the old numbers box in each arena tab)
   static bool navFill = true;       // the strip above the bottom bar takes the profile colour (no 2-colour line)
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
@@ -676,6 +688,7 @@ class ProfileUi {
     arenaTabs = m['tabs'] == null ? arenaTabs : m['tabs'].toString() == 'arena';
     bgMotion = on('bg_motion', bgMotion);
     navFill = on('nav_fill', navFill);
+    cabinet = on('cabinet', cabinet);
     changes.value++;
     if (save) LocalStore.setStr('profile_ui', jsonEncode(m));
   }

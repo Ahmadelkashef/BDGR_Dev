@@ -520,3 +520,16 @@ class _RecapSheetState extends State<_RecapSheet> {
       Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
     ])))));
 }
+
+/// Profile (cabinet / round lines) → that user's squad in one finished round.
+/// `round` = a row of `profile_trophies.rounds_list` (event_id, name, mode, rank, points).
+void openProfileRoundSquad(BuildContext context, {required String userId, required String userName,
+    String? username, String? avatarUrl, required Map<String, dynamic> round}) {
+  final ar = AppLang.isArabic;
+  Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (_) => _UserSquadPage(
+    userId: userId, userName: userName, username: username, avatarUrl: avatarUrl,
+    eventId: '${round['event_id']}',
+    roundName: ar ? '${round['name_ar'] ?? round['name_en'] ?? ''}' : '${round['name_en'] ?? ''}',
+    rank: (round['rank'] as num?)?.toInt(), points: round['points'], isArabic: ar,
+    draft: round['mode'] == 'draft')));
+}

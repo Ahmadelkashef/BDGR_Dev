@@ -26,6 +26,8 @@ import '../ugc/ugc_profile_section.dart';
 import '../home/home_page.dart' show HomeActions;
 import 'profile_trophies.dart';
 import 'profile_ambient.dart';
+import 'trophy_cabinet.dart';
+import '../fantasy.dart' show openProfileRoundSquad;
 import '../settings/help_support_page.dart' show HelpSupportPage;
 import 'visitor_profile_sheet.dart';
 
@@ -1240,6 +1242,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               SliverToBoxAdapter(child: FantasyProfileTab(
                 key: ValueKey('arena-$_tab'),
                 t: _trophies, isOwner: _isOwner, arena: _tab == 6 ? 'WORLD' : 'LOCAL',
+                showNumbers: !ProfileUi.cabinet, onRound: _openRound,
                 onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null))
             else if (_tab == 1)
               SliverToBoxAdapter(child: TrophiesTab(
@@ -1471,7 +1474,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     return Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [
       one(_followersCount, _s('Followers', 'متابعون'), _isOwner ? () => _openUserList('followers') : null), dot,
       one(_followingCount, _s('Following', 'يتابع'), _isOwner ? () => _openUserList('following') : null), dot,
-      one('${_trophies?.trophies ?? 0}', _s('Trophies', 'إنجازات'), _tabIds.contains(1) ? () => setState(() => _ptab = 1) : null),
+      one('${_trophies == null ? 0 : (_arenaTabs && ProfileUi.cabinet ? _trophies!.cabinetTotal() : _trophies!.trophies)}', _s('Trophies', 'إنجازات'), _tabIds.contains(1) ? () => setState(() => _ptab = 1) : null),
     ]);
   }
 
@@ -1522,6 +1525,15 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     );
   }
 
+  /// a round line / trophy round → this user's squad in that round (after the deadline, like the ranking)
+  void _openRound(Map<String, dynamic> r) {
+    final uid = _trophies?.uid;
+    if (uid == null || uid.isEmpty || r['event_id'] == null) return;
+    openProfileRoundSquad(context, userId: uid,
+        userName: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+        username: _username.isEmpty ? null : _username, avatarUrl: _avatarUrl, round: r);
+  }
+
   /// launch tabs (owner 27 Nov): FANTASY title in the middle + Egypt / World switch under it
   Widget _buildArenaTabs() {
     final cur = _tab;
@@ -1552,6 +1564,10 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
         const SizedBox(height: 6),
         Container(width: 36, height: 3, decoration: BoxDecoration(
             color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
+        // `profile_cabinet` = show: the lit trophy cabinet (both arenas) above the Egypt / World rounds
+        if (ProfileUi.cabinet)
+          TrophyCabinet(t: _trophies, isOwner: _isOwner, onRound: _openRound,
+              onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(3),
