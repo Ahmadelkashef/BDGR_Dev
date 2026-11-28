@@ -50,8 +50,20 @@ String _errText(String? e) => switch (e) {
       'blocked' => AppLang.t("You can't challenge this user", 'مينفعش تتحدى اليوزر ده'),
       'rate_limited' => AppLang.t('Too many challenges today', 'بعت تحديات كتير النهارده'),
       'off' => AppLang.t('Challenges are off right now', 'التحديات مقفولة دلوقتي'),
+      'no_round' => AppLang.t('No open gameweek yet · challenge when the next one opens', 'مفيش جولة مفتوحة دلوقتي · اتحدى أول ما الجولة الجاية تفتح'),
+      'deadline' => AppLang.t('Too late · the deadline passed', 'فات الوقت · الديدلاين عدّى'),
       _ => AppLang.t('Something went wrong', 'حصلت مشكلة'),
     };
+
+/// deadline as "Sat 29/11 · 15:00" (Cairo phone time)
+String chDeadline(dynamic iso) {
+  final d = DateTime.tryParse('${iso ?? ''}')?.toLocal();
+  if (d == null) return '';
+  const en = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const ar = ['الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت', 'الحد'];
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${AppLang.t(en[d.weekday - 1], ar[d.weekday - 1])} ${d.day}/${d.month} · ${two(d.hour)}:${two(d.minute)}';
+}
 
 Widget _handle() => Container(width: 38, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)));
 
@@ -95,7 +107,8 @@ Future<void> showChallengeInvite(BuildContext context, {required String uid, Map
                 final used = (a['used'] as num?)?.toInt() ?? 0;
                 final w = a['with']?.toString();
                 final full = used >= max;
-                final off = w != null || full;
+                final round = a['round'] is Map ? Map<String, dynamic>.from(a['round'] as Map) : null;
+                final off = w != null || full || round == null;
                 final on = picked.contains(code);
                 return GestureDetector(
                   onTap: off ? null : () { HapticFeedback.selectionClick(); set(() => on ? picked.remove(code) : picked.add(code)); },
@@ -110,7 +123,10 @@ Future<void> showChallengeInvite(BuildContext context, {required String uid, Map
                     child: Opacity(opacity: off ? 0.45 : 1, child: Column(children: [
                       Text(_arena(code), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15)),
                       const SizedBox(height: 4),
-                      Text(w == 'pending' ? AppLang.t('Waiting for answer', 'مستني رده')
+                      if (round != null) Text('${AppLang.t('${round['name_en'] ?? ''}', '${round['name_ar'] ?? round['name_en'] ?? ''}')} · ${chDeadline(round['deadline'])}',
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      Text(round == null ? AppLang.t('No open gameweek yet', 'مفيش جولة مفتوحة')
+                          : w == 'pending' ? AppLang.t('Waiting for answer', 'مستني رده')
                           : w == 'accepted' ? AppLang.t('Already on', 'شغال بالفعل')
                           : full ? AppLang.t('Full $used/$max', 'مليان $used/$max')
                           : AppLang.t('Your challenges $used/$max', 'تحدياتك $used/$max'),
@@ -122,8 +138,8 @@ Future<void> showChallengeInvite(BuildContext context, {required String uid, Map
             ],
           ]),
           const SizedBox(height: 12),
-          Text(AppLang.t('It plays the next gameweek after the accept. Most points wins.',
-              'التحدي بيتلعب في الجولة اللي بعد ما يوافق. اللي يجيب نقط أكتر يكسب.'),
+          Text(AppLang.t('It plays the open gameweek. He must accept before its deadline, or it ends. Most points wins.',
+              'التحدي بيتلعب في الجولة المفتوحة. لازم يوافق قبل الديدلاين بتاعها وإلا يخلص. اللي يجيب نقط أكتر يكسب.'),
               textAlign: TextAlign.center, style: const TextStyle(color: Colors.white38, fontSize: 11.5)),
           const SizedBox(height: 14),
           SizedBox(width: double.infinity, height: 48, child: FilledButton(
@@ -274,7 +290,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
     switch (st) {
       case 'pending':
         if (dir == 'in') {
-          sub = AppLang.t('Challenges you', 'بيتحداك');
+          sub = AppLang.t('Challenges you · answer before ${chDeadline(ev?['deadline'])}', 'بيتحداك · رد قبل ${chDeadline(ev?['deadline'])}');
           subC = _gold;
           trail = busy ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
               : Row(mainAxisSize: MainAxisSize.min, children: [
@@ -283,7 +299,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
                   _btn(AppLang.t('Accept', 'وافق'), _red, () => _accept(x)),
                 ]);
         } else {
-          sub = AppLang.t('⏳ Waiting for the answer', '⏳ مستني رده');
+          sub = AppLang.t('⏳ Waiting · until ${chDeadline(ev?['deadline'])}', '⏳ مستني رده · لحد ${chDeadline(ev?['deadline'])}');
           trail = busy ? null : TextButton(onPressed: () => _cancel(x),
               child: Text(AppLang.t('Cancel', 'إلغاء'), style: const TextStyle(color: Colors.white54)));
         }
@@ -301,7 +317,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
       case 'cancelled':
         sub = AppLang.t('Cancelled', 'اتلغى');
       default:
-        sub = AppLang.t('Expired (no answer)', 'خلص وقته (مفيش رد)');
+        sub = AppLang.t('No answer before the deadline', 'مفيش رد قبل الديدلاين');
     }
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
