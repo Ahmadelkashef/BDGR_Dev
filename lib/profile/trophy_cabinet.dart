@@ -49,11 +49,23 @@ class _Trophy {
 }
 
 class _Shelf {
-  _Shelf(this.en, this.ar, this.items, {this.streak = false});
+  _Shelf(this.en, this.ar, this.items, {this.streak = false, this.season = false});
+  /// the season champion vault: one big trophy, full width
+  final bool season;
   final String en, ar;
   final List<_Trophy> items;
   /// the streak "fuel" card lives here instead of trophies
   final bool streak;
+}
+
+/// '2026-11' → 'Nov 2026', '2026-27' → '2026/27'
+String _periodName(String k) {
+  final m = RegExp(r'^(\d{4})-(\d{2})$').firstMatch(k);
+  if (m == null) return k;
+  final y = int.parse(m.group(1)!), n = int.parse(m.group(2)!);
+  if (n > 12) return '$y/${m.group(2)}';
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${names[n - 1]} $y';
 }
 
 int _i(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
@@ -76,6 +88,11 @@ class CabinetData {
         'Finished FIRST of everyone in a round', 'خلص الأول على الكل في جولة');
     final cup = tr('cup', TrophyShape.cup, _Metal.gold, 'Badger Cup', 'كاس بادجر',
         'Won the Badger Cup', 'كسب كاس بادجر');
+    // owner 28 Nov: month champion (#1 of a finished month) + season champion (#1 of the whole season, its own vault)
+    final month1 = tr('month1', TrophyShape.medal, _Metal.gold, 'Month champion', 'بطل الشهر',
+        'Finished #1 in the month ranking', 'خلص الأول في ترتيب الشهر', mark: 'MON');
+    final season1 = tr('season1', TrophyShape.cup, _Metal.gold, 'Season champion', 'بطل السيزون',
+        'Finished #1 in the whole season ranking', 'خلص الأول في ترتيب السيزون كله');
     final bl = tr('bl', TrophyShape.shield, _Metal.gold, 'Badger League', 'دوري بادجر',
         'His team won the Badger League month', 'فريقه كسب دوري بادجر في شهر');
     final gov1 = tr('gov1', TrophyShape.medal, _Metal.gold, '#1 Governorate', '#1 المحافظة',
@@ -110,6 +127,13 @@ class CabinetData {
     for (final x in t.titles) {
       if (x['kind'] == 'cup') { cup.count++; if (x['arena'] != null) cup.arenas.add('${x['arena']}'); }
       if (x['kind'] == 'bl') bl.count++;
+      for (final (k, tr0) in [('month1', month1), ('season1', season1)]) {
+        if (x['kind'] == k) {
+          tr0.count++;
+          if (x['arena'] != null) tr0.arenas.add('${x['arena']}');
+          tr0.rounds.add({'arena': x['arena'], 'name_en': _periodName('${x['key']}'), 'name_ar': _periodName('${x['key']}'), 'rank': 1});
+        }
+      }
     }
 
     // journey
@@ -165,12 +189,15 @@ class CabinetData {
     // owner 28 Nov, top → bottom: Titles · Podium · Elite (1–50%) · Rounds (shirts) · Streak · One-time
     final elite = [p1, p5, p10, p25, p50];
     final shelves = <_Shelf>[
-      _Shelf('Titles', 'الألقاب', pick([app1, cup, bl, gov1, lg1], [app1, cup, bl])),
+      // owner 28 Nov, top → bottom: One-time (always something lit) · Season vault · Titles (by value) · Podium ·
+      // Elite · Rounds · Streak — the lower, the easier
+      _Shelf('One-time', 'لمرة واحدة', pick([debut, prof, pb], [debut, prof])),
+      _Shelf('Season', 'السيزون', pick([season1], [season1]), season: true),
+      _Shelf('Titles', 'الألقاب', pick([month1, cup, bl, app1, gov1, lg1], [month1, cup, bl, app1])),
       _Shelf('Podium', 'المنصة', pick([r2, r3], [r2, r3])),
       _Shelf('Elite', 'النخبة', pick(elite, elite)),
       _Shelf('Rounds', 'الجولات', pick(shirts, shirts)),
       if (owner || t.streakBest > 0) _Shelf('Streak', 'الستريك', const [], streak: true),
-      _Shelf('One-time', 'لمرة واحدة', pick([debut, prof, pb], [debut, prof])),
     ].where((s) => s.items.isNotEmpty || s.streak).toList();
     final total = shelves.expand((s) => s.items).where((x) => !x.locked).fold<int>(0, (a, x) => a + x.count);
     return CabinetData._(shelves, total, n > 0);
@@ -260,6 +287,7 @@ class TrophyCabinet extends StatelessWidget {
   );
 
   Widget _shelf(BuildContext context, _Shelf s) {
+    if (s.season) return _seasonVault(context, s.items.first);
     if (s.streak) {
       return Padding(
         padding: const EdgeInsets.only(top: 8),
@@ -297,6 +325,52 @@ class TrophyCabinet extends StatelessWidget {
             boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 3))])),
         ],
       ]),
+    );
+  }
+
+  /// Season champion = its own lit vault (owner 28 Nov): big gold cup, light from above, the seasons won.
+  Widget _seasonVault(BuildContext context, _Trophy x) {
+    final won = !x.locked;
+    final seasons = x.rounds.map((r) => '${r['name_en']}${r['arena'] == 'WORLD' ? ' 🌍' : ' 🇪🇬'}').join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 2),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () { Buzz.tap(); _openSheet(context, x); },
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: won ? const Color(0xAAFFD27A) : const Color(0x22FFFFFF)),
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: won
+                ? const [Color(0xFF3A2C10), Color(0xFF1F1A10), Color(0xFF16171B)]
+                : const [Color(0xFF222328), Color(0xFF1B1C20), Color(0xFF17181C)]),
+            boxShadow: won ? const [BoxShadow(color: Color(0x40FFD27A), blurRadius: 22, spreadRadius: 1)] : null,
+          ),
+          child: Row(children: [
+            SizedBox(width: 78, height: 96, child: Stack(alignment: Alignment.center, children: [
+              if (won) Container(width: 78, height: 78, decoration: const BoxDecoration(shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [Color(0x66FFD27A), Color(0x22FFD27A), Color(0x00FFD27A)]))),
+              Opacity(opacity: won ? 1 : 0.5, child: SizedBox(width: 66, height: 86,
+                  child: CustomPaint(painter: TrophyPainter(TrophyShape.cup, won ? _Metal.gold : _Metal.dim, '')))),
+              if (!won) const Positioned(bottom: 26, child: Text('🔒', style: TextStyle(fontSize: 14))),
+            ])),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('SEASON CHAMPION', style: TextStyle(color: won ? const Color(0xFFFFD27A) : Colors.white38,
+                  fontSize: 13, letterSpacing: 2, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(won ? (x.count > 1 ? '$seasons  ×${x.count}' : seasons)
+                       : AppLang.t('Finish #1 of the whole season', 'خلّص الأول في السيزون كله'),
+                  style: TextStyle(color: won ? Colors.white : Colors.white54, fontSize: 12.5, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(AppLang.t('The biggest title in BDGR · +${ProfileUi.levelPts['season1'] ?? 500} pts',
+                  'أكبر لقب في BDGR · +${ProfileUi.levelPts['season1'] ?? 500} نقطة'),
+                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ])),
+          ]),
+        ),
+      ),
     );
   }
 
@@ -404,10 +478,11 @@ class TrophyCabinet extends StatelessWidget {
         Text(AppLang.t('$ptsTxt pts', '$ptsTxt نقطة'), style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700)),
         const SizedBox(width: 10),
         Text('#${fmtInt(_i(r['rank']))}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        if (onRound != null) const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
+        if (onRound != null && r['event_id'] != null) const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
       ]),
     );
-    if (onRound == null) return row;
+    // month / season titles have no single round to open
+    if (onRound == null || r['event_id'] == null) return row;
     return GestureDetector(onTap: () { Navigator.pop(ctx); onRound!(r); }, child: row);
   }
 }
@@ -562,8 +637,9 @@ class TrophyPainter extends CustomPainter {
 // ═════════════════════════════════════════════════════════════════════════
 
 // owner 28 Nov: New → Rookie fast (profile 30 + 2 saved rounds = 34); league #1 under top 25% / top half
-const _defPts = {'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40, 'top5': 25, 'top10': 15, 'top25': 10, 'top50': 6,
-    'gov1': 20, 'league1': 4, 'cup': 150, 'bl': 120, 'round': 2, 'profile': 30};
+// owner 28 Nov: the harder it is, the more it gives (season 500 > month 200 > cup 150 > Badger League 120 > #1 round 100 …)
+const _defPts = {'season1': 500, 'month1': 200, 'cup': 150, 'bl': 120, 'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40,
+    'profile': 30, 'top5': 25, 'gov1': 20, 'top10': 15, 'top25': 10, 'top50': 6, 'league1': 4, 'round': 2};
 const _defSteps = [0, 34, 150, 400, 900, 1800, 3500, 6000];
 // level names are ALWAYS English (owner 28 Nov), even in Arabic; the DB can rename them (profile_level_names)
 const _lvl = <(String, _Metal)>[
@@ -575,6 +651,7 @@ const _lvl = <(String, _Metal)>[
 String levelName(int i) => ProfileUi.levelNames.length == _lvl.length ? ProfileUi.levelNames[i] : _lvl[i].$1;
 const _roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 const _rowNames = <String, (String, String)>{
+  'season1': ('Season champion', 'بطل السيزون'), 'month1': ('Month champion', 'بطل الشهر'),
   'app1': ('#1 Round', '#1 الجولة'), 'rank2': ('#2 Round', '#2 الجولة'), 'rank3': ('#3 Round', '#3 الجولة'),
   'top1': ('Top 1%', 'توب 1%'), 'top5': ('Top 5%', 'توب 5%'), 'top10': ('Top 10%', 'توب 10%'),
   'top25': ('Top 25%', 'توب 25%'), 'top50': ('Top half', 'فوق النص'), 'gov1': ('#1 Governorate', '#1 المحافظة'),
@@ -625,12 +702,14 @@ class ArenaLevel {
     }
     for (final x in t.titles) {
       if (x['kind'] == 'cup' && x['arena'] == arena) add('cup');
+      if ((x['kind'] == 'month1' || x['kind'] == 'season1') && x['arena'] == arena) add('${x['kind']}');
       if (x['kind'] == 'bl') add('bl');
     }
     if (t.profileComplete) add('profile');   // counts in both arenas (owner 28 Nov)
     final rows = <(String, int, int)>[
       for (final k in _rowNames.keys) if (k != 'streak' && (c[k] ?? 0) > 0) (k, c[k]!, pts[k] ?? 0),
     ];
+    rows.sort((x, y) => y.$3.compareTo(x.$3));   // biggest first, so the table reads logically
     // streak (both arenas, best ever, milestones add up): shown as "best N" × its total points
     final sp = streakPointsFor(t.streakBest);
     if (sp > 0) rows.add(('streak', 1, sp));
