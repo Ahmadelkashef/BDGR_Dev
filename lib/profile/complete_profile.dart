@@ -9,7 +9,7 @@ import 'profile_page.dart' show captureVerifiedLocation;
 // ═════════════════════════════════════════════════════════════════════════
 // "Complete your profile" (owner, 28 Nov): asked once per round right after a squad is saved, and from the
 // glowing "Complete profile" trophy in the cabinet. Only what is missing: name (still the default), username
-// (still bdgrNNNN), governorate (GPS only, same rule as the prizes), birth date (13+). Skip any time.
+// (still bdgrNNNN / newbadgerNNNN), governorate (GPS only, same rule as the prizes), birth date (13+). Skip any time.
 // Completing = the "Complete profile" trophy + its level points (profile_level_pts.profile, 30).
 // Server: my_profile_completeness() · account_settings_save · save_my_gps_location. Switch profile_complete_prompt.
 // ═════════════════════════════════════════════════════════════════════════
@@ -68,7 +68,7 @@ class _CompleteSheetState extends State<_CompleteSheet> {
   late final Set<String> _missing = {...((widget.data['missing'] as List?) ?? const []).map((e) => '$e')};
   late final int _pts = (widget.data['points'] as num?)?.toInt() ?? 30;
   late final _name = TextEditingController(
-      text: '${widget.data['display_name'] ?? ''}' == 'BDGR Athlete' ? '' : '${widget.data['display_name'] ?? ''}');
+      text: const {'BDGR Athlete', 'New Badger'}.contains('${widget.data['display_name'] ?? ''}') ? '' : '${widget.data['display_name'] ?? ''}');
   late final _user = TextEditingController();
   String? _gov;
   bool _govBusy = false;

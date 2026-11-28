@@ -34,8 +34,8 @@ Future<String?> showBadgerWelcomeCard(BuildContext context, CompSport sport, {re
     if (res is List && res.isNotEmpty) {
       final d = res.first as Map<String, dynamic>;
       final n = (d['display_name'] ?? d['full_name'] ?? '').toString().trim();
-      // الاسم الافتراضي "BDGR Athlete" = ملوش اسم → مش بيتكتب
-      if (n.isNotEmpty && n.toLowerCase() != 'bdgr athlete') name = n;
+      // الاسم الافتراضي ("New Badger"، وقبله "BDGR Athlete") = ملوش اسم → مش بيتكتب
+      if (n.isNotEmpty && !const {'bdgr athlete', 'new badger'}.contains(n.toLowerCase())) name = n;
       final a = (d['avatar_url'] ?? d['provider_avatar_url'] ?? '').toString().trim();
       if (a.isNotEmpty) avatar = a;
     }

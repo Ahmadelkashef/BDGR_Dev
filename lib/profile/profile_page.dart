@@ -326,7 +326,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   bool get _isVerified =>
       _username.isNotEmpty &&
       _displayName.isNotEmpty &&
-      _displayName != 'BDGR Athlete' &&
+      _displayName != 'BDGR Athlete' && _displayName != 'New Badger' &&
       _bio.isNotEmpty &&
       _bio != 'Unranked. Unafraid.' &&
       (_avatarUrl?.isNotEmpty == true || _localAvatar != null);
@@ -660,7 +660,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       setState(() {
         _userId         = (d['user_id'] as num?)?.toInt();
         _isOfficial     = officialId != null && _userId == officialId;
-        _displayName    = d['display_name']?.toString() ?? 'BDGR Athlete';
+        _displayName    = d['display_name']?.toString() ?? 'New Badger';
         _username       = d['username']?.toString() ?? '';
         _avatarUrl      = d['avatar_url']?.toString();
         _coverUrl       = d['cover_url']?.toString();
@@ -1413,7 +1413,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           child: ProfileCardCarousel(
             key: ValueKey('cards-${_trophies == null ? 0 : 1}-${_trophies?.cardSports.length ?? 0}'),
             width: cw, t: _trophies,
-            name: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+            name: _displayName.isNotEmpty ? _displayName : 'New Badger',
             isOwner: _isOwner, photo: _avatarImage,
             onChangePhoto: _isOwner ? _pickAvatar : null,
             onRound: _openRound,
@@ -1440,7 +1440,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Flexible(child: () {
               final name = Text(
-                _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+                _displayName.isNotEmpty ? _displayName : 'New Badger',
                 textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 22,
                     fontWeight: FontWeight.w800, letterSpacing: -0.5),
@@ -1584,7 +1584,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     final uid = _trophies?.uid;
     if (uid == null || uid.isEmpty || r['event_id'] == null) return;
     openProfileRoundSquad(context, userId: uid,
-        userName: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+        userName: _displayName.isNotEmpty ? _displayName : 'New Badger',
         username: _username.isEmpty ? null : _username, avatarUrl: _avatarUrl, round: r);
   }
 
@@ -1875,7 +1875,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           children: [
             Row(children: [
               Flexible(child: Text(
-                _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+                _displayName.isNotEmpty ? _displayName : 'New Badger',
                 style: const TextStyle(color: Colors.white, fontSize: 22,
                     fontWeight: FontWeight.w800, letterSpacing: -0.5),
               )),
@@ -3997,7 +3997,7 @@ class _MomentViewerSheetState extends State<_MomentViewerSheet> {
     if (_sharing) return;
     setState(() => _sharing = true);
     final name = widget.ownerName.trim().isNotEmpty
-        ? widget.ownerName.trim() : 'BDGR Athlete';
+        ? widget.ownerName.trim() : 'New Badger';
     final text = '🔥 Watch $name\'s moment on BDGR\n'
         '${Brand.momentShareLink(widget.moment.id)}';
     ShareResult result;

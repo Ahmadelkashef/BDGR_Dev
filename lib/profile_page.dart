@@ -131,7 +131,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool get _isVerified =>
       _username.isNotEmpty &&
       _displayName.isNotEmpty &&
-      _displayName != 'BDGR Athlete' &&
+      _displayName != 'BDGR Athlete' && _displayName != 'New Badger' &&
       _bio.isNotEmpty &&
       _bio != 'Unranked. Unafraid.' &&
       (_avatarUrl?.isNotEmpty == true || _localAvatar != null);
@@ -155,7 +155,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted) return;
       setState(() {
         _userId         = (d['user_id'] as num?)?.toInt();
-        _displayName    = d['display_name']?.toString() ?? 'BDGR Athlete';
+        _displayName    = d['display_name']?.toString() ?? 'New Badger';
         _username       = d['username']?.toString() ?? '';
         _avatarUrl      = d['avatar_url']?.toString();
         _coverUrl       = d['cover_url']?.toString();
@@ -659,7 +659,7 @@ class _ProfilePageState extends State<ProfilePage> {
     children: [
       Row(children: [
         Flexible(child: Text(
-          _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+          _displayName.isNotEmpty ? _displayName : 'New Badger',
           style: const TextStyle(color: Colors.white, fontSize: 22,
               fontWeight: FontWeight.w800, letterSpacing: -0.5),
         )),
