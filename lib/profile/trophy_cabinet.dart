@@ -11,7 +11,7 @@ import 'streak_card.dart' show StreakCard;
 // Trophy cabinet (owner, 28 Nov): a lit glass cabinet instead of numbers.
 // Everything is computed on the phone from `profile_trophies` (rounds_list + titles): no new server call.
 // Each finished round gives its BEST place only: #1 gold ball · #2 silver · #3 bronze ·
-// top 1% crystal · 5% · 10% · 25% · 50% plaques. Titles: governorate #1, league #1, Badger Cup, Badger League.
+// top 1% crystal · 5% · 10% · 25% · 50% plaques (a round lights its place and every easier one; points = best only). Titles: governorate #1, league #1, Badger Cup, Badger League.
 // Rounds: shirts 5/10/20/50. Streak = the fuel card (both arenas). One-time: first round, complete profile, best points.
 // The level (higher arena) sits above the cabinet as one slim line (CabinetLevelLine).
 // Drawn in code (no files, no egress). Locked (faded + 🔒) goals only for the owner.
@@ -117,10 +117,19 @@ class CabinetData {
     for (final r in rows) {
       final rank = _i(r['rank']);
       final pct = _d(r['pct']);
-      final _Trophy? best = rank == 1 ? app1 : rank == 2 ? r2 : rank == 3 ? r3
-          : pct <= 0.01 ? p1 : pct <= 0.05 ? p5 : pct <= 0.10 ? p10 : pct <= 0.25 ? p25 : pct <= 0.50 ? p50 : null;
       void add(_Trophy x) { x.count++; x.rounds.add(r); x.arenas.add('${r['arena']}'); }
-      if (best != null && rank > 0) add(best);
+      // owner 28 Nov: a round lights its place AND every easier one (top 25% also lights top half; #2 also lights #3).
+      // Level POINTS still come from the best place only (ArenaLevel), so nothing is counted twice.
+      if (rank > 0) {
+        if (rank == 1) add(app1);
+        if (rank == 2) { add(r2); add(r3); }
+        if (rank == 3) add(r3);
+        if (pct <= 0.01) add(p1);
+        if (pct <= 0.05) add(p5);
+        if (pct <= 0.10) add(p10);
+        if (pct <= 0.25) add(p25);
+        if (pct <= 0.50) add(p50);
+      }
       if (r['gov1'] == true) add(gov1);
       if (_i(r['league_bonus']) > 0) add(lg1);
     }
