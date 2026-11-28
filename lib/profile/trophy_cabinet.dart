@@ -437,7 +437,7 @@ class TrophyPainter extends CustomPainter {
 
     void text(String t, Offset at, double size) {
       if (t.isEmpty) return;
-      final tp = TextPainter(text: TextSpan(text: t, style: TextStyle(color: const Color(0x8C000000), fontSize: size,
+      final tp = TextPainter(text: TextSpan(text: t, style: TextStyle(fontFamily: 'Roboto', color: const Color(0x8C000000), fontSize: size,
           fontWeight: FontWeight.w900)), textDirection: TextDirection.ltr)..layout();
       tp.paint(c, at - Offset(tp.width / 2, tp.height / 2));
     }
