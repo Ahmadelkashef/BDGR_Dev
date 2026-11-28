@@ -1172,8 +1172,10 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   }
 
   Future<void> _selectNewImage({required bool isCover}) async {
+    // egress (owner 28 Nov): shrink on the phone before upload — avatar 600 px, cover 1280 px
     final r = await ImagePicker().pickImage(
-        source: ImageSource.gallery, imageQuality: 85);
+        source: ImageSource.gallery,
+        maxWidth: isCover ? 1280 : 600, maxHeight: isCover ? 1280 : 600, imageQuality: 80);
     if (r == null || !mounted) return;
     // الويب: path = blob url من غير امتداد، فالاسم هو اللي فيه الامتداد
     final fname = kIsWeb ? r.name : r.path;
