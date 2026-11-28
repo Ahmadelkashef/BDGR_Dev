@@ -7,13 +7,14 @@ import '../ads/ad_widgets.dart';
 import '../app_lang.dart';
 import '../brand.dart';
 import '../deep_links.dart';
-import '../fantasy.dart' show FantasyHighlightsStrip;
+// FantasyHighlightsStrip (old winners stories) is hidden on launch (owner 28 Nov), code kept in fantasy_highlights.dart
 import '../media_cache.dart';
 import '../official_account.dart';
 import 'external_media.dart';
 import 'feed_api.dart';
 import 'feed_stories.dart';
 import 'feed_viewer.dart';
+import 'highlights.dart';
 import 'moments.dart';
 import '../social/comments_sheet.dart';
 import '../ugc/ugc_api.dart';
@@ -43,7 +44,7 @@ class _FeedPageState extends State<FeedPage> {
   // owner 28 Nov: the feed shows BDGR posts + "moments" (achievement cards made by the app); user uploads are off
   final List<Moment> _moments = [];
   bool _momEnd = false;
-  List<List<Moment>> _momStories = [];
+  Map<String, dynamic>? _highlights;
 
   DateTime _at(Object o) => o is FeedPost ? o.createdAt : o is Moment ? o.at : (o as UgcItem).sortAt;
 
@@ -96,7 +97,8 @@ class _FeedPageState extends State<FeedPage> {
         FeedApi.page(),
         FeedApi.stories(),
         MomentsApi.feed().catchError((Object e) { debugPrint('moments error: $e'); return <Moment>[]; }),
-        MomentsApi.stories().catchError((Object e) { debugPrint('moment stories error: $e'); return <List<Moment>>[]; }),
+        // owner 28 Nov: the stories row = big highlights only (moment stories are no longer shown up there)
+        FeedHighlights.load().then<Object>((v) => v).catchError((Object e) { debugPrint('highlights error: $e'); return <String, dynamic>{}; }),
       ]);
       if (!mounted) return;
       setState(() {
@@ -107,7 +109,7 @@ class _FeedPageState extends State<FeedPage> {
         _ugcEnd = true;   // user uploads are off on launch (moments instead)
         _moments..clear()..addAll(results[2] as List<Moment>);
         _momEnd = (results[2] as List).length < 10;
-        _momStories = results[3] as List<List<Moment>>;
+        _highlights = results[3] as Map<String, dynamic>;
         _loading = false;
         _lastLoad = DateTime.now();
       });
@@ -351,8 +353,7 @@ class _FeedPageState extends State<FeedPage> {
           Expanded(child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              MomentStoriesRow(groups: _momStories),
-              SizedBox(width: 300, child: FantasyHighlightsStrip(isArabic: _ar)),
+              HighlightStoriesRow(data: _highlights),
             ]),
           )),
         ]),

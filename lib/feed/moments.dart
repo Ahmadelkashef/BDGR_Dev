@@ -18,6 +18,11 @@ import 'feed_api.dart' show FeedApi;
 // The owner controls everything (remove, story hours) from the DB (mgmt_moment_set).
 // ═════════════════════════════════════════════════════════════════════════
 
+/// BDGR mascot (bundled in the app → no download). Face = avatar fallback, full = big story fallback.
+const kMascotFace = 'assets/mascot/badger_jersey_face.webp';
+const kMascotFull = 'assets/mascot/badger_jersey.webp';
+const kMascotHoodie = 'assets/mascot/badger_hoodie.webp';
+
 const _reactions = <(String, String)>[('fire', '🔥'), ('clap', '👏'), ('laugh', '😂'), ('clown', '🤡')];
 
 class MomentUser {
@@ -166,8 +171,8 @@ class MomentAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final a = user.avatar;
-    final letter = Text(user.name.isEmpty ? 'B' : user.name.characters.first.toUpperCase(),
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: size * 0.4));
+    // owner 28 Nov: no profile photo → the BDGR badger mascot (bundled asset, zero egress)
+    final letter = Image.asset(kMascotFace, width: size, height: size, fit: BoxFit.cover, cacheWidth: (size * 3).round());
     return ClipOval(
       child: Container(
         width: size, height: size, alignment: Alignment.center,

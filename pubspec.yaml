@@ -67,6 +67,7 @@ flutter:
   assets:
     - assets/logo_white.png
     - assets/badger_white.png
+    - assets/mascot/
 
 flutter_launcher_icons:
   android: true
