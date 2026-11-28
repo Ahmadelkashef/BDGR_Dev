@@ -1268,7 +1268,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: _pageBg,
       body: !_ambient ? scroll : Stack(children: [
-        Positioned.fill(child: ProfileAmbient(tier: _trophies?.tier ?? 'new', base: _pageBg)),
+        Positioned.fill(child: ProfileAmbient(tier: _trophies?.tier ?? 'new', base: _pageBg, fillNav: ProfileUi.navFill)),
         scroll,
       ]),
     );

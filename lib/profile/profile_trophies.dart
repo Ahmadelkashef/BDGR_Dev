@@ -659,6 +659,7 @@ class ProfileUi {
   static bool ownerButtons = false; // Change photo / View as Visitor (hide = FANTASY title only; photo = camera badge)
   static bool arenaTabs = true;     // tabs = FANTASY + Egypt / World (false = old Fantasy · Trophies)
   static bool bgMotion = true;      // moving glow + sparks behind the profile (colour = card tier)
+  static bool navFill = true;       // the strip above the bottom bar takes the profile colour (no 2-colour line)
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
   static void set(Map<String, dynamic> m, {bool save = true}) {
@@ -674,6 +675,7 @@ class ProfileUi {
     ownerButtons = on('owner_buttons', ownerButtons);
     arenaTabs = m['tabs'] == null ? arenaTabs : m['tabs'].toString() == 'arena';
     bgMotion = on('bg_motion', bgMotion);
+    navFill = on('nav_fill', navFill);
     changes.value++;
     if (save) LocalStore.setStr('profile_ui', jsonEncode(m));
   }

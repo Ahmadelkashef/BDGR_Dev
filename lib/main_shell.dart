@@ -620,8 +620,9 @@ class _MainShellState extends State<MainShell> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) { if (!didPop) _onBack(); },
-      child: Scaffold(
-        backgroundColor: Brand.background,
+      // the strip above the bottom bar takes the profile's colour while the profile is on screen (`profile_nav_fill`)
+      child: ValueListenableBuilder<Color?>(valueListenable: ShellTab.navFill, builder: (_, fill, __) => Scaffold(
+        backgroundColor: fill ?? Brand.background,
         extendBody: false,   // الصفحات اللي بتتفتح جوه التاب ما تستخباش ورا الشريط
         body: IndexedStack(
           index: _index,
@@ -634,7 +635,7 @@ class _MainShellState extends State<MainShell> {
           selectedIndex: _index,
           onTap:         _onTab,
         ),
-      ),
+      )),
     );
   }
 }

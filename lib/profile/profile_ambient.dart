@@ -8,6 +8,19 @@ import 'package:flutter/scheduler.dart';
 class ShellTab {
   ShellTab._();
   static final ValueNotifier<int> current = ValueNotifier<int>(0);
+  /// colour for the 30 px above the bottom bar (behind the raised Profile circle). null = the app's normal black.
+  /// Set only while a profile page with the moving background is the page on screen.
+  static final ValueNotifier<Color?> navFill = ValueNotifier<Color?>(null);
+  static Object? _fillOwner;
+  static void setFill(Object who, Color? c) {
+    if (c != null) {
+      _fillOwner = who;
+      if (navFill.value != c) navFill.value = c;
+    } else if (_fillOwner == who) {
+      _fillOwner = null;
+      navFill.value = null;
+    }
+  }
 }
 
 class ShellTabScope extends InheritedWidget {
@@ -22,9 +35,11 @@ class ShellTabScope extends InheritedWidget {
 /// + small sparks rising, all drawn in code (no files, no egress). Colour follows the card tier.
 /// Still picture when the phone has "remove animations", when its tab is hidden or the app is in the background.
 class ProfileAmbient extends StatefulWidget {
-  const ProfileAmbient({super.key, required this.tier, required this.base});
+  const ProfileAmbient({super.key, required this.tier, required this.base, this.fillNav = false});
   final String tier; // new | bronze | silver | gold
   final Color base;
+  /// `profile_nav_fill` = show: paint the strip above the bottom bar in [base] while this page is on screen
+  final bool fillNav;
 
   static Color tierColor(String tier) => switch (tier) {
         'bronze' => const Color(0xFFBE6E3C),
@@ -57,6 +72,7 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
   Duration _last = Duration.zero;
   bool _appOpen = true;
   int? _myTab;
+  bool _routeOn = true;
 
   @override
   void initState() {
@@ -70,6 +86,7 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
   void didChangeDependencies() {
     super.didChangeDependencies();
     _myTab = ShellTabScope.of(context);
+    _routeOn = ModalRoute.of(context)?.isCurrent ?? true;
     _sync();
   }
 
@@ -83,7 +100,11 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
 
   void _sync() {
     if (!mounted) return;
-    final run = _appOpen && !_still && (_myTab == null || _myTab == ShellTab.current.value);
+    final shown = _routeOn && (_myTab == null || _myTab == ShellTab.current.value);
+    // after the frame: never change the shell while it is building
+    final fill = shown && widget.fillNav ? widget.base : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => ShellTab.setFill(this, fill));
+    final run = _appOpen && !_still && shown;
     if (run && !_ticker.isActive) {
       _last = Duration.zero;
       _ticker.start();
@@ -103,7 +124,14 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
   }
 
   @override
+  void didUpdateWidget(ProfileAmbient old) {
+    super.didUpdateWidget(old);
+    if (old.fillNav != widget.fillNav || old.base != widget.base) _sync();
+  }
+
+  @override
   void dispose() {
+    ShellTab.setFill(this, null);
     ShellTab.current.removeListener(_sync);
     WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
