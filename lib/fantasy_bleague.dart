@@ -28,7 +28,9 @@ String _blPts(dynamic v) {
 String _blErr(Object e, bool ar) {
   final s = e.toString();
   String t(String en, String a) => ar ? a : en;
-  if (s.contains('already_in_team')) return t("You're already in a team this month.", 'إنت في فريق خلاص الشهر ده.');
+  if (s.contains('already_in_team')) return t("You're already in a team in this arena this month.", 'إنت في فريق خلاص في الأرينا دي الشهر ده.');
+  if (s.contains('league_off')) return t('The Badger League is not open yet.', 'دوري بادجر لسه ما فتحش.');
+  if (s.contains('bad_arena')) return t('Pick Egypt or World.', 'اختار مصر أو العالم.');
   if (s.contains('reserved_name')) return t('This name is not allowed.', 'الاسم ده مش مسموح.');
   if (s.contains('bad_name')) return t('Name must be 2–24 characters.', 'الاسم لازم يبقى من 2 لـ 24 حرف.');
   if (s.contains('name_taken')) return t('This name is taken this month.', 'الاسم ده متاخد الشهر ده.');
@@ -139,16 +141,24 @@ class _BadgerLeagueBannerState extends State<BadgerLeagueBanner> {
 }
 
 /// صفحة الدوري (من صفحة الجولة أو من لينك الدعوة ?b=CODE)
-Widget badgerLeaguePage({String? joinCode}) {
+/// owner 28 Nov: one league per arena → [arena] = 'LOCAL' | 'WORLD' (null = the last one opened, else Egypt)
+Widget badgerLeaguePage({String? joinCode, String? arena}) {
   final ar = AppLang.isArabic;
   return Directionality(textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-      child: _BLeaguePage(isArabic: ar, joinCode: joinCode));
+      child: _BLeaguePage(isArabic: ar, joinCode: joinCode, arena: arena));
+}
+
+/// opens the league page on the root navigator (used by the announcement from the feed / home too)
+Future<void> openBadgerLeague(BuildContext context, {String? arena}) async {
+  await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (_) => badgerLeaguePage(arena: arena)));
+  BLeagueInfo.clear();
 }
 
 class _BLeaguePage extends StatefulWidget {
-  const _BLeaguePage({required this.isArabic, this.joinCode});
+  const _BLeaguePage({required this.isArabic, this.joinCode, this.arena});
   final bool isArabic;
   final String? joinCode;
+  final String? arena;
   @override
   State<_BLeaguePage> createState() => _BLeaguePageState();
 }
@@ -156,6 +166,8 @@ class _BLeaguePage extends StatefulWidget {
 /// table first page kept on the phone (it only changes when a round is closed) → no DB call on every open
 class _BLBoardCache {
   static String? month;
+  static String? arena;
+  static String lastArena = 'LOCAL';
   static DateTime? at;
   static List<Map<String, dynamic>> items = [];
   static bool more = false;
@@ -167,6 +179,8 @@ class _BLBoardCache {
 
 class _BLeaguePageState extends State<_BLeaguePage> {
   Map<String, dynamic>? _home;
+  BLeagueInfo? _info;
+  late String _arena = widget.arena ?? _BLBoardCache.lastArena;
   Map<String, dynamic>? _mine;            // my team's row in the table (rank null = not in the table yet)
   int _minMembers = 2;
   final Set<int> _animated = {};          // table rows that already played their entrance
@@ -191,9 +205,10 @@ class _BLeaguePageState extends State<_BLeaguePage> {
   Future<void> _load() async {
     setState(() { _loading = true; _failed = false; });
     try {
-      final r = await _sb.rpc('badger_league_home');
+      final info = await BLeagueInfo.load(force: true);
+      if (info == null) throw 'no_info';
       if (!mounted) return;
-      setState(() { _home = Map<String, dynamic>.from(r as Map); _loading = false; });
+      setState(() { _info = info; _home = _homeOf(info, _arena); _loading = false; });
     } catch (_) {
       if (mounted) setState(() { _loading = false; _failed = true; });
     }
@@ -201,11 +216,34 @@ class _BLeaguePageState extends State<_BLeaguePage> {
 
   static const _page = 20;
 
+  /// the old one-league shape, built for one arena
+  Map<String, dynamic> _homeOf(BLeagueInfo info, String a) {
+    final x = info.arena(a);
+    final prize = Map<String, dynamic>.from(x['prize'] as Map? ?? const {});
+    return {
+      'month': info.month, 'arena': a, 'started': info.started, 'state': info.state,
+      'icons': info.raw['icons'], 'colors': info.raw['colors'],
+      'team': x['team'], 'per_member': prize['per_member_egp'],
+      'prize_ar': prize['prize_ar'], 'prize_en': prize['prize_en'],
+    };
+  }
+
+  void _setArena(String a) {
+    if (a == _arena || _info == null) return;
+    HapticFeedback.selectionClick();
+    _BLBoardCache.lastArena = a;
+    setState(() {
+      _arena = a; _home = _homeOf(_info!, a);
+      _board.clear(); _animated.clear(); _mine = null; _boardTotal = 0; _boardMore = false;
+    });
+    if (_tab == 1) _loadBoard();
+  }
+
   Future<void> _loadBoard({bool reset = false}) async {
     if (_boardBusy) return;
     final month = _home?['month'] as String?;
     // first open of the tab: use the copy on the phone when it is fresh
-    if (!reset && _board.isEmpty && _BLBoardCache.fresh && _BLBoardCache.month == month) {
+    if (!reset && _board.isEmpty && _BLBoardCache.fresh && _BLBoardCache.month == month && _BLBoardCache.arena == _arena) {
       setState(() {
         _board.addAll(_BLBoardCache.items);
         _boardMore = _BLBoardCache.more; _boardTotal = _BLBoardCache.total; _mine = _BLBoardCache.mine;
@@ -217,7 +255,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     if (reset) { _board.clear(); _animated.clear(); }
     setState(() {});
     try {
-      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board', params: {'p': {'offset': _board.length, 'limit': _page}}) as Map);
+      final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board', params: {'p': {'offset': _board.length, 'limit': _page, 'arena': _arena}}) as Map);
       if (!mounted) return;
       setState(() {
         _animFrom = _board.length;
@@ -228,6 +266,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
         _minMembers = (r['min_members'] as num?)?.toInt() ?? _minMembers;
       });
       _BLBoardCache.month = r['month'] as String?;
+      _BLBoardCache.arena = _arena;
       _BLBoardCache.at = DateTime.now();
       _BLBoardCache.items = List.of(_board);
       _BLBoardCache.more = _boardMore;
@@ -244,7 +283,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     List<Map<String, dynamic>> rows = [];
     try {
       final r = Map<String, dynamic>.from(await _sb.rpc('badger_league_board',
-          params: {'p': {'offset': math.max(0, rank - 6), 'limit': 11}}) as Map);
+          params: {'p': {'offset': math.max(0, rank - 6), 'limit': 11, 'arena': _arena}}) as Map);
       rows = ((r['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
     if (!mounted || rows.isEmpty) return;
@@ -279,12 +318,13 @@ class _BLeaguePageState extends State<_BLeaguePage> {
       backgroundColor: const Color(0xFF121317),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (_) => Directionality(textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-          child: _BLTeamForm(isArabic: ar, icons: _icons, colors: _colors, team: team)),
+          child: _BLTeamForm(isArabic: ar, icons: _icons, colors: _colors, team: team, arena: _arena)),
     );
     if (res != null && mounted) {
       setState(() { _home = {...?_home, 'team': res}; _tab = 0; });
-      _BLBoardCache.clear(); _board.clear(); _lsAt = null;
+      _BLBoardCache.clear(); _board.clear(); _lsAt = null; BLeagueInfo.clear();
       if (team == null) _invite(res);
+      BLeagueInfo.load(force: true).then((i) { if (i != null && mounted) _info = i; });
     }
   }
 
@@ -329,8 +369,11 @@ class _BLeaguePageState extends State<_BLeaguePage> {
           Text('${p['name']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 4),
           Text(t('Captain: $cap · $n/5', 'الكابتن: $cap · $n/5'), style: const TextStyle(color: muted, fontSize: 13)),
+          const SizedBox(height: 4),
+          Text(p['arena'] == 'WORLD' ? t('🌍 World league', '🌍 دوري العالم') : t('🇪🇬 Egypt league', '🇪🇬 دوري مصر'),
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
-          Text(t('Once you join you stay in this team all month.', 'أول ما تنضم هتفضل في الفريق ده الشهر كله.'),
+          Text(t('Once you join you stay in this team all month (this arena).', 'أول ما تنضم هتفضل في الفريق ده الشهر كله (في الأرينا دي).'),
               textAlign: TextAlign.center, style: const TextStyle(color: _blGold, fontSize: 12.5, height: 1.4)),
         ]),
         actions: [
@@ -344,8 +387,11 @@ class _BLeaguePageState extends State<_BLeaguePage> {
       if (!mounted) return;
       if (r['error'] != null) { _snack(_blErr(r['error'] as Object, ar)); return; }
       HapticFeedback.mediumImpact();
-      setState(() { _home = {...?_home, 'team': r}; _tab = 0; });
-      _BLBoardCache.clear(); _board.clear(); _lsAt = null;
+      final ja = '${r['arena'] ?? _arena}';
+      _BLBoardCache.lastArena = ja;
+      setState(() { _arena = ja; _home = {...?_home, 'arena': ja, 'team': r}; _tab = 0; });
+      _BLBoardCache.clear(); _board.clear(); _lsAt = null; BLeagueInfo.clear();
+      BLeagueInfo.load(force: true).then((i) { if (i != null && mounted) _info = i; });
       _snack(t('Welcome to ${r['name']}! 🥇', 'أهلًا بيك في ${r['name']}! 🥇'));
     } catch (e) {
       if (mounted) _snack(_blErr(e, ar));
@@ -356,13 +402,18 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     final code = team['code'];
     if (code == null) return;
     final name = team['name'];
-    Share.share(t('Join my team "$name" in the Badger League 🥇\nCode: $code\n${Brand.shareLinkBase}?b=$code',
-        'انضم لفريقي "$name" في دوري بادجر 🥇\nالكود: $code\n${Brand.shareLinkBase}?b=$code'));
+    final w = team['arena'] == 'WORLD';
+    Share.share(t('Join my team "$name" in the Badger League ${w ? '🌍 World' : '🇪🇬 Egypt'} 🥇\nCode: $code\n${Brand.shareLinkBase}?b=$code',
+        'انضم لفريقي "$name" في دوري بادجر ${w ? '🌍 العالم' : '🇪🇬 مصر'} 🥇\nالكود: $code\n${Brand.shareLinkBase}?b=$code'));
   }
 
   @override
   Widget build(BuildContext context) {
-    final prize = ar ? (_home?['prize_ar']) : (_home?['prize_en']);
+    final per = (_home?['per_member'] as num?)?.toInt();
+    final prize = per != null
+        ? t('${blMoney(per)} EGP for every member of the #1 team', '${blMoney(per)} جنيه لكل عضو في الفريق الأول')
+        : (ar ? (_home?['prize_ar']) : (_home?['prize_en']));
+    final started = _home?['started'] != false;
     return Scaffold(
       backgroundColor: bg,
       body: SafeArea(child: _loading && _home == null
@@ -377,15 +428,44 @@ class _BLeaguePageState extends State<_BLeaguePage> {
                     const SizedBox(width: 10),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(t('🥇 Badger League', '🥇 دوري بادجر'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
-                      Text(_blMonthName(_home?['month'] as String?, ar), style: const TextStyle(color: muted, fontSize: 12)),
+                      Text(started ? _blMonthName(_home?['month'] as String?, ar)
+                              : '${_blMonthName(_home?['month'] as String?, ar)} · ${_info != null ? blStartLine(_info!) : ''}',
+                          style: TextStyle(color: started ? muted : _blGold, fontSize: 12, fontWeight: started ? FontWeight.w400 : FontWeight.w800)),
                     ])),
+                    if (_info != null) GestureDetector(
+                      onTap: () => showBLAnnouncement(context, onOpen: (a) async => _setArena(a)),
+                      child: Container(width: 40, height: 40, alignment: Alignment.center,
+                        decoration: BoxDecoration(color: cardBg, shape: BoxShape.circle, border: Border.all(color: line)),
+                        child: const Text('?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)))),
+                  ])),
+                  Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: Row(children: [
+                    for (final (a, f, l) in [('LOCAL', '🇪🇬', t('Egypt', 'مصر')), ('WORLD', '🌍', t('World', 'العالم'))]) ...[
+                      if (a == 'WORLD') const SizedBox(width: 8),
+                      Expanded(child: GestureDetector(onTap: () => _setArena(a), child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        decoration: BoxDecoration(
+                          color: _arena == a ? _blGold.withValues(alpha: 0.14) : cardBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _arena == a ? _blGold : line)),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Text(f, style: const TextStyle(fontSize: 15)),
+                          const SizedBox(width: 6),
+                          Text(l, style: TextStyle(color: _arena == a ? Colors.white : muted, fontWeight: FontWeight.w900, fontSize: 13.5)),
+                          if (_info?.team(a) != null) ...[
+                            const SizedBox(width: 6),
+                            const Icon(Icons.check_circle, color: Color(0xFF43A047), size: 15),
+                          ],
+                        ]),
+                      ))),
+                    ],
                   ])),
                   if (prize != null && '$prize'.isNotEmpty)
                     Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: Container(
                       width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                       decoration: BoxDecoration(color: _blGold.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: _blGold.withValues(alpha: 0.5))),
-                      child: Text(t('🎁 Monthly prize (every player of the winning team): $prize', '🎁 جايزة الشهر (لكل لاعيبة الفريق الأول): $prize'),
+                      child: Text('🎁 $prize',
                           style: const TextStyle(color: _blGold, fontSize: 12.5, fontWeight: FontWeight.w800, height: 1.35)),
                     )),
                   Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: Container(
@@ -447,8 +527,11 @@ class _BLeaguePageState extends State<_BLeaguePage> {
             const SizedBox(height: 6),
             Text(t('Play with your friends', 'العب مع صحابك'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
-            Text(t('Make a team of $_min to 5 friends. Your draft points add up all month. The #1 team wins — all of you get the prize.',
-                   'اعمل فريق من $_min لـ 5 صحاب. نقط الدرافت بتاعتكم بتتجمع على الشهر كله، والفريق الأول يكسب وكلكم تاخدوا الجايزة.'),
+            Text(_arena == 'WORLD'
+                    ? t('Your WORLD team: $_min to 5 friends. Your World draft points add up all month. The #1 team wins — all of you get the prize.',
+                        'فريقك في العالم: من $_min لـ 5 صحاب. نقط درافت العالم بتاعتكم بتتجمع على الشهر كله، والفريق الأول يكسب وكلكم تاخدوا الجايزة.')
+                    : t('Your EGYPT team: $_min to 5 friends. Your Egypt draft points add up all month. The #1 team wins — all of you get the prize.',
+                        'فريقك في مصر: من $_min لـ 5 صحاب. نقط درافت مصر بتاعتكم بتتجمع على الشهر كله، والفريق الأول يكسب وكلكم تاخدوا الجايزة.'),
                 textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 13, height: 1.45)),
             const SizedBox(height: 16),
             Pressable(child: ShineSweep(radius: 12, child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(
@@ -581,9 +664,10 @@ class _BLeaguePageState extends State<_BLeaguePage> {
       Text(t('How it works', 'الدوري ماشي إزاي'), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
       const SizedBox(height: 8),
       for (final l in [
-        t('A team is $_min to 5 friends. One team per player per month.', 'الفريق من $_min لـ 5 صحاب. فريق واحد بس لكل لاعيب في الشهر.'),
+        t('Egypt and World are two separate leagues: separate table, separate prize.', 'مصر والعالم دوريين منفصلين: ترتيب لوحده وجايزة لوحدها.'),
+        t('A team is $_min to 5 friends. One team per player in each arena per month.', 'الفريق من $_min لـ 5 صحاب. فريق واحد بس لكل لاعيب في كل أرينا في الشهر.'),
         t('A team enters the table once it has $_min players. Until then it can not win.', 'الفريق بيدخل الترتيب لما يبقى فيه $_min لاعيبة، وقبلها مايقدرش يكسب.'),
-        t("Your team points add up (local + world) for the whole month.", 'نقط تشكيلاتكم (محلي + عالمي) بتتجمع على الشهر كله.'),
+        t("Only this arena's draft points count, every gameweek of the month.", 'نقط درافت الأرينا دي بس هي اللي بتتحسب، في كل جولات الشهر.'),
         t('You can add members any time until 5. Nobody can be removed or swapped.', 'تقدر تزوّد أعضاء في أي وقت لحد 5. ماحدش يتشال ولا يتبدّل.'),
         t('A new member counts from the first round whose deadline is after he joined.', 'العضو الجديد بيتحسب من أول جولة ديدلاينها بعد ما دخل.'),
         t('No squad in a round = 0 points.', 'اللي ماعملش تشكيلة في جولة = صفر.'),
@@ -865,7 +949,8 @@ class _BLTeamView extends StatelessWidget {
 
 /// فورم الإنشاء / التعديل: الاسم + الرمز + اللون، ومعاينة الدرع
 class _BLTeamForm extends StatefulWidget {
-  const _BLTeamForm({required this.isArabic, required this.icons, required this.colors, this.team});
+  const _BLTeamForm({required this.isArabic, required this.icons, required this.colors, this.team, this.arena = 'LOCAL'});
+  final String arena;
   final bool isArabic;
   final List<String> icons, colors;
   final Map? team;
@@ -889,7 +974,7 @@ class _BLTeamFormState extends State<_BLTeamForm> {
     try {
       final edit = widget.team != null;
       final r = await _sb.rpc(edit ? 'badger_league_update' : 'badger_league_create', params: {'p': {
-        if (edit) 'team_id': widget.team!['id'], 'name': name, 'icon': _icon, 'color': _color}});
+        if (edit) 'team_id': widget.team!['id'], if (!edit) 'arena': widget.arena, 'name': name, 'icon': _icon, 'color': _color}});
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       Navigator.pop(context, Map<String, dynamic>.from(r as Map));

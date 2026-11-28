@@ -15,6 +15,9 @@ import 'feed_api.dart';
 import 'feed_stories.dart';
 import 'feed_viewer.dart';
 import 'highlights.dart';
+import '../bleague_info.dart';
+import '../bleague_announce.dart';
+import '../fantasy.dart' show openBadgerLeague;
 import 'moments.dart';
 import '../social/comments_sheet.dart';
 import '../ugc/ugc_api.dart';
@@ -45,6 +48,7 @@ class _FeedPageState extends State<FeedPage> {
   final List<Moment> _moments = [];
   bool _momEnd = false;
   Map<String, dynamic>? _highlights;
+  BLeagueInfo? _bl;   // owner 28 Nov: Badger League announcement (story circle + pinned card)
 
   DateTime _at(Object o) => o is FeedPost ? o.createdAt : o is Moment ? o.at : (o as UgcItem).sortAt;
 
@@ -100,6 +104,7 @@ class _FeedPageState extends State<FeedPage> {
         // owner 28 Nov: the stories row = big highlights only (moment stories are no longer shown up there)
         FeedHighlights.load().then<Object>((v) => v).catchError((Object e) { debugPrint('highlights error: $e'); return <String, dynamic>{}; }),
       ]);
+      BLeagueInfo.load().then((v) { if (mounted) setState(() => _bl = v); });
       if (!mounted) return;
       setState(() {
         _posts..clear()..addAll(results[0] as List<FeedPost>);
@@ -239,6 +244,20 @@ class _FeedPageState extends State<FeedPage> {
                 slivers: [
                   SliverToBoxAdapter(child: _header()),
                   SliverToBoxAdapter(child: _storiesRow()),
+                  if (_bl != null && _bl!.visible && !_loading)
+                    SliverToBoxAdapter(child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Padding(padding: const EdgeInsets.only(bottom: 6, left: 2, right: 2), child: Row(children: [
+                          Image.asset('assets/badger_white.png', height: 13, cacheHeight: 40),
+                          const SizedBox(width: 6),
+                          const Text('BDGR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+                          const SizedBox(width: 6),
+                          Text('📌 ${_t('Pinned', 'متثبّت')}', style: const TextStyle(color: Colors.white38, fontSize: 11.5)),
+                        ])),
+                        BLAnnounceCard(info: _bl!, onTap: _openBLAnnounce),
+                      ]),
+                    )),
                   if (_loading)
                     const SliverFillRemaining(hasScrollBody: false,
                         child: Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2)))
@@ -347,6 +366,40 @@ class _FeedPageState extends State<FeedPage> {
     return out;
   }
 
+  void _openBLAnnounce() => showBLAnnouncement(context, onOpen: (a) => openBadgerLeague(context, arena: a));
+
+  /// first circle in HIGHLIGHTS: the mascot + NEW → the Badger League announcement
+  Widget _blStoryCircle() => Padding(
+        padding: const EdgeInsetsDirectional.only(end: 12),
+        child: GestureDetector(
+          onTap: () { HapticFeedback.selectionClick(); _openBLAnnounce(); },
+          child: SizedBox(width: 78, child: Column(children: [
+            Stack(clipBehavior: Clip.none, alignment: Alignment.bottomCenter, children: [
+              Container(
+                width: 74, height: 74, padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(shape: BoxShape.circle,
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        colors: [Color(0xFFFFE9A8), Color(0xFFE0A93A), Color(0xFFE53935)])),
+                child: Container(
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0B0B0D), width: 2.5)),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(kBLMascotFace, fit: BoxFit.cover, cacheWidth: 200),
+                ),
+              ),
+              Positioned(bottom: -7, child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+                decoration: BoxDecoration(color: const Color(0xFFE53935), borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF0B0B0D), width: 1.5)),
+                child: Text(_t('NEW', 'جديد'), style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900)),
+              )),
+            ]),
+            const SizedBox(height: 10),
+            Text(_t('Badger\nLeague', 'دوري\nبادجر'), maxLines: 2, textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.15)),
+          ])),
+        ),
+      );
+
   Widget _storiesRow() => Padding(
         padding: const EdgeInsets.fromLTRB(14, 6, 0, 8),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -364,6 +417,7 @@ class _FeedPageState extends State<FeedPage> {
           Expanded(child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (_bl != null && _bl!.visible) _blStoryCircle(),
               HighlightStoriesRow(data: _highlights),
             ]),
           )),

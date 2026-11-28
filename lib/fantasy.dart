@@ -28,6 +28,8 @@ import 'diag.dart';
 import 'safe_svg.dart';
 import 'team_initials_crest.dart';
 import 'social/comments_sheet.dart' show showCommentsSheet;
+import 'bleague_info.dart';
+import 'bleague_announce.dart';
 
 part 'fantasy_rank.dart';
 part 'fantasy_leagues.dart';
@@ -842,6 +844,7 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   void enterArena(String value) {
     Diag.crumb('enterArena $value event=${currentEvent?.eventId}');
+    _BLBoardCache.lastArena = value == 'WORLD' ? 'WORLD' : 'LOCAL';
     setState(() { arena = value; step = 1; clearSquad(); saved = false; _hasSquad = false; _squadChecked = false; _draftView = !_normalOnly && (currentEvent?.draftOn ?? false); _duelKey = null; _startCountdown(); });
     if (currentEvent != null) {
       _myRank = null;
@@ -2508,7 +2511,22 @@ class _FantasyShellState extends State<FantasyShell> {
 
   bool _showIntro = false;   // launch: stadium intro, once per app run
 
+  static bool _blAnnounceTried = false;
+  /// owner 28 Nov: Badger League announcement, once per month, after the intro (when the league is announced / on)
+  void _maybeBLAnnounce() {
+    if (_blAnnounceTried || !FantasyMotion.tabActive.value || !mounted) return;
+    _blAnnounceTried = true;
+    void go() {
+      FantasyMotion.ready.removeListener(go);
+      Future.delayed(const Duration(milliseconds: 700), () {
+        if (mounted) maybeShowBLAnnouncement(context, onOpen: (a) => openBadgerLeague(context, arena: a));
+      });
+    }
+    if (FantasyMotion.ready.value) { go(); } else { FantasyMotion.ready.addListener(go); }
+  }
+
   void _onTabActive() {
+    _maybeBLAnnounce();
     if (!FantasyMotion.tabActive.value || FantasyMotion.introPlayed || !mounted) return;
     FantasyMotion.introPlayed = true;
     if (motionCalm(context)) { FantasyMotion.ready.value = true; return; }

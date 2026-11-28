@@ -13,29 +13,32 @@ part of 'fantasy.dart';
 
 /// what the user is missing: Badger League team this month, a league (cached ~20 s)
 class _LaunchStatus {
-  final Map<String, dynamic>? blHome;   // badger_league_home
+  final BLeagueInfo? bl;   // badger_league_home2 (null / hidden = the league is off)
+  final String arena;      // the arena the user is in (owner 28 Nov: one league per arena)
   final int leagues, invites;
-  const _LaunchStatus(this.blHome, this.leagues, this.invites);
-  Map? get team => blHome?['team'] as Map?;
-  String? get month => blHome?['month'] as String?;
+  const _LaunchStatus(this.bl, this.arena, this.leagues, this.invites);
+  bool get blOn => bl != null && bl!.visible;
+  Map? get team => blOn ? bl!.team(arena) : null;
+  String? get month => bl?.month;
   /// my Badger League team is too small to be in the table
   bool get teamTooSmall => team != null && team!['in_table'] == false;
   /// 'badger' | 'bl_invite' (team not in the table yet) | 'league' | null (has all)
-  String? get next => team == null ? 'badger' : teamTooSmall ? 'bl_invite' : (leagues == 0 ? 'league' : null);
+  String? get next => !blOn ? (leagues == 0 ? 'league' : null)
+      : team == null ? 'badger' : teamTooSmall ? 'bl_invite' : (leagues == 0 ? 'league' : null);
 }
 
 _LaunchStatus? _lsCache;
 DateTime? _lsAt;
 Future<_LaunchStatus?> _launchStatus({bool fresh = false}) async {
-  if (!fresh && _lsCache != null && _lsAt != null && DateTime.now().difference(_lsAt!) < const Duration(seconds: 20)) return _lsCache;
+  if (!fresh && _lsCache != null && _lsCache!.arena == _BLBoardCache.lastArena && _lsAt != null && DateTime.now().difference(_lsAt!) < const Duration(seconds: 20)) return _lsCache;
   try {
-    final r = await Future.wait([
-      _sb.rpc('badger_league_home'),
+    final r = await Future.wait<dynamic>([
+      BLeagueInfo.load(force: fresh),
       _sb.rpc('league_my_list'),
       _sb.rpc('league_inbox').catchError((_) => null),
     ]);
     final inbox = r[2] is Map ? r[2] as Map : const {};
-    _lsCache = _LaunchStatus(r[0] is Map ? Map<String, dynamic>.from(r[0] as Map) : null,
+    _lsCache = _LaunchStatus(r[0] as BLeagueInfo?, _BLBoardCache.lastArena,
         (r[1] as List?)?.length ?? 0, ((inbox['invites'] as List?) ?? const []).length);
     _lsAt = DateTime.now();
     return _lsCache;
@@ -52,7 +55,7 @@ int _blMembers(Map team) {
 }
 
 Future<void> _openBLeague(BuildContext context) async {
-  await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => badgerLeaguePage()));
+  await openBadgerLeague(context, arena: _BLBoardCache.lastArena);
   _lsAt = null;
 }
 
@@ -115,6 +118,17 @@ extension _LaunchLobby on _FancyPageState {
           StaggerIn(index: 1, dy: 24, child: _lDeadlineCard(event, ph, has)),
           const SizedBox(height: 10),
           StaggerIn(index: 2, dy: 24, child: _lPrizeCard(event)),
+          // owner 28 Nov: Badger League announcement card while I have no team in this arena
+          FutureBuilder<BLeagueInfo?>(
+            future: BLeagueInfo.load(),
+            builder: (_, snap) {
+              final info = snap.data;
+              final a = event.fantasyType == 'WORLD' ? 'WORLD' : 'LOCAL';
+              if (info == null || !info.visible || info.team(a) != null) return const SizedBox.shrink();
+              return Padding(padding: const EdgeInsets.only(top: 10), child: StaggerIn(index: 2, dy: 24,
+                  child: BLAnnounceCard(info: info, compact: true,
+                      onTap: () => showBLAnnouncement(context, onOpen: (x) => openBadgerLeague(context, arena: x)))));
+            }),
         ],
         // modes = both (DB): pick which squad this page shows
         if (_FancyPageState._modes == 'both' && event.draftOn)
@@ -450,7 +464,9 @@ class _LaunchNudgeLineState extends State<LaunchNudgeLine> {
     final month = _blMonthName(s.month, widget.isArabic);
     final (Widget lead, String text, Color border, List<Color> grad, Future<void> Function() go) = switch (next) {
       'badger' => (const Text('🥇', style: TextStyle(fontSize: 18)),
-                   t('Make your Badger League team · $month', 'اعمل فريقك في دوري بادجر · $month'),
+                   s.arena == 'WORLD'
+                       ? t('Make your World team · Badger League · $month', 'اعمل فريقك في دوري بادجر العالم · $month')
+                       : t('Make your Egypt team · Badger League · $month', 'اعمل فريقك في دوري بادجر مصر · $month'),
                    const Color(0xFF6B5313), const [Color(0xFF2A2210), cardBg], () => _openBLeague(context)),
       'bl_invite' => (LeagueShield(icon: '${team!['icon']}', color: '${team['color']}', size: 24),
                    t('${team['name']} is not in the table yet · invite a friend', '${team['name']} لسه مش في الترتيب · اعزم صاحب'),
@@ -521,15 +537,20 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
                   child: const Text('🛡️', style: TextStyle(fontSize: 30))))),
           const SizedBox(height: 12),
           Text(invite ? t('${team!['name']} needs one more', '${team!['name']} محتاج واحد كمان')
-              : badger ? t('Badger League · $month', 'دوري بادجر · $month') : t('Play with your friends', 'العب مع صحابك'),
+              : badger ? (s.arena == 'WORLD' ? t('Badger League 🌍 World · $month', 'دوري بادجر 🌍 العالم · $month')
+                                             : t('Badger League 🇪🇬 Egypt · $month', 'دوري بادجر 🇪🇬 مصر · $month'))
+              : t('Play with your friends', 'العب مع صحابك'),
             textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           Text(invite
               ? t('Your team enters the Badger League table once it has 2 players. Send your code to a friend now.',
                   'فريقك بيدخل ترتيب دوري بادجر لما يبقى فيه اتنين. ابعت الكود لصاحبك دلوقتي.')
               : badger
-              ? t('Make a team of 2 to 5 friends. Your points add up, so every friend you add raises your chances. If your team finishes #1 this month, all of you win the prize.',
-                  'اعمل فريق من 2 لـ 5 صحاب. نقطكم بتتجمع، فكل صاحب بتضيفه فرصتكم بتكبر. ولو فريقكم طلع الأول الشهر ده، كلكم تكسبوا الجايزة.')
+              ? (s.bl!.started
+                  ? t('Make a team of 2 to 5 friends. Your points add up, so every friend you add raises your chances. If your team finishes #1 this month, all of you win the prize.',
+                      'اعمل فريق من 2 لـ 5 صحاب. نقطكم بتتجمع، فكل صاحب بتضيفه فرصتكم بتكبر. ولو فريقكم طلع الأول الشهر ده، كلكم تكسبوا الجايزة.')
+                  : t('${blStartLine(s.bl!)}. Make your team of 2 to 5 friends now, so it is ready. If your team finishes #1, all of you win the prize.',
+                      '${blStartLine(s.bl!)}. اعمل فريقك من 2 لـ 5 صحاب من دلوقتي عشان يبقى جاهز. ولو فريقكم طلع الأول، كلكم تكسبوا الجايزة.'))
               : t('Make a league for your friends, family or work — any size — and see who is the best coach.',
                   'اعمل ليج لصحابك أو عيلتك أو الشغل، بأي عدد، وشوفوا مين أحسن مدرب.'),
             textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFC9CCD1), fontSize: 13.5, height: 1.5)),
@@ -637,7 +658,7 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
                 style: const TextStyle(color: Color(0xFFFF5C5C), fontWeight: FontWeight.w800)),
           ])),
           i: 1, onTap: () async { await _openLeaguesPage(context, ar); _load(true); }),
-        _card(gold: true, i: 2,
+        if (s != null && s.blOn) _card(gold: true, i: 2,
           icon: team != null ? LeagueShield(icon: '${team['icon']}', color: '${team['color']}', size: 30) : const Text('🥇', style: TextStyle(fontSize: 22)),
           title: t('Badger League', 'دوري بادجر'),
           sub: Text(team != null

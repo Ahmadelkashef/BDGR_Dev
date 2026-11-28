@@ -12,6 +12,9 @@ import '../app_config.dart';
 import '../auth/landing_screen.dart';
 import '../app_lang.dart';
 import '../brand.dart';
+import '../bleague_info.dart';
+import '../bleague_announce.dart';
+import '../fantasy.dart' show openBadgerLeague;
 import '../competitions/competition_sports.dart';
 import '../local_store.dart';
 import '../web/web_layout.dart';
@@ -354,6 +357,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // جولة مفتوحة → لحد الديدلاين، مفيش → لحد ما الجولة الجاية تتفتح.
   // الجايزة = المركز الأول، ولو الجولة الجاية لسه مالهاش → جايزة الجولة الشغالة.
   static Map<String, dynamic>? _hero;
+  BLeagueInfo? _bl;
   Timer? _countdownTimer;
 
   DateTime? get _heroAt => DateTime.tryParse('${_hero?['at'] ?? ''}')?.toLocal();
@@ -430,6 +434,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     _loadPlayersCount();
     _loadHero();
+    BLeagueInfo.load().then((v) { if (mounted) setState(() => _bl = v); });
     // العداد بيتحدّث كل 30 ثانية، ولما يخلص بنجيب الجولة اللي بعدها
     _countdownTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
@@ -648,6 +653,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     _buildTopBar(),
                     const SizedBox(height: 18),
                     _buildHero(narrow),
+                    // owner 28 Nov: Badger League announcement, only for people who play the fantasy
+                    if (_bl != null && _bl!.visible && _bl!.plays) ...[
+                      const SizedBox(height: 14),
+                      BLAnnounceCard(info: _bl!, onTap: () => showBLAnnouncement(context,
+                          onOpen: (a) => openBadgerLeague(context, arena: a))),
+                    ],
                     // الأونر (21 نوفمبر): مفيش إعلان تحت الهيرو ولا تحت الرياضات على الموبايل.
                     // الـ Takeover بيظهر كام ثانية ويتقفل، والرعاة باينين على كروت الرياضات بس ("by …").
                     const SizedBox(height: 24),
