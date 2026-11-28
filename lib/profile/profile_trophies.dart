@@ -13,7 +13,8 @@ import '../competitions/competition_sports.dart';
 import '../local_store.dart';
 import '../media_cache.dart';
 import '../motion_kit.dart';
-import 'trophy_cabinet.dart' show ArenaLevelCard;
+import 'trophy_cabinet.dart' show ArenaLevelCard, ArenaLevel;
+import 'level_looks.dart';
 
 /// كارت الفانتازي + تابات الإنجازات والفانتازي في البروفايل (27 نوفمبر 2026).
 /// كله من `profile_trophies(user)` (قراية بس، مفيش ملفات = إيجرس تقريباً صفر).
@@ -674,6 +675,8 @@ class ProfileUi {
   static bool bgMotion = true;      // moving glow + sparks behind the profile (colour = card tier)
   static bool cabinet = true;       // trophy cabinet under FANTASY (hide = the old numbers box in each arena tab)
   static bool navFill = true;
+  static bool levelLooks = true;    // profile look grows with the level (frame, light, sparks, chip, ring, crown…)
+  static bool editPencil = true;    // pencil at the top: photo · name · username
   /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
   static Map<String, int> levelPts = const {};
   static List<int> levelSteps = const [];       // the strip above the bottom bar takes the profile colour (no 2-colour line)
@@ -694,6 +697,8 @@ class ProfileUi {
     bgMotion = on('bg_motion', bgMotion);
     navFill = on('nav_fill', navFill);
     cabinet = on('cabinet', cabinet);
+    levelLooks = on('level_looks', levelLooks);
+    editPencil = on('edit_pencil', editPencil);
     try {
       final lp = m['level_pts'];
       if (lp is String && lp.isNotEmpty) {
@@ -878,11 +883,11 @@ Widget _rankLine(double w, int rank, String tag, Color c) => Row(mainAxisSize: M
     ]);
 
 /// الكارت الأساسي BADGER: صورة اليوزر + رياضاته + معانا من إمتى. لكل الناس.
-Widget badgerProfileCard(double w, ProfileTrophies? t, {ImageProvider? photo, String? name}) {
+Widget badgerProfileCard(double w, ProfileTrophies? t, {ImageProvider? photo, String? name, List<Color>? frame}) {
   final sports = ProfileUi.competitions ? (t?.cardSports ?? const []) : const <Map<String, dynamic>>[];
   final since = t?.memberSince?.toLocal();
   return ProfileCardFace(
-    width: w, frame: _idFrame, text: _idText, photo: photo, name: name,
+    width: w, frame: frame ?? _idFrame, text: _idText, photo: photo, name: name,
     pill: 'BADGER',
     main: (w) => sports.isEmpty
         ? Image.asset('assets/badger_white.png', height: w * 0.13)
@@ -947,7 +952,10 @@ Widget fantasyArenaCard(double w, ProfileTrophies t, Map<String, dynamic> a, {St
         ? Text('—', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1))
         : ProfileUi.cardPills ? _rankLine(w, rank, world ? '🌍' : 'EG', tt.text)
         : Text('#${fmtInt(rank)}', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1)),
-    label: rank == null ? 'NOT PLAYED' : '${a['rating'] ?? 0} PTS · ${a['rounds'] ?? 0} GW',
+    // launch (owner 28 Nov): the arena LEVEL under the rank (cabinet on); old = rating pts · rounds
+    label: rank == null ? 'NOT PLAYED'
+        : ProfileUi.cabinet ? ArenaLevel.of(t, '${a['arena']}').name.toUpperCase()
+        : '${a['rating'] ?? 0} PTS · ${a['rounds'] ?? 0} GW',
   );
 }
 
@@ -969,10 +977,14 @@ String _fantasyHint(ProfileTrophies t) {
 }
 
 class _CardItem {
-  _CardItem(this.label, this.face, this.open);
+  _CardItem(this.label, this.face, this.open, {this.wrap});
   final String label;
   final Widget Function(double w) face;
   final void Function() open;
+  /// extra things around the card that move with it (level ring / crown / rays)
+  Widget Function(Widget card, double w)? wrap;
+  /// false = no holo shine (low levels)
+  bool shine = true;
 }
 
 /// كروت البروفايل (PROFILE v3, 27 نوفمبر): نفس مكان ومقاس الكارت.
@@ -1092,11 +1104,12 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     final gold = widget.t?.tier == 'gold';
     Widget f = HoloCard(
       key: ValueKey('holo-$i'),
-      enabled: i == _page,
+      enabled: i == _page && items[i].shine,
       radius: cw * 0.12,
       strength: gold ? 1.5 : 1,
       child: items[i].face(cw),
     );
+    if (items[i].wrap != null) f = items[i].wrap!(f, cw);
     if (_entering && (i - _center).abs() <= 1) {
       f = CardEntrance(
         fromSide: (i - _center).sign.toDouble(),
@@ -1187,11 +1200,17 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     final since = t?.memberSince?.toLocal();
     final sportNames = (!ProfileUi.competitions ? const <Map<String, dynamic>>[] : t?.cardSports ?? const []).map((s) => _sportOf(s['id']?.toString() ?? '')?.name(AppLang.isArabic))
         .whereType<String>().join(' · ');
-    final badger = _CardItem('BADGER', (w) => badgerProfileCard(w, t, photo: widget.photo), () => _sheet(
-        (w) => badgerProfileCard(w, t, photo: widget.photo, name: name), 'BADGER', _idText,
+    final look = LevelLook.of(t);
+    final lf = ProfileUi.levelLooks ? look.frame : null;
+    final badger = _CardItem('BADGER', (w) => badgerProfileCard(w, t, photo: widget.photo, frame: lf), () => _sheet(
+        (w) => badgerProfileCard(w, t, photo: widget.photo, name: name, frame: lf), 'BADGER', _idText,
         since == null ? AppLang.t('BDGR member', 'عضو في BDGR')
             : AppLang.t('Member since ${_months[since.month - 1]} ${since.year}', 'معانا من ${_monthsAr[since.month - 1]} ${since.year}'),
         sub: sportNames.isEmpty ? null : sportNames, photo: true));
+    if (ProfileUi.levelLooks) {
+      badger.shine = look.shine;
+      badger.wrap = (card, w) => LevelDecor(look: look, width: w, child: card);
+    }
     _center = left.length;
     return [...left.reversed, badger, ...right];
   }

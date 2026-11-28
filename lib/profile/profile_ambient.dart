@@ -35,9 +35,15 @@ class ShellTabScope extends InheritedWidget {
 /// + small sparks rising, all drawn in code (no files, no egress). Colour follows the card tier.
 /// Still picture when the phone has "remove animations", when its tab is hidden or the app is in the background.
 class ProfileAmbient extends StatefulWidget {
-  const ProfileAmbient({super.key, required this.tier, required this.base, this.fillNav = false});
+  const ProfileAmbient({super.key, required this.tier, required this.base, this.fillNav = false,
+      this.color, this.sparks, this.glow2, this.flash = false});
   final String tier; // new | bronze | silver | gold
   final Color base;
+  /// level looks (owner 28 Nov): light colour, number of sparks, a second warm light (Icon), a flash on open (Icon)
+  final Color? color;
+  final int? sparks;
+  final Color? glow2;
+  final bool flash;
   /// `profile_nav_fill` = show: paint the strip above the bottom bar in [base] while this page is on screen
   final bool fillNav;
 
@@ -68,7 +74,7 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
   late final Ticker _ticker;
   final ValueNotifier<double> _t = ValueNotifier<double>(0);
   final _rnd = math.Random();
-  late final List<_Spark> _sparks = List.generate(34, (_) => _Spark(_rnd));
+  late final List<_Spark> _sparks = List.generate(55, (_) => _Spark(_rnd));
   Duration _last = Duration.zero;
   bool _appOpen = true;
   int? _myTab;
@@ -143,7 +149,8 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: CustomPaint(
-        painter: _AmbientPainter(_t, _sparks, ProfileAmbient.tierColor(widget.tier), widget.base, _still),
+        painter: _AmbientPainter(_t, _sparks.take(widget.sparks ?? 34).toList(), widget.color ?? ProfileAmbient.tierColor(widget.tier),
+            widget.base, _still, glow2: widget.glow2, flash: widget.flash),
         child: const SizedBox.expand(),
       ),
     );
@@ -151,7 +158,9 @@ class _ProfileAmbientState extends State<ProfileAmbient> with SingleTickerProvid
 }
 
 class _AmbientPainter extends CustomPainter {
-  _AmbientPainter(this.t, this.sparks, this.c, this.base, this.still) : super(repaint: t);
+  _AmbientPainter(this.t, this.sparks, this.c, this.base, this.still, {this.glow2, this.flash = false}) : super(repaint: t);
+  final Color? glow2;
+  final bool flash;
   final ValueNotifier<double> t;
   final List<_Spark> sparks;
   final Color c;
@@ -172,8 +181,16 @@ class _AmbientPainter extends CustomPainter {
     // light 1 = tier colour, high up behind the cards; light 2 = cool grey lower down
     _blob(cv, sz, Offset(w / 2 + w * 0.26 * math.sin(s * 0.00025), h * 0.2 + h * 0.09 * math.cos(s * 0.0002)),
         w * 0.85, c, 0.38);
+    if (glow2 != null) {
+      _blob(cv, sz, Offset(w / 2 + w * 0.3 * math.cos(s * 0.0003), h * 0.32), w * 0.75, glow2!, 0.25);
+    }
     _blob(cv, sz, Offset(w / 2 + w * 0.3 * math.cos(s * 0.00018), h * 0.59 + h * 0.12 * math.sin(s * 0.00022)),
         w * 0.78, const Color(0xFF787D8C), 0.16);
+    // Icon: a soft flash when the profile opens (first ~0.9 s)
+    if (flash && !still && t.value < 0.9) {
+      final a = (1 - t.value / 0.9).clamp(0.0, 1.0).toDouble();
+      _blob(cv, sz, Offset(w / 2, h * 0.2), w * 1.1, const Color(0xFFFFE6B4), 0.55 * a);
+    }
     if (still) return;
     final sc = Color.lerp(c, Colors.white, 0.45)!;
     final p = Paint();
@@ -185,5 +202,5 @@ class _AmbientPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AmbientPainter o) => o.c != c || o.base != base || o.still != still;
+  bool shouldRepaint(_AmbientPainter o) => o.c != c || o.base != base || o.still != still || o.sparks.length != sparks.length;
 }

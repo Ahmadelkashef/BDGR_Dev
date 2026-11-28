@@ -27,6 +27,7 @@ import '../home/home_page.dart' show HomeActions;
 import 'profile_trophies.dart';
 import 'profile_ambient.dart';
 import 'trophy_cabinet.dart';
+import 'level_looks.dart';
 import '../fantasy.dart' show openProfileRoundSquad;
 import '../settings/help_support_page.dart' show HelpSupportPage;
 import 'visitor_profile_sheet.dart';
@@ -567,8 +568,28 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     if (mounted) setState(() => _trophies = t);
     // لحظة الترقية: صاحب البروفايل بس، مرة واحدة لكل مستوى جديد
     if (mounted && t != null && _isOwner && !_isPreviewingOwnProfile) {
-      Future.delayed(const Duration(milliseconds: 900), () { if (mounted) maybeShowTierUp(context, t); });
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (!mounted) return;
+        // launch: the LEVEL is the reward moment (the old tier card is hidden)
+        if (_cardMode && ProfileUi.levelLooks && !ProfileUi.fantasyCard) {
+          maybeShowLevelUp(context, t, (look, w) => LevelDecor(look: look, width: w,
+              child: badgerProfileCard(w, t, photo: _avatarImage, frame: look.frame)));
+        } else {
+          maybeShowTierUp(context, t);
+        }
+      });
     }
+  }
+
+  LevelLook get _look => LevelLook.of(_trophies);
+
+  Widget _levelAmbient() {
+    if (!ProfileUi.levelLooks) {
+      return ProfileAmbient(tier: _trophies?.tier ?? 'new', base: _pageBg, fillNav: ProfileUi.navFill);
+    }
+    final l = _look;
+    return ProfileAmbient(key: ValueKey('amb-${l.level}'), tier: 'new', base: _pageBg, fillNav: ProfileUi.navFill,
+        color: l.glow, sparks: l.sparks, glow2: l.glow2, flash: l.flash);
   }
 
   /// كارت الفانتازي مكان دايرة الصورة (السويتش profile_card = card | circle)
@@ -1271,7 +1292,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: _pageBg,
       body: !_ambient ? scroll : Stack(children: [
-        Positioned.fill(child: ProfileAmbient(tier: _trophies?.tier ?? 'new', base: _pageBg, fillNav: ProfileUi.navFill)),
+        Positioned.fill(child: _levelAmbient()),
         scroll,
       ]),
     );
@@ -1389,12 +1410,17 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
         child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Flexible(child: Text(
-              _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
-              textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 22,
-                  fontWeight: FontWeight.w800, letterSpacing: -0.5),
-            )),
+            Flexible(child: () {
+              final name = Text(
+                _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
+                textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 22,
+                    fontWeight: FontWeight.w800, letterSpacing: -0.5),
+              );
+              // level looks: Elite and up = shining name
+              return ProfileUi.levelLooks && _look.nameShine ? LevelNameShine(look: _look, child: name) : name;
+            }()),
+            if (ProfileUi.levelLooks && _look.chip) LevelChip(look: _look),
             if (_isVerified && Brand.showVerifiedBadge) ...[
               const SizedBox(width: 6),
               const Icon(Icons.verified, color: Brand.green, size: 18),
@@ -1720,6 +1746,9 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             Positioned(top: top + 10, left: 12, child: _backBtn()),
           if (!_isOwner && !_isPreviewingOwnProfile && !_isOfficial)
             Positioned(top: top + 10, right: 12, child: _iconBtn(Icons.more_horiz, _openVisitorMenu)),
+          // `profile_edit_pencil` = show: owner edits photo · name · username in a small sheet
+          if (_isOwner && !_isPreviewingOwnProfile && ProfileUi.editPencil)
+            PositionedDirectional(top: top + 10, end: 12, child: _iconBtn(Icons.edit_outlined, _openQuickEdit)),
         ]),
       );
     }
@@ -2647,6 +2676,113 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           ),
         ],
       ),
+    );
+  }
+
+  /// small edit sheet (owner 28 Nov): photo · display name · username. Governorate + age stay read-only (GPS / signup).
+  void _openQuickEdit() {
+    final nameC = TextEditingController(text: _displayName);
+    final userC = TextEditingController(text: _username);
+    String? err;
+    bool busy = false;
+    String msg(Object e) {
+      final s = e.toString();
+      if (s.contains('username_taken')) return _s('This username is taken', 'اليوزرنيم ده مستخدم');
+      if (s.contains('username_invalid')) return _s('Username: 3–30 letters, numbers, . or _', 'اليوزرنيم: من 3 لـ 30 حرف إنجليزي أو أرقام أو . أو _');
+      if (s.contains('display_name_required')) return _s('Write your name', 'اكتب اسمك');
+      if (s.contains('display_name_too_long')) return _s('Name is too long (max 50)', 'الاسم طويل (أقصى حاجة 50)');
+      return _s('Could not save, try again', 'ما اتحفظش، جرب تاني');
+    }
+    InputDecoration deco(String label, {String? prefix}) => InputDecoration(
+      labelText: label, prefixText: prefix,
+      labelStyle: const TextStyle(color: Colors.white54), prefixStyle: const TextStyle(color: Colors.white54),
+      filled: true, fillColor: const Color(0xFF1F2026),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    );
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16171B),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        Future<void> save() async {
+          final p = <String, dynamic>{};
+          if (nameC.text.trim() != _displayName) p['display_name'] = nameC.text.trim();
+          final u = userC.text.trim().toLowerCase().replaceAll('@', '');
+          if (u != _username) p['username'] = u;
+          if (p.isEmpty) { Navigator.pop(ctx); return; }
+          setS(() { busy = true; err = null; });
+          try {
+            await Supabase.instance.client.rpc('account_settings_save', params: {'p': p});
+            if (!mounted) return;
+            setState(() {
+              if (p.containsKey('display_name')) _displayName = p['display_name'] as String;
+              if (p.containsKey('username')) _username = p['username'] as String;
+            });
+            if (ctx.mounted) Navigator.pop(ctx);
+          } catch (e) {
+            setS(() { busy = false; err = msg(e); });
+          }
+        }
+        final meta = <String>[
+          if ([_city, _governorate].any((x) => x.isNotEmpty)) '📍 ${[_city, _governorate].where((x) => x.isNotEmpty).toSet().join(', ')}',
+          if (_birthDate != null) _s('🎂 ${DateTime.now().year - _birthDate!.year}', '🎂 ${DateTime.now().year - _birthDate!.year} سنة'),
+        ];
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: Text(_s('Edit profile', 'تعديل البروفايل'),
+                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800))),
+              IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close, color: Colors.white54)),
+            ]),
+            const SizedBox(height: 6),
+            Center(child: GestureDetector(
+              onTap: busy ? null : () async { await _pickAvatar(); setS(() {}); },
+              child: Stack(clipBehavior: Clip.none, children: [
+                CircleAvatar(radius: 40, backgroundColor: const Color(0xFF2A2B31), backgroundImage: _avatarImage,
+                    child: _avatarImage == null ? const Icon(Icons.person, color: Colors.white38, size: 36) : null),
+                Positioned(right: -2, bottom: -2, child: Container(width: 28, height: 28,
+                    decoration: BoxDecoration(color: _kAccent, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF16171B), width: 2.5)),
+                    child: const Icon(Icons.camera_alt, size: 13, color: Colors.white))),
+              ]),
+            )),
+            const SizedBox(height: 4),
+            Center(child: Text(_s('Change photo', 'غيّر الصورة'), style: const TextStyle(color: Colors.white54, fontSize: 12))),
+            const SizedBox(height: 16),
+            TextField(controller: nameC, maxLength: 50, style: const TextStyle(color: Colors.white),
+                decoration: deco(_s('Name', 'الاسم'))),
+            const SizedBox(height: 6),
+            TextField(controller: userC, maxLength: 30, style: const TextStyle(color: Colors.white),
+                autocorrect: false, decoration: deco(_s('Username', 'اليوزرنيم'), prefix: '@')),
+            if (meta.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                const Icon(Icons.lock_outline, color: Colors.white30, size: 15),
+                const SizedBox(width: 6),
+                Expanded(child: Text('${meta.join('  ·  ')}   ${_s('(from your location / signup)', '(من موقعك / التسجيل)')}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 12))),
+              ]),
+            ],
+            if (err != null) ...[
+              const SizedBox(height: 10),
+              Text(err!, style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 13)),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(height: 48, child: ElevatedButton(
+              onPressed: busy ? null : save,
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF0000), foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(_s('Save', 'حفظ'), style: const TextStyle(fontWeight: FontWeight.w800)),
+            )),
+          ]),
+        );
+      }),
     );
   }
 
