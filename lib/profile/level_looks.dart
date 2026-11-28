@@ -1,12 +1,18 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_lang.dart';
+import '../brand.dart';
+import '../media_cache.dart';
 import '../local_store.dart';
 import '../motion_kit.dart';
 import 'profile_trophies.dart';
-import 'trophy_cabinet.dart' show ArenaLevel;
+import 'trophy_cabinet.dart' show ArenaLevel, levelName;
 
 // ═════════════════════════════════════════════════════════════════════════
 // Profile looks per LEVEL (owner, 28 Nov): every level adds something to the profile itself,
@@ -27,8 +33,6 @@ class LevelLook {
   const LevelLook._(this.level);
   final int level;
 
-  static const _en = ['Rookie', 'Amateur', 'Semi-Pro', 'Pro', 'Elite', 'Master', 'Legend', 'Icon'];
-  static const _ar = ['مبتدئ', 'هاوي', 'شبه محترف', 'محترف', 'نخبة', 'ماستر', 'أسطورة', 'أيقونة'];
 
   static LevelLook of(ProfileTrophies? t) {
     if (t == null || !ProfileUi.levelLooks) return const LevelLook._(0);
@@ -36,8 +40,9 @@ class LevelLook {
     return LevelLook._(lv.clamp(0, 7).toInt());
   }
 
-  String get en => _en[level];
-  String get name => AppLang.t(_en[level], _ar[level]);
+  /// level names are always English (owner 28 Nov)
+  String get en => levelName(level);
+  String get name => levelName(level);
 
   static const _bronze = [Color(0xFFE3A06B), Color(0xFF8C4F24), Color(0xFFD08A55)];
   static const _silver = [Color(0xFFF4F6F8), Color(0xFF8E979F), Color(0xFFD9DEE2)];
@@ -264,39 +269,78 @@ class _Slide extends GradientTransform {
   Matrix4 transform(Rect bounds, {TextDirection? textDirection}) => Matrix4.translationValues(bounds.width * t, 0, 0);
 }
 
-/// Owner only, once per new level: the BADGER card pops in with its new look.
-Future<void> maybeShowLevelUp(BuildContext context, ProfileTrophies t, Widget Function(LevelLook l, double w) card) async {
+/// Owner only, once per new level: the big "level up" moment.
+/// [card] draws the BADGER card in a given look; [onSeeProfile] (optional) jumps to the profile tab.
+Future<void> maybeShowLevelUp(BuildContext context, ProfileTrophies t, Widget Function(LevelLook l, double w) card,
+    {VoidCallback? onSeeProfile}) async {
   final look = LevelLook.of(t);
   final seen = await LocalStore.getStr('profile_level_seen');
   await LocalStore.setStr('profile_level_seen', '${look.level}');
   if (seen == null || !context.mounted) return; // first time: just remember
-  if (look.level <= (int.tryParse(seen) ?? 0)) return;
+  final old = int.tryParse(seen) ?? 0;
+  if (look.level <= old) return;
   await showGeneralDialog(
     context: context,
     useRootNavigator: true,
-    barrierDismissible: true,
+    barrierDismissible: false,
     barrierLabel: 'level',
-    barrierColor: Colors.black.withOpacity(0.86),
+    barrierColor: Colors.black.withOpacity(0.9),
     transitionDuration: const Duration(milliseconds: 260),
-    pageBuilder: (ctx, __, ___) => _LevelUpView(look: look, card: card),
+    pageBuilder: (ctx, __, ___) => _LevelUpView(look: look, old: LevelLook._(old.clamp(0, 7).toInt()), card: card,
+        onSeeProfile: onSeeProfile),
   );
 }
 
+/// After a squad save (fantasy): the 2 "round played" points count at save, so the level can change right here.
+Future<void> maybeLevelUpAfterSave(BuildContext context, {VoidCallback? onSeeProfile}) async {
+  try {
+    final sb = Supabase.instance.client;
+    final id = await sb.rpc('get_my_iplay_user_id');
+    final uid = id is num ? id.toInt() : int.tryParse('$id');
+    if (uid == null) return;
+    final t = await ProfileTrophies.load(uid);
+    if (t == null || !ProfileUi.levelLooks || !context.mounted) return;
+    ImageProvider? photo;
+    try {
+      final row = await sb.from('user_profile').select('avatar_url').eq('user_id', uid).maybeSingle();
+      final url = row?['avatar_url']?.toString();
+      if (url != null && url.isNotEmpty) photo = MediaCache.image(url);
+    } catch (_) {}
+    if (!context.mounted) return;
+    await maybeShowLevelUp(context, t, (l, w) => LevelDecor(look: l, width: w,
+        child: badgerProfileCard(w, t, photo: photo, frame: l.frame)), onSeeProfile: onSeeProfile);
+  } catch (_) {}
+}
+
 class _LevelUpView extends StatefulWidget {
-  const _LevelUpView({required this.look, required this.card});
-  final LevelLook look;
+  const _LevelUpView({required this.look, required this.old, required this.card, this.onSeeProfile});
+  final LevelLook look, old;
   final Widget Function(LevelLook l, double w) card;
+  final VoidCallback? onSeeProfile;
   @override
   State<_LevelUpView> createState() => _LevelUpViewState();
 }
 
 class _LevelUpViewState extends State<_LevelUpView> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
+  // 0 → 0.45: the old card spins in · 0.45: flash, it becomes the new card · then confetti + text
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600));
+  final _shareKey = GlobalKey();
+  final _rnd = math.Random();
+  late final List<_Bit> _bits = List.generate(80, (_) => _Bit(_rnd));
+  bool _buzzed = false, _sharing = false;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 250), () { if (mounted) { _c.forward(); Buzz.medium(); } });
+    _c.addListener(() {
+      if (!_buzzed && _c.value > 0.45) {
+        _buzzed = true;
+        Buzz.medium();
+        Future.delayed(const Duration(milliseconds: 140), Buzz.medium);
+        Future.delayed(const Duration(milliseconds: 280), Buzz.medium);
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 200), () { if (mounted) _c.forward(); });
   }
 
   @override
@@ -305,44 +349,148 @@ class _LevelUpViewState extends State<_LevelUpView> with SingleTickerProviderSta
     super.dispose();
   }
 
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      final rb = _shareKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (rb == null) return;
+      final img = await rb.toImage(pixelRatio: 3);
+      final data = await img.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final n = widget.look.en;
+      await Share.shareXFiles(
+        [XFile.fromData(data.buffer.asUint8List(), mimeType: 'image/png', name: 'bdgr_level.png')],
+        text: AppLang.t("I'm now $n on BDGR 🦡 ${Brand.shareLinkBase}", 'بقيت $n على BDGR 🦡 ${Brand.shareLinkBase}'),
+      );
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final w = (MediaQuery.of(context).size.width * 0.5).clamp(160.0, 220.0).toDouble();
+    final w = (MediaQuery.of(context).size.width * 0.48).clamp(160.0, 210.0).toDouble();
     final look = widget.look;
     final calm = calmMotion(context);
+    final today = DateTime.now();
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     return Material(
       type: MaterialType.transparency,
-      child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        AnimatedBuilder(
-          animation: _c,
-          builder: (_, child) {
-            final v = calm ? 1.0 : Curves.easeOutBack.transform(_c.value.clamp(0.0, 1.0).toDouble());
-            final glow = calm ? 0.6 : math.sin((_c.value).clamp(0.0, 1.0).toDouble() * math.pi);
-            return Stack(alignment: Alignment.center, children: [
-              Container(width: w * 2, height: w * 2, decoration: BoxDecoration(shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: [look.accent.withOpacity(0.5 * glow), look.accent.withOpacity(0)]))),
-              Transform.scale(scale: 0.6 + 0.4 * v, child: Opacity(opacity: v.clamp(0.0, 1.0).toDouble(), child: child)),
-            ]);
-          },
-          child: widget.card(look, w),
-        ),
-        const SizedBox(height: 30),
-        Text(AppLang.t('LEVEL UP', 'مستوى جديد'), style: const TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 3)),
-        const SizedBox(height: 6),
-        Text(AppLang.t("You're now ${look.en}!", 'بقيت ${look.name}!'),
-            style: TextStyle(color: look.accent, fontSize: 24, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        Text(AppLang.t('Your profile has a new look. Everyone who visits sees it.', 'بروفايلك بقى ليه شكل جديد، وكل اللي يزوره هيشوفه.'),
-            textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-        const SizedBox(height: 18),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF0000), foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 34, vertical: 13),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          child: Text(AppLang.t('Nice!', 'حلو!'), style: const TextStyle(fontWeight: FontWeight.w800)),
-        ),
-      ])),
+      child: Stack(children: [
+        // confetti in the level colours
+        if (!calm) Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _c,
+            builder: (_, __) => CustomPaint(painter: _ConfettiPainter(_bits, ((_c.value - 0.45) / 0.55).clamp(0.0, 1.0).toDouble(),
+                [look.accent, look.frame.first, Colors.white, const Color(0xFFFFD27A)]))))),
+        Center(child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          AnimatedBuilder(
+            animation: _c,
+            builder: (_, __) {
+              final v = calm ? 1.0 : _c.value;
+              final spin = Curves.easeOutCubic.transform((v / 0.45).clamp(0.0, 1.0).toDouble());
+              final isNew = calm || v >= 0.45;
+              final flash = calm ? 0.0 : (v < 0.45 ? 0.0 : math.max(0.0, 1 - (v - 0.45) / 0.18));
+              final glow = calm ? 0.7 : (v < 0.45 ? 0.2 : 0.7);
+              return Stack(alignment: Alignment.center, children: [
+                Container(width: w * 2.2, height: w * 2.2, decoration: BoxDecoration(shape: BoxShape.circle,
+                    gradient: RadialGradient(colors: [look.accent.withOpacity(0.55 * glow), look.accent.withOpacity(0)]))),
+                RepaintBoundary(key: _shareKey, child: Container(
+                  padding: const EdgeInsets.fromLTRB(18, 26, 18, 16),
+                  color: Colors.transparent,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()..setEntry(3, 2, 0.0015)..rotateY(isNew ? 0 : (1 - spin) * math.pi * 3),
+                      child: Transform.scale(scale: 0.7 + 0.3 * spin,
+                          child: widget.card(isNew ? look : widget.old, w)),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(look.en.toUpperCase(), style: TextStyle(color: look.accent, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 3)),
+                    Text('${months[today.month - 1]} ${today.day}, ${today.year} · BDGR',
+                        style: const TextStyle(color: Colors.white54, fontSize: 11, letterSpacing: 1.5)),
+                  ]),
+                )),
+                if (flash > 0) IgnorePointer(child: Container(width: w * 1.6, height: w * 1.6,
+                    decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [
+                      Colors.white.withOpacity(0.85 * flash), Colors.white.withOpacity(0)])))),
+              ]);
+            },
+          ),
+          AnimatedBuilder(
+            animation: _c,
+            builder: (_, child) => Opacity(opacity: calm ? 1 : ((_c.value - 0.55) / 0.25).clamp(0.0, 1.0).toDouble(), child: child),
+            child: Column(children: [
+              const SizedBox(height: 10),
+              Text(AppLang.t('LEVEL UP', 'مستوى جديد'), style: const TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 3)),
+              const SizedBox(height: 6),
+              Text(AppLang.t('Congrats! You\'re now ${look.en} 🎉', 'مبروك! بقيت ${look.en} 🎉'), textAlign: TextAlign.center,
+                  style: TextStyle(color: look.accent, fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 30), child: Text(
+                  AppLang.t('${widget.old.en} → ${look.en}. Your profile has a new frame and a new light, everyone who visits sees it.',
+                      '${widget.old.en} ← ${look.en}. بروفايلك بقى ليه إطار جديد ونور جديد، وكل اللي يزوره هيشوفه.'),
+                  textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.4))),
+              const SizedBox(height: 18),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                FilledButton.icon(
+                  onPressed: _sharing ? null : _share,
+                  icon: const Icon(Icons.ios_share_rounded, size: 18),
+                  label: Text(AppLang.t('Share my card', 'شير كارتي'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF0000), foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                ),
+                if (widget.onSeeProfile != null) ...[
+                  const SizedBox(width: 10),
+                  OutlinedButton(
+                    onPressed: () { Navigator.of(context).pop(); widget.onSeeProfile!(); },
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: Text(AppLang.t('See my profile', 'شوف بروفايلك'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ],
+              ]),
+              TextButton(onPressed: () => Navigator.of(context).pop(),
+                  child: Text(AppLang.t('Close', 'قفل'), style: const TextStyle(color: Colors.white54))),
+            ]),
+          ),
+        ]))),
+      ]),
     );
   }
+}
+
+class _Bit {
+  _Bit(math.Random r)
+      : x = r.nextDouble(), speed = 0.5 + r.nextDouble() * 0.7, drift = (r.nextDouble() - 0.5) * 0.25,
+        size = 4 + r.nextDouble() * 5, spin = r.nextDouble() * 6, color = r.nextInt(4), delay = r.nextDouble() * 0.25;
+  final double x, speed, drift, size, spin, delay;
+  final int color;
+}
+
+class _ConfettiPainter extends CustomPainter {
+  _ConfettiPainter(this.bits, this.t, this.colors);
+  final List<_Bit> bits;
+  final double t;
+  final List<Color> colors;
+  @override
+  void paint(Canvas c, Size s) {
+    if (t <= 0) return;
+    for (final b in bits) {
+      final p = ((t - b.delay) / (1 - b.delay)).clamp(0.0, 1.0).toDouble();
+      if (p <= 0) continue;
+      final y = -20 + p * b.speed * s.height * 1.2;
+      final x = (b.x + b.drift * p) * s.width;
+      final paint = Paint()..color = colors[b.color].withOpacity((1 - p * 0.7).clamp(0.0, 1.0).toDouble());
+      c.save();
+      c.translate(x, y);
+      c.rotate(b.spin + p * 8);
+      c.drawRect(Rect.fromCenter(center: Offset.zero, width: b.size, height: b.size * 0.55), paint);
+      c.restore();
+    }
+  }
+  @override
+  bool shouldRepaint(_ConfettiPainter o) => o.t != t;
 }

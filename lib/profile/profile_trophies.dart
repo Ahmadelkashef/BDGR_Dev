@@ -43,6 +43,8 @@ class ProfileTrophies {
   /// the user's login id (same id the leaderboards already show) — to open his squads
   String? get uid => j['uid']?.toString();
   /// "Complete profile" trophy: name, username, governorate (GPS), birth date all set
+  /// rounds with a saved squad in an arena (LOCAL / WORLD), counted at save time
+  int savedRounds(String arena) => j['saved'] is Map ? (((j['saved'] as Map)[arena] as num?)?.toInt() ?? 0) : 0;
   bool get profileComplete => j['profile'] is Map && (j['profile'] as Map)['complete'] == true;
 
   static Future<ProfileTrophies?> load(int userId) async {
@@ -682,7 +684,8 @@ class ProfileUi {
   static bool cardRank = false;     // arena cards: show the rating rank (#1,622) instead of the level name    // pencil at the top: photo · name · username
   /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
   static Map<String, int> levelPts = const {};
-  static List<int> levelSteps = const [];       // the strip above the bottom bar takes the profile colour (no 2-colour line)
+  static List<int> levelSteps = const [];
+  static List<String> levelNames = const [];   // profile_level_names (English, comma list of 8)       // the strip above the bottom bar takes the profile colour (no 2-colour line)
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
   static void set(Map<String, dynamic> m, {bool save = true}) {
@@ -710,6 +713,8 @@ class ProfileUi {
       }
       final ls = m['level_steps'];
       if (ls is String && ls.isNotEmpty) levelSteps = (jsonDecode(ls) as List).map((v) => (v as num).toInt()).toList();
+      final ln = m['level_names'];
+      if (ln is String && ln.isNotEmpty) levelNames = ln.split(',').map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
     } catch (_) {}
     changes.value++;
     if (save) LocalStore.setStr('profile_ui', jsonEncode(m));

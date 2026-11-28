@@ -138,6 +138,7 @@ class _MainShellState extends State<MainShell> {
     Diag.sendPending();
     AppUsage.trackOpen(); // user_apps: اليوزر فتح التطبيق ده
     HomeActions.showFantasyTab = () { if (mounted && _index != 1) setState(() => _index = 1); };
+    HomeActions.showProfileTab = () { if (mounted && _index != 4) setState(() => _index = 4); };
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);
     DeepLinks.pendingLeagueCode.addListener(_joinPendingLeague);
     DeepLinks.pendingTeamCode.addListener(_openPendingTeam);

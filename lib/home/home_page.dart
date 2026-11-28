@@ -309,6 +309,8 @@ class HomeActions {
   static VoidCallback? showHomeTab;
   /// يروح لتاب الفانتازي (من دولاب الإنجازات في البروفايل)
   static VoidCallback? showFantasyTab;
+  /// يروح لتاب البروفايل (من احتفال المستوى الجديد)
+  static VoidCallback? showProfileTab;
   /// الهوم هو التاب الظاهر دلوقتي (صف الرياضات بيتحرك لوحده بس وهو ظاهر)
   static final ValueNotifier<bool> active = ValueNotifier<bool>(true);
 }

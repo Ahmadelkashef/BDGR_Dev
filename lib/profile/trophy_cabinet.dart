@@ -66,7 +66,7 @@ class CabinetData {
     final rows = t.roundsList;
     _Trophy tr(String k, TrophyShape s, _Metal m, String en, String ar, String hEn, String hAr, {String mark = ''}) =>
         _Trophy(k, s, m, en, ar, hEn, hAr, mark: mark,
-            countable: !const {'debut', 'rounds', 'streak', 'best', 'profile'}.contains(k));
+            countable: !const {'debut', 'rounds', 'streak', 'best', 'profile', 'level'}.contains(k));
 
     final app1 = tr('app1', TrophyShape.ball, _Metal.gold, '#1 Round', '#1 الجولة',
         'Finished FIRST of everyone in a round', 'خلص الأول على الكل في جولة');
@@ -144,6 +144,11 @@ class CabinetData {
     final prof = tr('profile', TrophyShape.medal, _Metal.crystal, 'Complete profile', 'بروفايل كامل',
         'Name, username, governorate and birth date are all set', 'الاسم واليوزرنيم والمحافظة وتاريخ الميلاد كلهم متسجلين',
         mark: 'ID')..count = t.profileComplete ? 1 : 0;
+    // owner 28 Nov: a badge for the level reached (higher of Egypt / World), name always English
+    final lvl = [ArenaLevel.of(t, 'LOCAL').level, ArenaLevel.of(t, 'WORLD').level].reduce((a, b) => a > b ? a : b);
+    final lvlName = levelName(lvl);
+    final lvBadge = tr('level', TrophyShape.shield, lvl >= 5 ? _Metal.gold : lvl >= 3 ? _Metal.silver : _Metal.bronze,
+        lvlName, lvlName, 'Reached the $lvlName level', 'وصل لمستوى $lvlName')..count = lvl >= 1 ? 1 : 0;
 
     // locked goals (owner only)
     List<_Trophy> pick(List<_Trophy> all, List<_Trophy> goals) {
@@ -174,7 +179,7 @@ class CabinetData {
       _Shelf('Titles', 'الألقاب', pick([app1, cup, bl, gov1, lg1], [app1, cup, bl])),
       _Shelf('Podium', 'المنصة', pick([r2, r3, p1], [r2, r3])),
       _Shelf('Elite', 'النخبة', pick([p5, p10, p25, p50], anyTop10 ? [] : [p10])),
-      _Shelf('Journey', 'المشوار', pick([debut, shirt, streak, pb, prof], [debut, shirt, streak, prof])),
+      _Shelf('Journey', 'المشوار', pick([lvBadge, debut, shirt, streak, pb, prof], [debut, shirt, streak, prof])),
     ].where((s) => s.items.isNotEmpty).toList();
     final total = shelves.expand((s) => s.items).where((x) => !x.locked).fold<int>(0, (a, x) => a + x.count);
     return CabinetData._(shelves, total, n > 0);
@@ -515,14 +520,18 @@ class TrophyPainter extends CustomPainter {
 // Badger League counts in both arenas (it is played on both).
 // ═════════════════════════════════════════════════════════════════════════
 
-const _defPts = {'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40, 'top5': 25, 'top10': 15, 'top25': 8, 'top50': 4,
-    'gov1': 20, 'league1': 10, 'cup': 150, 'bl': 120, 'round': 2, 'profile': 30};
-const _defSteps = [0, 50, 150, 400, 900, 1800, 3500, 6000];
-const _lvl = <(String, String, _Metal)>[
-  ('Rookie', 'مبتدئ', _Metal.dim), ('Amateur', 'هاوي', _Metal.bronze), ('Semi-Pro', 'شبه محترف', _Metal.bronze),
-  ('Pro', 'محترف', _Metal.silver), ('Elite', 'نخبة', _Metal.silver), ('Master', 'ماستر', _Metal.gold),
-  ('Legend', 'أسطورة', _Metal.gold), ('Icon', 'أيقونة', _Metal.red),
+// owner 28 Nov: New → Rookie fast (profile 30 + 2 saved rounds = 34); league #1 under top 25% / top half
+const _defPts = {'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40, 'top5': 25, 'top10': 15, 'top25': 10, 'top50': 6,
+    'gov1': 20, 'league1': 4, 'cup': 150, 'bl': 120, 'round': 2, 'profile': 30};
+const _defSteps = [0, 34, 150, 400, 900, 1800, 3500, 6000];
+// level names are ALWAYS English (owner 28 Nov), even in Arabic; the DB can rename them (profile_level_names)
+const _lvl = <(String, _Metal)>[
+  ('New', _Metal.dim), ('Rookie', _Metal.bronze), ('Semi-Pro', _Metal.bronze),
+  ('Pro', _Metal.silver), ('Elite', _Metal.silver), ('Master', _Metal.gold),
+  ('Legend', _Metal.gold), ('Icon', _Metal.red),
 ];
+/// level name (English, from the DB when set)
+String levelName(int i) => ProfileUi.levelNames.length == _lvl.length ? ProfileUi.levelNames[i] : _lvl[i].$1;
 const _roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 const _rowNames = <String, (String, String)>{
   'app1': ('#1 Round', '#1 الجولة'), 'rank2': ('#2 Round', '#2 الجولة'), 'rank3': ('#3 Round', '#3 الجولة'),
@@ -541,19 +550,22 @@ class ArenaLevel {
   final int? next; // points of the next level (null = top)
   final List<(String key, int count, int each)> rows;
 
-  String get name => AppLang.t(_lvl[level].$1, _lvl[level].$2);
+  String get name => levelName(level);
   /// colour of the level (Rookie grey → bronze → silver → gold → Icon red)
-  Color get color => level == 0 ? const Color(0xFFBFC2C8) : _metal[_lvl[level].$3]![level == 7 ? 1 : 0];
+  Color get color => level == 0 ? const Color(0xFFBFC2C8) : _metal[_lvl[level].$2]![level == 7 ? 1 : 0];
 
   static ArenaLevel of(ProfileTrophies t, String arena) {
     final pts = {..._defPts, ...ProfileUi.levelPts};
     final steps = ProfileUi.levelSteps.length == _lvl.length ? ProfileUi.levelSteps : _defSteps;
     final c = <String, int>{};
     void add(String k) => c[k] = (c[k] ?? 0) + 1;
-    for (final r in t.roundsList.where((r) => r['arena'] == arena)) {
+    // rounds played = rounds with a SAVED squad (counts at save time); finished rounds as a floor
+    final arenaRows = t.roundsList.where((r) => r['arena'] == arena).toList();
+    final saved = t.savedRounds(arena);
+    c['round'] = saved > arenaRows.length ? saved : arenaRows.length;
+    for (final r in arenaRows) {
       final rank = _i(r['rank']);
       final pct = _d(r['pct']);
-      add('round');
       final k = rank == 1 ? 'app1' : rank == 2 ? 'rank2' : rank == 3 ? 'rank3'
           : pct <= 0.01 ? 'top1' : pct <= 0.05 ? 'top5' : pct <= 0.10 ? 'top10' : pct <= 0.25 ? 'top25' : pct <= 0.50 ? 'top50' : null;
       if (k != null && rank > 0) add(k);
@@ -593,7 +605,7 @@ class _ArenaLevelCardState extends State<ArenaLevelCard> {
   @override
   Widget build(BuildContext context) {
     final lv = ArenaLevel.of(widget.t, widget.arena);
-    final metal = _lvl[lv.level].$3;
+    final metal = _lvl[lv.level].$2;
     final accent = _metal[metal == _Metal.dim ? _Metal.silver : metal]![1];
     final next = lv.next;
     final frac = next == null ? 1.0 : ((lv.points - lv.floor) / (next - lv.floor)).clamp(0.0, 1.0).toDouble();
@@ -623,7 +635,7 @@ class _ArenaLevelCardState extends State<ArenaLevelCard> {
         const SizedBox(height: 6),
         Row(children: [
           Expanded(child: Text(next == null ? AppLang.t('Top level 👑', 'أعلى مستوى 👑')
-              : AppLang.t('${fmtInt(next - lv.points)} pts to ${_lvl[lv.level + 1].$1}', 'فاضل ${fmtInt(next - lv.points)} نقطة لـ ${_lvl[lv.level + 1].$2}'),
+              : AppLang.t('${fmtInt(next - lv.points)} pts to ${levelName(lv.level + 1)}', 'فاضل ${fmtInt(next - lv.points)} نقطة لـ ${levelName(lv.level + 1)}'),
               style: const TextStyle(color: Colors.white54, fontSize: 11.5))),
           if (lv.rows.isNotEmpty)
             GestureDetector(
@@ -647,7 +659,7 @@ class _ArenaLevelCardState extends State<ArenaLevelCard> {
               ])),
             const Divider(color: Colors.white10, height: 12),
             Row(children: [
-              Expanded(child: Text(AppLang.t('Levels: ', 'المستويات: ') + _lvl.map((l) => AppLang.t(l.$1, l.$2)).join(' › '),
+              Expanded(child: Text(AppLang.t('Levels: ', 'المستويات: ') + List.generate(_lvl.length, levelName).join(' › '),
                   style: const TextStyle(color: Colors.white38, fontSize: 10.5))),
             ]),
           ]),
