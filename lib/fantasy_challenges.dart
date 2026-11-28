@@ -272,6 +272,17 @@ class _ChallengesPageState extends State<ChallengesPage> {
     await _load();
   }
 
+  /// this result = the same as the previous finished challenge with the same person in the same arena
+  bool _twoInARow(Map<String, dynamic> x) {
+    final res = x['result']?.toString();
+    if (res != 'win' && res != 'loss') return false;
+    final who = (x['other'] as Map?)?['user_id'];
+    final done = _items.where((y) => y['status'] == 'done' && y['arena'] == x['arena'] && (y['other'] as Map?)?['user_id'] == who).toList()
+      ..sort((a, b) => '${b['decided_at']}'.compareTo('${a['decided_at']}'));
+    final i = done.indexWhere((y) => y['id'] == x['id']);
+    return i >= 0 && i + 1 < done.length && done[i + 1]['result'] == res;
+  }
+
   String _reason(String? r) => _reasons.where((x) => x.$1 == r).map((x) => AppLang.t(x.$2, x.$3)).firstOrNull ?? '';
 
   String _pts(dynamic v) {
@@ -311,6 +322,12 @@ class _ChallengesPageState extends State<ChallengesPage> {
         subC = const Color(0xFF6BE38F);
       case 'done':
         sub = '$round · ${_pts(x['my_pts'])} – ${_pts(x['his_pts'])}';
+        // owner 28 Nov: same winner as their previous challenge → a fun line (no extra points)
+        if (_twoInARow(x)) {
+          sub += res == 'win' ? AppLang.t(' · 2 in a row 🔥', ' · كسبته مرتين ورا بعض 🔥')
+              : AppLang.t(' · he beat you twice in a row 😅', ' · ده تقيل عليك قوي 😅 غلبك مرتين ورا بعض');
+          subC = res == 'win' ? _gold : const Color(0xFFFF8A8A);
+        }
         if (x['walkover'] == true) {
           sub = res == 'win'
               ? AppLang.t('$round · he had no team · no level points', '$round · مكانش عامل تشكيلة · من غير نقط ليفل')
