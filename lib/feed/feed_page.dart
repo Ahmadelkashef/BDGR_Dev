@@ -244,7 +244,7 @@ class _FeedPageState extends State<FeedPage> {
                 slivers: [
                   SliverToBoxAdapter(child: _header()),
                   SliverToBoxAdapter(child: _storiesRow()),
-                  if (_bl != null && _bl!.visible && !_loading)
+                  if (_bl != null && _bl!.ui('pinned') && _bl!.missingTeam && !_loading)
                     SliverToBoxAdapter(child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -417,7 +417,7 @@ class _FeedPageState extends State<FeedPage> {
           Expanded(child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (_bl != null && _bl!.visible) _blStoryCircle(),
+              if (_bl != null && _bl!.ui('story')) _blStoryCircle(),
               HighlightStoriesRow(data: _highlights),
             ]),
           )),

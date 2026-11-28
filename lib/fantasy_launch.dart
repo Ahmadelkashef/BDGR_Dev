@@ -18,7 +18,7 @@ class _LaunchStatus {
   final int leagues, invites;
   const _LaunchStatus(this.bl, this.arena, this.leagues, this.invites);
   bool get blOn => bl != null && bl!.visible;
-  Map? get team => blOn ? bl!.team(arena) : null;
+  Map? get team => blOn ? bl!.anyTeam(arena) : null;
   String? get month => bl?.month;
   /// my Badger League team is too small to be in the table
   bool get teamTooSmall => team != null && team!['in_table'] == false;
@@ -124,7 +124,7 @@ extension _LaunchLobby on _FancyPageState {
             builder: (_, snap) {
               final info = snap.data;
               final a = event.fantasyType == 'WORLD' ? 'WORLD' : 'LOCAL';
-              if (info == null || !info.visible || info.team(a) != null) return const SizedBox.shrink();
+              if (info == null || !info.ui('lobby') || info.anyTeam(a) != null) return const SizedBox.shrink();
               return Padding(padding: const EdgeInsets.only(top: 10), child: StaggerIn(index: 2, dy: 24,
                   child: BLAnnounceCard(info: info, compact: true,
                       onTap: () => showBLAnnouncement(context, onOpen: (x) => openBadgerLeague(context, arena: x)))));
@@ -665,7 +665,10 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
               ? (s!.teamTooSmall
                   ? t('${team['name']} · not in the table yet · invite a friend (${_blMembers(team)}/5)', '${team['name']} · لسه مش في الترتيب · اعزم صاحب (${_blMembers(team)}/5)')
                   : '${team['name']} · #${team['rank'] ?? '-'} · ${_blPts(team['points'])} ${t('pts', 'نقطة')}${_blMembers(team) < 5 ? ' · ${t('invite a friend', 'اعزم صاحب')} (${_blMembers(team)}/5)' : ''}')
-              : t('Team up with 1 to 4 friends · ${_blMonthName(s?.month, false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s?.month, true)}'),
+              : (s!.bl!.started && s.bl!.ui('next'))
+                  ? t('The ${_blMonthName(s.bl!.month, false)} league is on · get ready for ${_blMonthName(s.bl!.nextMonth, false)}: make your team now',
+                      'دوري ${_blMonthName(s.bl!.month, true)} شغال · جهّز فريقك لدوري ${_blMonthName(s.bl!.nextMonth, true)} من دلوقتي')
+                  : t('Team up with 1 to 4 friends · ${_blMonthName(s.bl!.newTeamMonth, false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s.bl!.newTeamMonth, true)}'),
             maxLines: 2, overflow: TextOverflow.ellipsis, style: subStyle),
           onTap: () async { await _openBLeague(context); _load(true); }),
         if (widget.onRecap != null)

@@ -42,8 +42,28 @@ class BLeagueInfo {
   List<Map<String, dynamic>> rounds(String a) =>
       [for (final r in (arena(a)['rounds'] as List? ?? const [])) Map<String, dynamic>.from(r as Map)];
 
+  /// my team for the NEXT month (made after the league started)
+  Map<String, dynamic>? nextTeam(String a) => arena(a)['next_team'] is Map ? Map<String, dynamic>.from(arena(a)['next_team'] as Map) : null;
+  /// this month's team, else next month's
+  Map<String, dynamic>? anyTeam(String a) => team(a) ?? nextTeam(a);
+  String get nextMonth => '${raw['next_month'] ?? ''}';
+  /// the month a new team goes to (start month before it starts, next month once it started)
+  String get newTeamMonth => '${raw['new_team_month'] ?? month}';
+  int? nextPerMember(String a) => ((arena(a)['next_prize'] as Map?)?['per_member_egp'] as num?)?.toInt();
+
+  /// DB switches for every Badger League spot (`app_settings.badger_league_ui`, 1 = show)
+  bool ui(String k) => visible && ((raw['ui'] as Map?)?[k] as num? ?? 1) == 1;
+
   /// the user still has no team in at least one arena
-  bool get missingTeam => team('LOCAL') == null || team('WORLD') == null;
+  bool get missingTeam => anyTeam('LOCAL') == null || anyTeam('WORLD') == null;
+  bool get hasAnyTeam => anyTeam('LOCAL') != null || anyTeam('WORLD') != null;
+
+  /// my teams where I am the captain and the team is not full yet
+  List<Map<String, dynamic>> get captainNotFull => [
+        for (final a in ['LOCAL', 'WORLD'])
+          for (final t in [team(a), nextTeam(a)])
+            if (t != null && t['is_captain'] == true && ((t['members_count'] as num?)?.toInt() ?? 0) < maxMembers) t,
+      ];
 }
 
 /// "December 2026" / "ديسمبر 2026"

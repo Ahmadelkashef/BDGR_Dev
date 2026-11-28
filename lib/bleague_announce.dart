@@ -3,7 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:share_plus/share_plus.dart';
+
 import 'app_lang.dart';
+import 'brand.dart';
 import 'bleague_info.dart';
 import 'local_store.dart';
 
@@ -25,7 +28,7 @@ const kBLMascotFace = 'assets/mascot/badger_jersey_face.webp';
 Future<void> showBLAnnouncement(BuildContext context, {required Future<void> Function(String arena) onOpen}) async {
   final info = await BLeagueInfo.load();
   if (info == null || !info.visible || !context.mounted) return;
-  await LocalStore.setFlag('bl_announce_${info.month}');
+  await LocalStore.setFlag('bl_announce_${info.newTeamMonth}');
   if (!context.mounted) return;
   await Navigator.of(context, rootNavigator: true).push(PageRouteBuilder<void>(
     opaque: true,
@@ -37,13 +40,110 @@ Future<void> showBLAnnouncement(BuildContext context, {required Future<void> Fun
   ));
 }
 
-/// once per month, the first time the fantasy tab opens while the league is announced / on
+/// when the fantasy tab opens (owner 28 Nov):
+/// · no team at all → the big announcement, once per league month (switch ui.popup)
+/// · captain of a team that is not full → "complete your team" pop-up in the middle, once a day (switch ui.complete)
+/// · full team(s) → nothing
 Future<void> maybeShowBLAnnouncement(BuildContext context, {required Future<void> Function(String arena) onOpen}) async {
-  final info = await BLeagueInfo.load();
-  if (info == null || !info.visible || !info.missingTeam) return;
-  if (await LocalStore.getFlag('bl_announce_${info.month}')) return;
+  final info = await BLeagueInfo.load(force: true);
+  if (info == null || !info.visible || !context.mounted) return;
+  if (!info.hasAnyTeam) {
+    if (!info.ui('popup')) return;
+    if (await LocalStore.getFlag('bl_announce_${info.newTeamMonth}')) return;
+    if (!context.mounted) return;
+    await showBLAnnouncement(context, onOpen: onOpen);
+    return;
+  }
+  final open = info.captainNotFull;
+  if (open.isEmpty || !info.ui('complete')) return;
+  final now = DateTime.now();
+  final key = 'bl_complete_${now.year}${now.month}${now.day}';
+  if (await LocalStore.getFlag(key)) return;
+  await LocalStore.setFlag(key);
   if (!context.mounted) return;
-  await showBLAnnouncement(context, onOpen: onOpen);
+  await showCompleteTeamPopup(context, info, open.first, onOpen: onOpen);
+}
+
+/// "Complete your team" in the middle of the screen (captain only)
+Future<void> showCompleteTeamPopup(BuildContext context, BLeagueInfo info, Map<String, dynamic> team,
+    {required Future<void> Function(String arena) onOpen}) async {
+  final ar = AppLang.isArabic;
+  final n = (team['members_count'] as num?)?.toInt() ?? 1;
+  final max = info.maxMembers;
+  final a = '${team['arena'] ?? 'LOCAL'}';
+  final w = a == 'WORLD';
+  final code = '${team['code'] ?? ''}';
+  final inTable = team['in_table'] == true;
+  await showGeneralDialog<void>(
+    context: context, useRootNavigator: true, barrierDismissible: true, barrierLabel: 'bl',
+    barrierColor: Colors.black.withValues(alpha: 0.72),
+    transitionDuration: const Duration(milliseconds: 320),
+    transitionBuilder: (_, an, __, c) => FadeTransition(opacity: an,
+        child: ScaleTransition(scale: Tween(begin: 0.9, end: 1.0).animate(CurvedAnimation(parent: an, curve: Curves.easeOutBack)), child: c)),
+    pageBuilder: (ctx, _, __) => Directionality(
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+      child: Center(child: Material(color: Colors.transparent, child: Container(
+        width: 330, margin: const EdgeInsets.all(20), padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Color(0xFF2E2208), Color(0xFF17130C), Color(0xFF111014)]),
+          border: Border.all(color: _gold.withValues(alpha: 0.6)),
+          boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.18), blurRadius: 30)],
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ClipOval(child: Image.asset(kBLMascotFace, width: 76, height: 76, fit: BoxFit.cover, cacheWidth: 230)),
+          const SizedBox(height: 10),
+          Text(_t('Complete your team', 'كمّل فريقك'),
+              style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text('${team['icon'] ?? ''} ${team['name'] ?? ''} · ${w ? _t('🌍 World', '🌍 العالم') : _t('🇪🇬 Egypt', '🇪🇬 مصر')}',
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _gold, fontSize: 13.5, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            for (var i = 0; i < max; i++) Container(
+              width: 36, height: 36, margin: const EdgeInsets.symmetric(horizontal: 4), alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle,
+                  gradient: i < n ? const LinearGradient(colors: [Color(0xFFFFE9A8), _gold, _gold2]) : null,
+                  border: i < n ? null : Border.all(color: _gold.withValues(alpha: 0.5), width: 1.3)),
+              child: i < n ? const Icon(Icons.person, color: Color(0xFF4A3208), size: 20)
+                  : Text('+', style: TextStyle(color: _gold.withValues(alpha: 0.8), fontWeight: FontWeight.w900)),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Text(inTable
+              ? _t('$n/$max · every friend you add adds his points to the team.', '$n/$max · كل صاحب بتضيفه نقطه بتتجمع للفريق.')
+              : _t('$n/$max · your team enters the table with ${info.minMembers}. Invite a friend now.',
+                   '$n/$max · فريقك بيدخل الترتيب من ${info.minMembers}. اعزم صاحب دلوقتي.'),
+              textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.45)),
+          if (code.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white12)),
+              child: Text(code, style: const TextStyle(color: Colors.white, fontSize: 22, letterSpacing: 6, fontWeight: FontWeight.w900)),
+            ),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(width: double.infinity, height: 48, child: ElevatedButton(
+            onPressed: code.isEmpty ? null : () => Share.share(_t(
+                'Join my team "${team['name']}" in the Badger League ${w ? '🌍 World' : '🇪🇬 Egypt'} 🥇\nCode: $code\n${Brand.shareLinkBase}?b=$code',
+                'انضم لفريقي "${team['name']}" في دوري بادجر ${w ? '🌍 العالم' : '🇪🇬 مصر'} 🥇\nالكود: $code\n${Brand.shareLinkBase}?b=$code')),
+            style: ElevatedButton.styleFrom(backgroundColor: _red, foregroundColor: Colors.white, elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+            child: Text(_t('📤 Send the code', '📤 ابعت الكود'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+          )),
+          Row(children: [
+            Expanded(child: TextButton(onPressed: () { Navigator.of(ctx).pop(); onOpen(a); },
+                child: Text(_t('My team', 'فريقي'), style: const TextStyle(color: _gold, fontWeight: FontWeight.w800)))),
+            Expanded(child: TextButton(onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(_t('Later', 'بعدين'), style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w700)))),
+          ]),
+        ]),
+      ))),
+    ),
+  );
 }
 
 String _t(String en, String ar) => AppLang.t(en, ar);
@@ -51,12 +151,23 @@ String _t(String en, String ar) => AppLang.t(en, ar);
 /// "Starts 1 December · Round 3 → the last December gameweek"
 String blStartLine(BLeagueInfo info) {
   final ar = AppLang.isArabic;
-  final m = blMonthLabel(info.month, ar, withYear: false);
+  final m = blMonthLabel(info.started ? info.nextMonth : info.month, ar, withYear: false);
+  if (info.started) return ar ? 'الدوري الجاي يبدأ 1 $m' : 'Next league starts 1 $m';
   return ar ? 'يبدأ 1 $m' : 'Starts 1 $m';
 }
 
+/// prize per member of the league a new team plays in
+int? blTargetPerMember(BLeagueInfo info) => info.started
+    ? (info.nextPerMember('LOCAL') ?? info.nextPerMember('WORLD') ?? info.perMember('LOCAL') ?? info.perMember('WORLD'))
+    : (info.perMember('LOCAL') ?? info.perMember('WORLD'));
+
 String blRoundsLine(BLeagueInfo info) {
   final ar = AppLang.isArabic;
+  if (info.started) {
+    final cur = blMonthLabel(info.month, ar, withYear: false);
+    final nx = blMonthLabel(info.nextMonth, ar, withYear: false);
+    return ar ? 'دوري $cur شغال دلوقتي · جهّز فريقك لدوري $nx' : 'The $cur league is on now · get your team ready for $nx';
+  }
   final m = blMonthLabel(info.month, ar, withYear: false);
   final nos = [
     for (final a in ['LOCAL', 'WORLD'])
@@ -127,7 +238,7 @@ class _BLAnnouncePageState extends State<_BLAnnouncePage> with TickerProviderSta
   Widget build(BuildContext context) {
     final info = widget.info;
     final ar = AppLang.isArabic;
-    final per = info.perMember('LOCAL') ?? info.perMember('WORLD');
+    final per = blTargetPerMember(info);
     final max = info.maxMembers;
     return Directionality(
       textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
@@ -222,9 +333,9 @@ class _BLAnnouncePageState extends State<_BLAnnouncePage> with TickerProviderSta
               const SizedBox(height: 18),
               // two leagues
               _step(3, Row(children: [
-                Expanded(child: _arenaCard('🇪🇬', _t('Egypt league', 'دوري مصر'), info.team('LOCAL'))),
+                Expanded(child: _arenaCard('🇪🇬', _t('Egypt league', 'دوري مصر'), info.anyTeam('LOCAL'))),
                 const SizedBox(width: 10),
-                Expanded(child: _arenaCard('🌍', _t('World league', 'دوري العالم'), info.team('WORLD'))),
+                Expanded(child: _arenaCard('🌍', _t('World league', 'دوري العالم'), info.anyTeam('WORLD'))),
               ])),
               const SizedBox(height: 6),
               _step(3, Text(_t('Two separate leagues, each with its own table and prize. One team in each.',
@@ -257,9 +368,9 @@ class _BLAnnouncePageState extends State<_BLAnnouncePage> with TickerProviderSta
               decoration: BoxDecoration(color: _bg, border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06)))),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Row(children: [
-                  Expanded(child: _cta('LOCAL', '🇪🇬', _t('Egypt team', 'فريق مصر'), info.team('LOCAL') != null)),
+                  Expanded(child: _cta('LOCAL', '🇪🇬', _t('Egypt team', 'فريق مصر'), info.anyTeam('LOCAL') != null)),
                   const SizedBox(width: 10),
-                  Expanded(child: _cta('WORLD', '🌍', _t('World team', 'فريق العالم'), info.team('WORLD') != null)),
+                  Expanded(child: _cta('WORLD', '🌍', _t('World team', 'فريق العالم'), info.anyTeam('WORLD') != null)),
                 ]),
                 TextButton(onPressed: () => Navigator.of(context).maybePop(),
                     child: Text(_t('Later', 'بعدين'), style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w700))),
@@ -371,7 +482,7 @@ class BLAnnounceCard extends StatelessWidget {
   final bool compact;
   @override
   Widget build(BuildContext context) {
-    final per = info.perMember('LOCAL') ?? info.perMember('WORLD');
+    final per = blTargetPerMember(info);
     return GestureDetector(
       onTap: () { HapticFeedback.selectionClick(); onTap(); },
       child: Container(
@@ -397,7 +508,7 @@ class BLAnnounceCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               info.started
-                  ? _t('Make your team · Egypt and World', 'اعمل فريقك · مصر والعالم')
+                  ? '${blStartLine(info)} · ${_t('make your team', 'اعمل فريقك')}'
                   : '${blStartLine(info)} · ${per != null ? _t('${blMoney(per)} EGP each', '${blMoney(per)} جنيه لكل عضو') : _t('team prize', 'جايزة للفريق')}',
               maxLines: 1, overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w800)),

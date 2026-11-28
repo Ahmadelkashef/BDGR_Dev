@@ -223,7 +223,8 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     return {
       'month': info.month, 'arena': a, 'started': info.started, 'state': info.state,
       'icons': info.raw['icons'], 'colors': info.raw['colors'],
-      'team': x['team'], 'per_member': prize['per_member_egp'],
+      'team': x['team'] ?? x['next_team'], 'per_member': x['team'] == null && x['next_team'] != null && info.started
+          ? ((x['next_prize'] as Map?)?['per_member_egp'] ?? prize['per_member_egp']) : prize['per_member_egp'],
       'prize_ar': prize['prize_ar'], 'prize_en': prize['prize_en'],
     };
   }
@@ -526,6 +527,12 @@ class _BLeaguePageState extends State<_BLeaguePage> {
             const PopIn(from: 0.3, child: Text('🥇', style: TextStyle(fontSize: 44))),
             const SizedBox(height: 6),
             Text(t('Play with your friends', 'العب مع صحابك'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+            if (_info != null && _info!.started) ...[
+              const SizedBox(height: 6),
+              Text(t('The ${_blMonthName(_info!.month, false)} league is on. A new team plays from 1 ${_blMonthName(_info!.nextMonth, false)}.',
+                     'دوري ${_blMonthName(_info!.month, true)} شغال. الفريق الجديد بيلعب من 1 ${_blMonthName(_info!.nextMonth, true)}.'),
+                  textAlign: TextAlign.center, style: const TextStyle(color: _blGold, fontSize: 12.5, fontWeight: FontWeight.w800)),
+            ],
             const SizedBox(height: 6),
             Text(_arena == 'WORLD'
                     ? t('Your WORLD team: $_min to 5 friends. Your World draft points add up all month. The #1 team wins — all of you get the prize.',

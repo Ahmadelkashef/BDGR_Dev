@@ -654,7 +654,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     const SizedBox(height: 18),
                     _buildHero(narrow),
                     // owner 28 Nov: Badger League announcement, only for people who play the fantasy
-                    if (_bl != null && _bl!.visible && _bl!.plays) ...[
+                    if (_bl != null && _bl!.ui('home') && _bl!.plays && _bl!.missingTeam) ...[
                       const SizedBox(height: 14),
                       BLAnnounceCard(info: _bl!, onTap: () => showBLAnnouncement(context,
                           onOpen: (a) => openBadgerLeague(context, arena: a))),
