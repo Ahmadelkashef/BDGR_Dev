@@ -326,7 +326,7 @@ class _LevelUpViewState extends State<_LevelUpView> with SingleTickerProviderSta
   late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600));
   final _shareKey = GlobalKey();
   final _rnd = math.Random();
-  late final List<_Bit> _bits = List.generate(80, (_) => _Bit(_rnd));
+  late final List<ConfettiBit> _bits = List.generate(80, (_) => ConfettiBit(_rnd));
   bool _buzzed = false, _sharing = false;
 
   @override
@@ -381,7 +381,7 @@ class _LevelUpViewState extends State<_LevelUpView> with SingleTickerProviderSta
       child: Stack(children: [
         // confetti in the level colours
         if (!calm) Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _c,
-            builder: (_, __) => CustomPaint(painter: _ConfettiPainter(_bits, ((_c.value - 0.45) / 0.55).clamp(0.0, 1.0).toDouble(),
+            builder: (_, __) => CustomPaint(painter: ConfettiPainter(_bits, ((_c.value - 0.45) / 0.55).clamp(0.0, 1.0).toDouble(),
                 [look.accent, look.frame.first, Colors.white, const Color(0xFFFFD27A)]))))),
         Center(child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           AnimatedBuilder(
@@ -462,17 +462,17 @@ class _LevelUpViewState extends State<_LevelUpView> with SingleTickerProviderSta
   }
 }
 
-class _Bit {
-  _Bit(math.Random r)
+class ConfettiBit {
+  ConfettiBit(math.Random r)
       : x = r.nextDouble(), speed = 0.5 + r.nextDouble() * 0.7, drift = (r.nextDouble() - 0.5) * 0.25,
         size = 4 + r.nextDouble() * 5, spin = r.nextDouble() * 6, color = r.nextInt(4), delay = r.nextDouble() * 0.25;
   final double x, speed, drift, size, spin, delay;
   final int color;
 }
 
-class _ConfettiPainter extends CustomPainter {
-  _ConfettiPainter(this.bits, this.t, this.colors);
-  final List<_Bit> bits;
+class ConfettiPainter extends CustomPainter {
+  ConfettiPainter(this.bits, this.t, this.colors);
+  final List<ConfettiBit> bits;
   final double t;
   final List<Color> colors;
   @override
@@ -492,5 +492,5 @@ class _ConfettiPainter extends CustomPainter {
     }
   }
   @override
-  bool shouldRepaint(_ConfettiPainter o) => o.t != t;
+  bool shouldRepaint(ConfettiPainter o) => o.t != t;
 }

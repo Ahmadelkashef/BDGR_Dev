@@ -18,6 +18,7 @@ import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
 import 'profile/complete_profile.dart' show maybePromptCompleteProfile;
 import 'profile/level_looks.dart' show maybeLevelUpAfterSave;
+import 'profile/first_achievement.dart' show maybeFirstAchievement;
 import 'home/home_page.dart' show HomeActions;
 import 'fantasy_stadium.dart';
 import 'fantasy_motion.dart';
@@ -749,6 +750,12 @@ class _FancyPageState extends State<FancyPage> {
       Future.delayed(const Duration(milliseconds: 1200), () async {
         if (!mounted) return;
         if (askPreds) { await this._d7EditPreds(afterSave: true); if (!mounted) return; }
+        // owner 28 Nov: the very first squad ever → "first achievement" → his cabinet (no profile sheet that time)
+        if (await maybeFirstAchievement(context, onSeeCabinet: () => HomeActions.showProfileTab?.call())) {
+          await LocalStore.setStr('cp_prompt_$evId', '1');
+          return;
+        }
+        if (!mounted) return;
         // owner 28 Nov: once per round, a small "complete your profile (+30 pts)" sheet when something is missing
         await maybePromptCompleteProfile(context, evId);
         if (!mounted) return;

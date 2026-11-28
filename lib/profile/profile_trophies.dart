@@ -681,6 +681,7 @@ class ProfileUi {
   static bool navFill = true;
   static bool levelLooks = true;    // profile look grows with the level (frame, light, sparks, chip, ring, crown…)
   static bool editPencil = true;
+  static bool firstAchv = true;     // first saved squad ever → first-achievement moment (profile_first_achv)
   static bool cardRank = false;     // arena cards: show the rating rank (#1,622) instead of the level name    // pencil at the top: photo · name · username
   /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
   static Map<String, int> levelPts = const {};
@@ -705,6 +706,7 @@ class ProfileUi {
     cabinet = on('cabinet', cabinet);
     levelLooks = on('level_looks', levelLooks);
     editPencil = on('edit_pencil', editPencil);
+    firstAchv = on('first_achv', firstAchv);
     cardRank = on('card_rank', cardRank);
     try {
       final lp = m['level_pts'];

@@ -29,6 +29,7 @@ import 'profile_ambient.dart';
 import 'trophy_cabinet.dart';
 import 'level_looks.dart';
 import 'complete_profile.dart' show showCompleteProfileSheet;
+import 'first_achievement.dart' show ProfileFocus, FirstAchievementCard;
 import '../fantasy.dart' show openProfileRoundSquad;
 import '../settings/help_support_page.dart' show HelpSupportPage;
 import 'visitor_profile_sheet.dart';
@@ -339,6 +340,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     AppLang.changes.addListener(_onLangChanged);
     ProfileUi.changes.addListener(_onLangChanged);
     ProfileUi.warm();
+    ProfileFocus.pending.addListener(_onFocus);
     _profileAuthSub = _sb.auth.onAuthStateChange.listen(_onProfileAuthChange);
   }
 
@@ -347,6 +349,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     AppLang.changes.removeListener(_onLangChanged);
     ProfileUi.changes.removeListener(_onLangChanged);
+    ProfileFocus.pending.removeListener(_onFocus);
     _profileAuthSub?.cancel();
     _limitErrorTimer?.cancel();
     _limitErrorOverlay?.remove();
@@ -583,6 +586,29 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   }
 
   LevelLook get _look => LevelLook.of(_trophies);
+
+  // ── first achievement (owner 28 Nov): came from "See my cabinet" → reload, scroll to the cabinet, the trophy lands ──
+  final _cabinetKey = GlobalKey();
+  bool _firstFocus = false;
+  Future<void> _onFocus() async {
+    if (ProfileFocus.pending.value != 'first' || !_isOwner || _isPreviewingOwnProfile || widget.visitTarget != null) return;
+    ProfileFocus.pending.value = null;
+    await _loadTrophies(_userId);
+    if (!mounted) return;
+    setState(() => _firstFocus = true);
+    await Future.delayed(const Duration(milliseconds: 350));
+    final ctx = _cabinetKey.currentContext;
+    if (ctx != null && ctx.mounted) {
+      await Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 700), curve: Curves.easeOutCubic, alignment: 0.08);
+    }
+  }
+
+  Future<void> _completeFromCabinet() async {
+    await showCompleteProfileSheet(context);
+    if (!mounted) return;
+    await _loadProfile();          // new name / username / place / age
+    await _loadTrophies(_userId);  // trophy + level points
+  }
 
   Widget _levelAmbient() {
     if (!ProfileUi.levelLooks) {
@@ -1594,13 +1620,13 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             color: const Color(0xFFFF2B2B), borderRadius: BorderRadius.circular(2))),
         // `profile_cabinet` = show: the lit trophy cabinet (both arenas) above the Egypt / World rounds
         if (ProfileUi.cabinet)
-          TrophyCabinet(t: _trophies, isOwner: _isOwner, onRound: _openRound,
-              onCompleteProfile: _isOwner ? () async {
-                await showCompleteProfileSheet(context);
-                if (!mounted) return;
-                await _loadProfile();          // new name / username / place / age
-                await _loadTrophies(_userId);  // trophy + level points
-              } : null,
+          if (_firstFocus && _isOwner && _trophies != null)
+            FirstAchievementCard(t: _trophies!, onCompleteProfile: _completeFromCabinet,
+                onClose: () => setState(() => _firstFocus = false)),
+        if (ProfileUi.cabinet)
+          TrophyCabinet(key: _cabinetKey, t: _trophies, isOwner: _isOwner, onRound: _openRound,
+              highlight: _firstFocus ? 'debut' : null,
+              onCompleteProfile: _isOwner ? _completeFromCabinet : null,
               onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null),
         const SizedBox(height: 14),
         Container(

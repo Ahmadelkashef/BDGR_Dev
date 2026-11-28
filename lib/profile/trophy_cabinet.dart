@@ -109,7 +109,9 @@ class CabinetData {
     }
 
     // journey
-    final n = rows.length;
+    // rounds played = rounds with a SAVED squad (owner 28 Nov: the first trophy comes at the first save)
+    final savedAll = t.savedRounds('LOCAL') + t.savedRounds('WORLD');
+    final n = savedAll > rows.length ? savedAll : rows.length;
     final debut = tr('debut', TrophyShape.boot, _Metal.silver, 'First round', 'أول جولة',
         'Played his first round', 'لعب أول جولة')..count = n > 0 ? 1 : 0;
     const steps = [5, 10, 25, 50];
@@ -193,7 +195,10 @@ extension ProfileCabinetCount on ProfileTrophies {
 
 /// The lit glass cabinet.
 class TrophyCabinet extends StatelessWidget {
-  const TrophyCabinet({super.key, required this.t, required this.isOwner, this.onPlay, this.onRound, this.onCompleteProfile});
+  const TrophyCabinet({super.key, required this.t, required this.isOwner, this.onPlay, this.onRound, this.onCompleteProfile,
+      this.highlight});
+  /// a trophy key that just landed (e.g. 'debut' after the first save): it drops onto its shelf and glows
+  final String? highlight;
   /// owner: the locked "Complete profile" trophy glows and opens the complete-profile sheet
   final VoidCallback? onCompleteProfile;
   final ProfileTrophies? t;
@@ -228,7 +233,11 @@ class TrophyCabinet extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              for (final s in data.shelves) _shelf(context, s),
+              // a trophy that just landed: its shelf comes first, so it is what he sees
+              for (final s in [
+                ...data.shelves.where((s) => highlight != null && s.items.any((x) => x.key == highlight)),
+                ...data.shelves.where((s) => !(highlight != null && s.items.any((x) => x.key == highlight))),
+              ]) _shelf(context, s),
               if (empty) _emptyNote(data.played),
             ]),
           ),
@@ -291,7 +300,10 @@ class TrophyCabinet extends StatelessWidget {
     );
   }
 
-  Widget _item(BuildContext context, _Trophy x) {
+  Widget _item(BuildContext context, _Trophy x) =>
+      highlight != null && x.key == highlight && !x.locked ? _DropGlow(child: _itemInner(context, x)) : _itemInner(context, x);
+
+  Widget _itemInner(BuildContext context, _Trophy x) {
     final flag = x.arenas.length == 1 ? (x.arenas.first == 'WORLD' ? ' 🌍' : ' 🇪🇬') : '';
     final glow = x.key == 'profile' && x.locked && isOwner && onCompleteProfile != null;
     if (glow) {
@@ -701,3 +713,54 @@ class _BreatheState extends State<_Breathe> with SingleTickerProviderStateMixin 
     child: widget.child,
   );
 }
+
+
+/// a trophy that just landed: drops onto the shelf from above, then a soft light pulses around it a few times
+class _DropGlow extends StatefulWidget {
+  const _DropGlow({required this.child});
+  final Widget child;
+  @override
+  State<_DropGlow> createState() => _DropGlowState();
+}
+
+class _DropGlowState extends State<_DropGlow> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 3200));
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 450), () { if (mounted) _c.forward(); });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (calmMotion(context)) return widget.child;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, child) {
+        final v = _c.value;
+        final drop = Curves.bounceOut.transform((v / 0.3).clamp(0.0, 1.0).toDouble());
+        final glow = v < 0.3 ? 0.0 : (0.5 + 0.5 * math.sin((v - 0.3) * math.pi * 8)) * (1 - v);
+        return Stack(clipBehavior: Clip.none, alignment: Alignment.topCenter, children: [
+          Positioned(top: 4, child: IgnorePointer(child: Container(width: 70, height: 70,
+              decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [
+                const Color(0xFFFFE6A0).withOpacity(0.55 * glow), const Color(0x00FFE6A0)]))))),
+          Opacity(opacity: v == 0 ? 0 : 1, child: Transform.translate(offset: Offset(0, -90 * (1 - drop)),
+              child: Transform.scale(scale: 1 + 0.25 * (1 - drop), child: child))),
+        ]);
+      },
+      child: widget.child,
+    );
+  }
+}
+
+
+/// the "First round" trophy drawing, for screens outside the cabinet (first-achievement moment)
+Widget debutTrophyArt(double w) => SizedBox(width: w, height: w * 80 / 60,
+    child: CustomPaint(painter: TrophyPainter(TrophyShape.boot, _Metal.silver, '')));
