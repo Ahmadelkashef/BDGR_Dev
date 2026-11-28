@@ -53,6 +53,9 @@ class ProfileTrophies {
   /// head-to-head challenges won per arena (server `_ch_wins`)
   int h2hWins(String arena) => j['h2h'] is Map ? (((j['h2h'] as Map)[arena] as num?)?.toInt() ?? 0) : 0;
 
+  /// wins over someone he already beat before in that arena (+ rematch bonus)
+  int h2hRematch(String arena) => j['h2h'] is Map && (j['h2h'] as Map)['rematch'] is Map
+      ? ((((j['h2h'] as Map)['rematch'] as Map)[arena] as num?)?.toInt() ?? 0) : 0;
   /// head-to-head challenges played (finished) per arena — the trophy lights after the first one
   int h2hPlayed(String arena) => j['h2h'] is Map && (j['h2h'] as Map)['played'] is Map
       ? ((((j['h2h'] as Map)['played'] as Map)[arena] as num?)?.toInt() ?? 0) : 0;

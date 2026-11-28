@@ -659,7 +659,7 @@ class TrophyPainter extends CustomPainter {
 // owner 28 Nov: New → Rookie fast (profile 30 + 2 saved rounds = 34); league #1 under top 25% / top half
 // owner 28 Nov: the harder it is, the more it gives (season 500 > month 200 > cup 150 > Badger League 120 > #1 round 100 …)
 const _defPts = {'season1': 500, 'month1': 200, 'cup': 150, 'bl': 120, 'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40,
-    'profile': 30, 'top5': 25, 'gov1': 20, 'top10': 15, 'top25': 10, 'top50': 6, 'h2h': 8, 'league1': 4, 'round': 2};
+    'profile': 30, 'top5': 25, 'gov1': 20, 'top10': 15, 'top25': 10, 'top50': 6, 'h2h': 8, 'h2h2': 4, 'league1': 4, 'round': 2};
 const _defSteps = [0, 34, 150, 400, 900, 1800, 3500, 6000];
 // level names are ALWAYS English (owner 28 Nov), even in Arabic; the DB can rename them (profile_level_names)
 const _lvl = <(String, _Metal)>[
@@ -677,6 +677,7 @@ const _rowNames = <String, (String, String)>{
   'top25': ('Top 25%', 'توب 25%'), 'top50': ('Top half', 'فوق النص'), 'gov1': ('#1 Governorate', '#1 المحافظة'),
   'league1': ('#1 League', '#1 الليج'), 'cup': ('Badger Cup', 'كاس بادجر'), 'bl': ('Badger League', 'دوري بادجر'),
   'h2h': ('Challenge wins', 'تحديات كسبتها'),
+  'h2h2': ('Beat him again 🔥', 'كسبته تاني 🔥'),
   'round': ('Rounds played', 'جولات لعبها'),
   'profile': ('Complete profile', 'بروفايل كامل'),
   'streak': ('Streak 🔥', 'الستريك 🔥'),
@@ -727,7 +728,8 @@ class ArenaLevel {
       if (x['kind'] == 'bl') add('bl');
     }
     if (t.profileComplete) add('profile');   // counts in both arenas (owner 28 Nov)
-    if (t.h2hWins(arena) > 0) c['h2h'] = t.h2hWins(arena);   // owner 28 Nov: every challenge won in this arena
+    if (t.h2hWins(arena) > 0) c['h2h'] = t.h2hWins(arena);
+    if (t.h2hRematch(arena) > 0) c['h2h2'] = t.h2hRematch(arena);   // owner 28 Nov: every challenge won in this arena
     final rows = <(String, int, int)>[
       for (final k in _rowNames.keys) if (k != 'streak' && (c[k] ?? 0) > 0) (k, c[k]!, pts[k] ?? 0),
     ];

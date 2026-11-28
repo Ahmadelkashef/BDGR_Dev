@@ -51,6 +51,7 @@ String _errText(String? e) => switch (e) {
       'rate_limited' => AppLang.t('Too many challenges today', 'بعت تحديات كتير النهارده'),
       'off' => AppLang.t('Challenges are off right now', 'التحديات مقفولة دلوقتي'),
       'no_round' => AppLang.t('No open gameweek yet · challenge when the next one opens', 'مفيش جولة مفتوحة دلوقتي · اتحدى أول ما الجولة الجاية تفتح'),
+      'cooldown' => AppLang.t('You two played 2 gameweeks in a row · take a little break 🔄', 'لعبتوا جولتين ورا بعض · استريحوا شوية 🔄'),
       'deadline' => AppLang.t('Too late · the deadline passed', 'فات الوقت · الديدلاين عدّى'),
       _ => AppLang.t('Something went wrong', 'حصلت مشكلة'),
     };
@@ -108,7 +109,8 @@ Future<void> showChallengeInvite(BuildContext context, {required String uid, Map
                 final w = a['with']?.toString();
                 final full = used >= max;
                 final round = a['round'] is Map ? Map<String, dynamic>.from(a['round'] as Map) : null;
-                final off = w != null || full || round == null;
+                final cool = (a['cooldown'] as num?)?.toInt();
+                final off = w != null || full || round == null || cool != null;
                 final on = picked.contains(code);
                 return GestureDetector(
                   onTap: off ? null : () { HapticFeedback.selectionClick(); set(() => on ? picked.remove(code) : picked.add(code)); },
@@ -126,6 +128,7 @@ Future<void> showChallengeInvite(BuildContext context, {required String uid, Map
                       if (round != null) Text('${AppLang.t('${round['name_en'] ?? ''}', '${round['name_ar'] ?? round['name_en'] ?? ''}')} · ${chDeadline(round['deadline'])}',
                           maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11)),
                       Text(round == null ? AppLang.t('No open gameweek yet', 'مفيش جولة مفتوحة')
+                          : cool != null ? AppLang.t('Rest · again from GW $cool 🔄', 'استراحة · تاني من الجولة $cool 🔄')
                           : w == 'pending' ? AppLang.t('Waiting for answer', 'مستني رده')
                           : w == 'accepted' ? AppLang.t('Already on', 'شغال بالفعل')
                           : full ? AppLang.t('Full $used/$max', 'مليان $used/$max')
@@ -308,6 +311,16 @@ class _ChallengesPageState extends State<ChallengesPage> {
         subC = const Color(0xFF6BE38F);
       case 'done':
         sub = '$round · ${_pts(x['my_pts'])} – ${_pts(x['his_pts'])}';
+        if (x['walkover'] == true) {
+          sub = res == 'win'
+              ? AppLang.t('$round · he had no team · no level points', '$round · مكانش عامل تشكيلة · من غير نقط ليفل')
+              : AppLang.t("$round · you had no team", '$round · إنت مكنتش عامل تشكيلة');
+        }
+        if (res == 'loss' && o['user_id'] != null) {
+          trail = _btn(AppLang.t('Revenge ⚔️', 'خد حقك ⚔️'), _red,
+              () async { await showChallengeInvite(context, uid: '${o['user_id']}'); _load(); });
+          break;
+        }
         trail = Text(res == 'win' ? AppLang.t('WON 🏆', 'كسبت 🏆') : res == 'loss' ? AppLang.t('LOST', 'خسرت') : AppLang.t('DRAW', 'تعادل'),
             style: TextStyle(color: res == 'win' ? _gold : res == 'loss' ? Colors.white54 : Colors.white70, fontWeight: FontWeight.w900));
       case 'declined':
