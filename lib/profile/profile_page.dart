@@ -28,6 +28,7 @@ import 'profile_trophies.dart';
 import 'profile_ambient.dart';
 import 'trophy_cabinet.dart';
 import 'level_looks.dart';
+import 'complete_profile.dart' show showCompleteProfileSheet;
 import '../fantasy.dart' show openProfileRoundSquad;
 import '../settings/help_support_page.dart' show HelpSupportPage;
 import 'visitor_profile_sheet.dart';
@@ -1594,6 +1595,12 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
         // `profile_cabinet` = show: the lit trophy cabinet (both arenas) above the Egypt / World rounds
         if (ProfileUi.cabinet)
           TrophyCabinet(t: _trophies, isOwner: _isOwner, onRound: _openRound,
+              onCompleteProfile: _isOwner ? () async {
+                await showCompleteProfileSheet(context);
+                if (!mounted) return;
+                await _loadProfile();          // new name / username / place / age
+                await _loadTrophies(_userId);  // trophy + level points
+              } : null,
               onPlay: _isOwner ? () => HomeActions.showFantasyTab?.call() : null),
         const SizedBox(height: 14),
         Container(

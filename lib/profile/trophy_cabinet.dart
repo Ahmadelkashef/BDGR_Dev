@@ -66,7 +66,7 @@ class CabinetData {
     final rows = t.roundsList;
     _Trophy tr(String k, TrophyShape s, _Metal m, String en, String ar, String hEn, String hAr, {String mark = ''}) =>
         _Trophy(k, s, m, en, ar, hEn, hAr, mark: mark,
-            countable: !const {'debut', 'rounds', 'streak', 'best'}.contains(k));
+            countable: !const {'debut', 'rounds', 'streak', 'best', 'profile'}.contains(k));
 
     final app1 = tr('app1', TrophyShape.ball, _Metal.gold, '#1 Round', '#1 الجولة',
         'Finished FIRST of everyone in a round', 'خلص الأول على الكل في جولة');
@@ -141,6 +141,9 @@ class CabinetData {
     final pb = tr('best', TrophyShape.medal, _Metal.silver, 'Best: ${bestTxt ?? '—'} pts', 'أحسن: ${bestTxt ?? '—'} نقطة',
         'His best points in one round', 'أعلى نقط جابها في جولة', mark: '★')..count = bestRow == null ? 0 : 1;
     if (bestRow != null) pb.rounds.add(bestRow);
+    final prof = tr('profile', TrophyShape.medal, _Metal.crystal, 'Complete profile', 'بروفايل كامل',
+        'Name, username, governorate and birth date are all set', 'الاسم واليوزرنيم والمحافظة وتاريخ الميلاد كلهم متسجلين',
+        mark: 'ID')..count = t.profileComplete ? 1 : 0;
 
     // locked goals (owner only)
     List<_Trophy> pick(List<_Trophy> all, List<_Trophy> goals) {
@@ -157,14 +160,21 @@ class CabinetData {
     final anyTop10 = p1.count + p5.count + p10.count > 0;
     // never played: one calm shelf of first goals (owner) instead of 4 faded shelves
     if (n == 0 && cup.count + bl.count == 0) {
-      return CabinetData._(owner ? [_Shelf('Your first trophies', 'أول كاساتك',
-          [debut..locked = true, app1..locked = true, p10..locked = true])] : const [], 0, false);
+      final first = <_Trophy>[debut..locked = true, app1..locked = true, p10..locked = true];
+      if (prof.count > 0) {
+        first.add(prof);
+      } else if (owner) {
+        first.add(prof..locked = true);
+      }
+      final shown = owner ? first : first.where((x) => !x.locked).toList();
+      return CabinetData._(shown.isEmpty ? const [] : [_Shelf('Your first trophies', 'أول كاساتك', shown)],
+          prof.count, false);
     }
     final shelves = <_Shelf>[
       _Shelf('Titles', 'الألقاب', pick([app1, cup, bl, gov1, lg1], [app1, cup, bl])),
       _Shelf('Podium', 'المنصة', pick([r2, r3, p1], [r2, r3])),
       _Shelf('Elite', 'النخبة', pick([p5, p10, p25, p50], anyTop10 ? [] : [p10])),
-      _Shelf('Journey', 'المشوار', pick([debut, shirt, streak, pb], [debut, shirt, streak])),
+      _Shelf('Journey', 'المشوار', pick([debut, shirt, streak, pb, prof], [debut, shirt, streak, prof])),
     ].where((s) => s.items.isNotEmpty).toList();
     final total = shelves.expand((s) => s.items).where((x) => !x.locked).fold<int>(0, (a, x) => a + x.count);
     return CabinetData._(shelves, total, n > 0);
@@ -178,7 +188,9 @@ extension ProfileCabinetCount on ProfileTrophies {
 
 /// The lit glass cabinet.
 class TrophyCabinet extends StatelessWidget {
-  const TrophyCabinet({super.key, required this.t, required this.isOwner, this.onPlay, this.onRound});
+  const TrophyCabinet({super.key, required this.t, required this.isOwner, this.onPlay, this.onRound, this.onCompleteProfile});
+  /// owner: the locked "Complete profile" trophy glows and opens the complete-profile sheet
+  final VoidCallback? onCompleteProfile;
   final ProfileTrophies? t;
   final bool isOwner;
   final VoidCallback? onPlay;
@@ -192,7 +204,7 @@ class TrophyCabinet extends StatelessWidget {
           child: Center(child: CircularProgressIndicator(color: Color(0xFFFF2B2B), strokeWidth: 2)));
     }
     final data = CabinetData.of(t, owner: isOwner);
-    final empty = data.shelves.every((s) => s.items.every((x) => x.locked));
+    final empty = data.shelves.every((s) => s.items.every((x) => x.locked || x.key == 'profile'));
     return Padding(
       padding: const EdgeInsets.only(top: 14),
       child: Container(
@@ -276,6 +288,27 @@ class TrophyCabinet extends StatelessWidget {
 
   Widget _item(BuildContext context, _Trophy x) {
     final flag = x.arenas.length == 1 ? (x.arenas.first == 'WORLD' ? ' 🌍' : ' 🇪🇬') : '';
+    final glow = x.key == 'profile' && x.locked && isOwner && onCompleteProfile != null;
+    if (glow) {
+      // owner 28 Nov: the missing "Complete profile" trophy breathes on and off, tap = fill the profile
+      return _Breathe(child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () { Buzz.tap(); onCompleteProfile!(); },
+        child: SizedBox(width: 74, child: Column(children: [
+          SizedBox(height: 70, child: CustomPaint(size: const Size(54, 70), painter: TrophyPainter(x.shape, x.metal, x.mark))),
+          Container(
+            margin: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+            decoration: BoxDecoration(color: const Color(0x33FFD27A), borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: const Color(0x88FFD27A))),
+            child: FittedBox(fit: BoxFit.scaleDown, child: Text(AppLang.t('Complete profile', 'كمّل بروفايلك'), maxLines: 1,
+                style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 9.5, fontWeight: FontWeight.w800))),
+          ),
+          SizedBox(height: 14, child: Text(AppLang.t('+30 pts', '+30 نقطة'),
+              style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 10.5, fontWeight: FontWeight.w900))),
+        ])),
+      ));
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () { Buzz.tap(); _openSheet(context, x); },
@@ -483,7 +516,7 @@ class TrophyPainter extends CustomPainter {
 // ═════════════════════════════════════════════════════════════════════════
 
 const _defPts = {'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40, 'top5': 25, 'top10': 15, 'top25': 8, 'top50': 4,
-    'gov1': 20, 'league1': 10, 'cup': 150, 'bl': 120, 'round': 2};
+    'gov1': 20, 'league1': 10, 'cup': 150, 'bl': 120, 'round': 2, 'profile': 30};
 const _defSteps = [0, 50, 150, 400, 900, 1800, 3500, 6000];
 const _lvl = <(String, String, _Metal)>[
   ('Rookie', 'مبتدئ', _Metal.dim), ('Amateur', 'هاوي', _Metal.bronze), ('Semi-Pro', 'شبه محترف', _Metal.bronze),
@@ -497,6 +530,7 @@ const _rowNames = <String, (String, String)>{
   'top25': ('Top 25%', 'توب 25%'), 'top50': ('Top half', 'فوق النص'), 'gov1': ('#1 Governorate', '#1 المحافظة'),
   'league1': ('#1 League', '#1 الليج'), 'cup': ('Badger Cup', 'كاس بادجر'), 'bl': ('Badger League', 'دوري بادجر'),
   'round': ('Rounds played', 'جولات لعبها'),
+  'profile': ('Complete profile', 'بروفايل كامل'),
 };
 
 class ArenaLevel {
@@ -530,6 +564,7 @@ class ArenaLevel {
       if (x['kind'] == 'cup' && x['arena'] == arena) add('cup');
       if (x['kind'] == 'bl') add('bl');
     }
+    if (t.profileComplete) add('profile');   // counts in both arenas (owner 28 Nov)
     final rows = <(String, int, int)>[
       for (final k in _rowNames.keys) if ((c[k] ?? 0) > 0) (k, c[k]!, pts[k] ?? 0),
     ];
@@ -620,4 +655,37 @@ class _ArenaLevelCardState extends State<ArenaLevelCard> {
       ]),
     );
   }
+}
+
+
+/// slow on/off glow (the trophy that wants to be earned); still when animations are off
+class _Breathe extends StatefulWidget {
+  const _Breathe({required this.child});
+  final Widget child;
+  @override
+  State<_Breathe> createState() => _BreatheState();
+}
+
+class _BreatheState extends State<_Breathe> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!calmMotion(context) && !_c.isAnimating) _c.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _c,
+    builder: (_, child) => Opacity(opacity: 0.45 + 0.55 * _c.value,
+        child: Transform.scale(scale: 0.96 + 0.06 * _c.value, child: child)),
+    child: widget.child,
+  );
 }

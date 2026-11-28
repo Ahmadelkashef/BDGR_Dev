@@ -16,6 +16,7 @@ import 'local_store.dart';
 import 'location_prompt.dart';
 import 'web/web_layout.dart' show WebStage;
 import 'profile/visitor_profile_sheet.dart';
+import 'profile/complete_profile.dart' show maybePromptCompleteProfile;
 import 'fantasy_stadium.dart';
 import 'fantasy_motion.dart';
 import 'diag.dart';
@@ -746,6 +747,9 @@ class _FancyPageState extends State<FancyPage> {
       Future.delayed(const Duration(milliseconds: 1200), () async {
         if (!mounted) return;
         if (askPreds) { await this._d7EditPreds(afterSave: true); if (!mounted) return; }
+        // owner 28 Nov: once per round, a small "complete your profile (+30 pts)" sheet when something is missing
+        await maybePromptCompleteProfile(context, evId);
+        if (!mounted) return;
         final shown = await showLaunchSavedNudge(context, isArabic, evId);
         if (!shown && mounted) _showSavedAd();
       });

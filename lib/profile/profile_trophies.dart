@@ -42,6 +42,8 @@ class ProfileTrophies {
   List<Map<String, dynamic>> get roundsList => _list('rounds_list');
   /// the user's login id (same id the leaderboards already show) — to open his squads
   String? get uid => j['uid']?.toString();
+  /// "Complete profile" trophy: name, username, governorate (GPS), birth date all set
+  bool get profileComplete => j['profile'] is Map && (j['profile'] as Map)['complete'] == true;
 
   static Future<ProfileTrophies?> load(int userId) async {
     try {
