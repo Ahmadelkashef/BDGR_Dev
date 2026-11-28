@@ -4,6 +4,7 @@ import '../app_lang.dart';
 import '../brand.dart';
 import 'profile_page.dart'; // for ProfilePage + ProfileVisitTarget
 import 'profile_trophies.dart';
+import 'trophy_cabinet.dart' show ProfileCabinetCount;
 import '../official_account.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,7 +108,9 @@ class _VisitorProfileSheetState extends State<VisitorProfileSheet> {
       // الإنجازات مكان الفانز (27 نوفمبر)
       final uid = int.tryParse('${widget.userId}');
       if (uid != null) {
-        ProfileTrophies.load(uid).then((t) { if (mounted && t != null) setState(() => _trophiesCount = t.trophies); });
+        ProfileTrophies.load(uid).then((t) { if (mounted && t != null) setState(() => _trophiesCount =
+            // same number as the full profile: the cabinet total when the cabinet is on
+            ProfileUi.cabinet && ProfileUi.arenaTabs ? t.cabinetTotal() : t.trophies); });
       }
     } catch (e) {
       if (!mounted) return;

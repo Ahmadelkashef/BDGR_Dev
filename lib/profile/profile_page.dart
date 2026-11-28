@@ -2773,6 +2773,18 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               Text(err!, style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 13)),
             ],
             const SizedBox(height: 16),
+            // see my profile like a visitor; back returns here (the sheet stays open under it)
+            if (_userId != null) ...[
+              SizedBox(height: 44, child: OutlinedButton.icon(
+                onPressed: busy ? null : () => Navigator.of(ctx, rootNavigator: true).push(MaterialPageRoute<void>(
+                    builder: (_) => VisitorProfileSheet(userId: _userId!, isOwnPreview: true))),
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: Text(_s('View as Visitor', 'شوف بروفايلك كزائر'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              )),
+              const SizedBox(height: 10),
+            ],
             SizedBox(height: 48, child: ElevatedButton(
               onPressed: busy ? null : save,
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF0000), foregroundColor: Colors.white,
