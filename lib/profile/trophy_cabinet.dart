@@ -30,7 +30,7 @@ const _metal = <_Metal, List<Color>>{
 
 class _Trophy {
   _Trophy(this.key, this.shape, this.metal, this.en, this.ar, this.howEn, this.howAr,
-      {this.mark = '', this.count = 0, this.locked = false, this.value});
+      {this.mark = '', this.count = 0, this.locked = false, this.value, this.countable = true});
   final String key;
   final TrophyShape shape;
   final _Metal metal;
@@ -40,6 +40,8 @@ class _Trophy {
   int count;
   bool locked;
   final String? value; // e.g. best points
+  /// false = milestones (first round, N rounds, streak, best points): no ×N under them
+  final bool countable;
   final List<Map<String, dynamic>> rounds = [];
   final Set<String> arenas = {};
 }
@@ -63,7 +65,8 @@ class CabinetData {
   static CabinetData of(ProfileTrophies t, {required bool owner}) {
     final rows = t.roundsList;
     _Trophy tr(String k, TrophyShape s, _Metal m, String en, String ar, String hEn, String hAr, {String mark = ''}) =>
-        _Trophy(k, s, m, en, ar, hEn, hAr, mark: mark);
+        _Trophy(k, s, m, en, ar, hEn, hAr, mark: mark,
+            countable: !const {'debut', 'rounds', 'streak', 'best'}.contains(k));
 
     final app1 = tr('app1', TrophyShape.ball, _Metal.gold, '#1 Round', '#1 الجولة',
         'Finished FIRST of everyone in a round', 'خلص الأول على الكل في جولة');
@@ -159,7 +162,7 @@ class CabinetData {
     }
     final shelves = <_Shelf>[
       _Shelf('Titles', 'الألقاب', pick([app1, cup, bl, gov1, lg1], [app1, cup, bl])),
-      _Shelf('Podium', 'المنصة', pick([r2, r3, p1], r2.count + r3.count == 0 ? [r3] : [])),
+      _Shelf('Podium', 'المنصة', pick([r2, r3, p1], [r2, r3])),
       _Shelf('Elite', 'النخبة', pick([p5, p10, p25, p50], anyTop10 ? [] : [p10])),
       _Shelf('Journey', 'المشوار', pick([debut, shirt, streak, pb], [debut, shirt, streak])),
     ].where((s) => s.items.isNotEmpty).toList();
@@ -283,11 +286,6 @@ class TrophyCabinet extends StatelessWidget {
             Opacity(opacity: x.locked ? 0.55 : 1,
                 child: SizedBox(width: 54, height: 70, child: CustomPaint(painter: TrophyPainter(x.shape, x.locked ? _Metal.dim : x.metal, x.mark)))),
             if (x.locked) const Positioned(bottom: 16, child: Text('🔒', style: TextStyle(fontSize: 12))),
-            if (!x.locked && x.count > 1)
-              Positioned(top: 0, left: 6, child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(color: const Color(0xFFE00000), borderRadius: BorderRadius.circular(8)),
-                child: Text('×${x.count}', style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)))),
           ])),
           Container(
             margin: const EdgeInsets.fromLTRB(2, 4, 2, 4),
@@ -297,6 +295,10 @@ class TrophyCabinet extends StatelessWidget {
             child: FittedBox(fit: BoxFit.scaleDown, child: Text(AppLang.t(x.en, x.ar) + flag, maxLines: 1,
                 style: TextStyle(color: x.locked ? Colors.white30 : const Color(0xFFD8D8DD), fontSize: 9.5))),
           ),
+          // how many times (owner: every countable trophy shows its count, even ×1)
+          SizedBox(height: 14, child: x.countable && !x.locked
+              ? Text('×${x.count}', style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 11, fontWeight: FontWeight.w900))
+              : null),
         ]),
       ),
     );
@@ -320,7 +322,7 @@ class TrophyCabinet extends StatelessWidget {
             SizedBox(width: 92, height: 120, child: CustomPaint(
                 painter: TrophyPainter(x.shape, x.locked ? _Metal.dim : x.metal, x.mark))),
             const SizedBox(height: 10),
-            Text(AppLang.t(x.en, x.ar) + (x.count > 1 ? '  ×${x.count}' : ''),
+            Text(AppLang.t(x.en, x.ar) + (x.countable && !x.locked ? '  ×${x.count}' : ''),
                 style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
             Text(x.locked ? AppLang.t('How to get it: ${x.howEn}', 'إزاي تاخده: ${x.howAr}') : AppLang.t(x.howEn, x.howAr),
@@ -471,4 +473,149 @@ class TrophyPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(TrophyPainter o) => o.shape != shape || o.metal != metal || o.mark != mark;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Arena level (owner, 28 Nov): every trophy gives points in its arena; the total sets a level with a
+// grand name (Rookie → Icon). Points never shrink, the level is what people see.
+// Points + thresholds come from the DB (`profile_level_pts` / `profile_level_steps`), defaults below.
+// Badger League counts in both arenas (it is played on both).
+// ═════════════════════════════════════════════════════════════════════════
+
+const _defPts = {'app1': 100, 'rank2': 70, 'rank3': 50, 'top1': 40, 'top5': 25, 'top10': 15, 'top25': 8, 'top50': 4,
+    'gov1': 20, 'league1': 10, 'cup': 150, 'bl': 120, 'round': 2};
+const _defSteps = [0, 50, 150, 400, 900, 1800, 3500, 6000];
+const _lvl = <(String, String, _Metal)>[
+  ('Rookie', 'مبتدئ', _Metal.dim), ('Amateur', 'هاوي', _Metal.bronze), ('Semi-Pro', 'شبه محترف', _Metal.bronze),
+  ('Pro', 'محترف', _Metal.silver), ('Elite', 'نخبة', _Metal.silver), ('Master', 'ماستر', _Metal.gold),
+  ('Legend', 'أسطورة', _Metal.gold), ('Icon', 'أيقونة', _Metal.red),
+];
+const _roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+const _rowNames = <String, (String, String)>{
+  'app1': ('#1 Round', '#1 الجولة'), 'rank2': ('#2 Round', '#2 الجولة'), 'rank3': ('#3 Round', '#3 الجولة'),
+  'top1': ('Top 1%', 'توب 1%'), 'top5': ('Top 5%', 'توب 5%'), 'top10': ('Top 10%', 'توب 10%'),
+  'top25': ('Top 25%', 'توب 25%'), 'top50': ('Top half', 'فوق النص'), 'gov1': ('#1 Governorate', '#1 المحافظة'),
+  'league1': ('#1 League', '#1 الليج'), 'cup': ('Badger Cup', 'كاس بادجر'), 'bl': ('Badger League', 'دوري بادجر'),
+  'round': ('Rounds played', 'جولات لعبها'),
+};
+
+class ArenaLevel {
+  ArenaLevel._(this.points, this.level, this.floor, this.next, this.rows);
+  final int points;
+  final int level; // 0..7
+  final int floor; // points of this level
+  final int? next; // points of the next level (null = top)
+  final List<(String key, int count, int each)> rows;
+
+  String get name => AppLang.t(_lvl[level].$1, _lvl[level].$2);
+
+  static ArenaLevel of(ProfileTrophies t, String arena) {
+    final pts = {..._defPts, ...ProfileUi.levelPts};
+    final steps = ProfileUi.levelSteps.length == _lvl.length ? ProfileUi.levelSteps : _defSteps;
+    final c = <String, int>{};
+    void add(String k) => c[k] = (c[k] ?? 0) + 1;
+    for (final r in t.roundsList.where((r) => r['arena'] == arena)) {
+      final rank = _i(r['rank']);
+      final pct = _d(r['pct']);
+      add('round');
+      final k = rank == 1 ? 'app1' : rank == 2 ? 'rank2' : rank == 3 ? 'rank3'
+          : pct <= 0.01 ? 'top1' : pct <= 0.05 ? 'top5' : pct <= 0.10 ? 'top10' : pct <= 0.25 ? 'top25' : pct <= 0.50 ? 'top50' : null;
+      if (k != null && rank > 0) add(k);
+      if (r['gov1'] == true) add('gov1');
+      if (_i(r['league_bonus']) > 0) add('league1');
+    }
+    for (final x in t.titles) {
+      if (x['kind'] == 'cup' && x['arena'] == arena) add('cup');
+      if (x['kind'] == 'bl') add('bl');
+    }
+    final rows = <(String, int, int)>[
+      for (final k in _rowNames.keys) if ((c[k] ?? 0) > 0) (k, c[k]!, pts[k] ?? 0),
+    ];
+    final total = rows.fold<int>(0, (a, r) => a + r.$2 * r.$3);
+    var lv = 0;
+    for (var i = 0; i < steps.length; i++) {
+      if (total >= steps[i]) lv = i;
+    }
+    return ArenaLevel._(total, lv, steps[lv], lv + 1 < steps.length ? steps[lv + 1] : null, rows);
+  }
+}
+
+/// Level card at the top of the Egypt / World tab: medal + level name + points + bar to the next level,
+/// and "how the points add up" (tap to open).
+class ArenaLevelCard extends StatefulWidget {
+  const ArenaLevelCard({super.key, required this.t, required this.arena});
+  final ProfileTrophies t;
+  final String arena;
+  @override
+  State<ArenaLevelCard> createState() => _ArenaLevelCardState();
+}
+
+class _ArenaLevelCardState extends State<ArenaLevelCard> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final lv = ArenaLevel.of(widget.t, widget.arena);
+    final metal = _lvl[lv.level].$3;
+    final accent = _metal[metal == _Metal.dim ? _Metal.silver : metal]![1];
+    final next = lv.next;
+    final frac = next == null ? 1.0 : ((lv.points - lv.floor) / (next - lv.floor)).clamp(0.0, 1.0).toDouble();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      decoration: BoxDecoration(color: const Color(0xD9141418), borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withOpacity(0.35))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          SizedBox(width: 44, height: 56, child: CustomPaint(painter: TrophyPainter(TrophyShape.medal, metal, _roman[lv.level]))),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(AppLang.t('LEVEL', 'المستوى'), style: const TextStyle(color: Colors.white38, fontSize: 10.5, letterSpacing: 1.5)),
+            Text(lv.name, style: TextStyle(color: accent, fontSize: 20, fontWeight: FontWeight.w900)),
+          ])),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(fmtInt(lv.points), style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+            Text(AppLang.t('points', 'نقطة'), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          ]),
+        ]),
+        const SizedBox(height: 10),
+        ClipRRect(borderRadius: BorderRadius.circular(4), child: SizedBox(height: 6, child: Stack(children: [
+          Container(color: Colors.white10),
+          FractionallySizedBox(widthFactor: frac, child: Container(decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [accent.withOpacity(0.6), accent])))),
+        ]))),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(child: Text(next == null ? AppLang.t('Top level 👑', 'أعلى مستوى 👑')
+              : AppLang.t('${fmtInt(next - lv.points)} pts to ${_lvl[lv.level + 1].$1}', 'فاضل ${fmtInt(next - lv.points)} نقطة لـ ${_lvl[lv.level + 1].$2}'),
+              style: const TextStyle(color: Colors.white54, fontSize: 11.5))),
+          if (lv.rows.isNotEmpty)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _open = !_open),
+              child: Row(children: [
+                Text(AppLang.t('How?', 'اتحسبت إزاي؟'), style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                Icon(_open ? Icons.expand_less : Icons.expand_more, color: Colors.white54, size: 18),
+              ]),
+            ),
+        ]),
+        AnimatedSize(duration: const Duration(milliseconds: 220), curve: Curves.easeOut, child: !_open ? const SizedBox(width: double.infinity) : Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(children: [
+            for (final (k, n, each) in lv.rows)
+              Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [
+                Expanded(child: Text(AppLang.t(_rowNames[k]!.$1, _rowNames[k]!.$2), style: const TextStyle(color: Colors.white70, fontSize: 12.5))),
+                SizedBox(width: 44, child: Text('×$n', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 12.5, fontWeight: FontWeight.w800))),
+                SizedBox(width: 52, child: Text('${fmtInt(each)}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white38, fontSize: 12))),
+                SizedBox(width: 56, child: Text(fmtInt(n * each), textAlign: TextAlign.end, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800))),
+              ])),
+            const Divider(color: Colors.white10, height: 12),
+            Row(children: [
+              Expanded(child: Text(AppLang.t('Levels: ', 'المستويات: ') + _lvl.map((l) => AppLang.t(l.$1, l.$2)).join(' › '),
+                  style: const TextStyle(color: Colors.white38, fontSize: 10.5))),
+            ]),
+          ]),
+        )),
+      ]),
+    );
+  }
 }

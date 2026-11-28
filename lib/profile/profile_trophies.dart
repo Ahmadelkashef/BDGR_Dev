@@ -13,6 +13,7 @@ import '../competitions/competition_sports.dart';
 import '../local_store.dart';
 import '../media_cache.dart';
 import '../motion_kit.dart';
+import 'trophy_cabinet.dart' show ArenaLevelCard;
 
 /// كارت الفانتازي + تابات الإنجازات والفانتازي في البروفايل (27 نوفمبر 2026).
 /// كله من `profile_trophies(user)` (قراية بس، مفيش ملفات = إيجرس تقريباً صفر).
@@ -540,6 +541,7 @@ class FantasyProfileTab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (!showNumbers && arena != null) ...[ArenaLevelCard(t: t, arena: arena), const SizedBox(height: 14)],
         if (showNumbers) ...[
         Container(
           padding: const EdgeInsets.all(14),
@@ -671,7 +673,10 @@ class ProfileUi {
   static bool arenaTabs = true;     // tabs = FANTASY + Egypt / World (false = old Fantasy · Trophies)
   static bool bgMotion = true;      // moving glow + sparks behind the profile (colour = card tier)
   static bool cabinet = true;       // trophy cabinet under FANTASY (hide = the old numbers box in each arena tab)
-  static bool navFill = true;       // the strip above the bottom bar takes the profile colour (no 2-colour line)
+  static bool navFill = true;
+  /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
+  static Map<String, int> levelPts = const {};
+  static List<int> levelSteps = const [];       // the strip above the bottom bar takes the profile colour (no 2-colour line)
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
   static void set(Map<String, dynamic> m, {bool save = true}) {
@@ -689,6 +694,14 @@ class ProfileUi {
     bgMotion = on('bg_motion', bgMotion);
     navFill = on('nav_fill', navFill);
     cabinet = on('cabinet', cabinet);
+    try {
+      final lp = m['level_pts'];
+      if (lp is String && lp.isNotEmpty) {
+        levelPts = (jsonDecode(lp) as Map).map((k, v) => MapEntry('$k', (v as num).toInt()));
+      }
+      final ls = m['level_steps'];
+      if (ls is String && ls.isNotEmpty) levelSteps = (jsonDecode(ls) as List).map((v) => (v as num).toInt()).toList();
+    } catch (_) {}
     changes.value++;
     if (save) LocalStore.setStr('profile_ui', jsonEncode(m));
   }
@@ -997,6 +1010,8 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
   int _page = 0;
   int _center = 0;
   bool _entering = true; // the cards rise in once when the page opens
+  /// launch trio (owner 28 Nov): 3 fixed spots; slot → card index. Tap a side card = it swaps with the middle one.
+  List<int> _order = const [0, 1, 2];
 
   @override
   void initState() {
@@ -1009,6 +1024,69 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     _pc?.dispose();
     super.dispose();
   }
+
+  void _swap(int slot) {
+    if (slot == 1) return;
+    Buzz.tap();
+    setState(() {
+      final o = [..._order];
+      final t = o[slot];
+      o[slot] = o[1];
+      o[1] = t;
+      _order = o;
+    });
+  }
+
+  /// Egypt · [BADGER] · World: always 3 cards, the chosen one in the middle, the middle one takes its place.
+  Widget _trio(List<_CardItem> items, double cw, double ch) => LayoutBuilder(builder: (context, c) {
+    final w = c.maxWidth;
+    final dx = cw * 0.86 + 14;
+    _page = _order[1];
+    const dur = Duration(milliseconds: 380);
+    Widget slot(int s) {
+      final i = _order[s];
+      final mid = s == 1;
+      return AnimatedPositioned(
+        key: ValueKey('trio-$i'),
+        duration: dur, curve: Curves.easeOutCubic,
+        left: w / 2 - cw / 2 + (s - 1) * dx, top: 0, width: cw, height: ch,
+        child: AnimatedScale(
+          scale: mid ? 1 : 0.76, duration: dur, curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: mid ? 1 : 0.5, duration: dur,
+            child: GestureDetector(
+              onTap: () => mid ? items[i].open() : _swap(s),
+              child: _faceAt(items, i, cw),
+            ),
+          ),
+        ),
+      );
+    }
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        GestureDetector(
+          // swipe: left brings the right card in, right brings the left card in
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (v < -200) _swap(2);
+            if (v > 200) _swap(0);
+          },
+          child: SizedBox(height: ch, width: w, child: Stack(clipBehavior: Clip.none, children: [
+            slot(0), slot(2), slot(1), // middle painted last = on top
+          ])),
+        ),
+        SizedBox(
+          height: ProfileCardCarousel.dotsH,
+          child: Center(child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: Text(items[_order[1]].label, key: ValueKey(_order[1]),
+                style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w600)),
+          )),
+        ),
+      ]),
+    );
+  });
 
   Widget _faceAt(List<_CardItem> items, int i, double cw) {
     final gold = widget.t?.tier == 'gold';
@@ -1126,6 +1204,7 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
     if (items.length == 1) {
       return GestureDetector(onTap: items.first.open, child: Center(child: _faceAt(items, 0, cw)));
     }
+    if (items.length == 3 && !ProfileUi.fantasyCard) return _trio(items, cw, ch);
     return LayoutBuilder(builder: (context, c) {
       final vf = ((cw + 14) / c.maxWidth).clamp(0.1, 1.0).toDouble();
       if (_pc == null || _vf != vf) {
