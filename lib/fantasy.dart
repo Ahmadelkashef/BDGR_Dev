@@ -604,6 +604,9 @@ class _FancyPageState extends State<FancyPage> {
   static bool _limitPills = true;        // club-limit pills on the START / bench step (fantasy_limit_pills = show | hide)
   static int _subsMax = 2;               // bench: max subs from the same club (fantasy_draft_subs_max_per_team), apart from the 7
   static String _arenaInfo = 'show';      // arena page info box: show | hide (fantasy_arena_info)
+  /// round page look (owner 28 Nov): show = "Current GW" in the top bar + arena switch circle + deadline / prize cards,
+  /// no recap / nudge lines (they live in My Fantasy); hide = the old page (fantasy_lobby_compact)
+  static bool _lobbyCompact = true;
   static bool _cfgLoaded = false;
   /// which squads the app offers (DB `fantasy_modes`): draft | normal | both (launch default draft)
   static String _modes = 'draft';
@@ -621,6 +624,7 @@ class _FancyPageState extends State<FancyPage> {
         final pn = r['pitch_name'];
         _pitchName = (pn == 'split' || pn == 'full_club') ? pn as String : 'short_club';
         _arenaInfo = r['arena_info'] == 'hide' ? 'hide' : 'show';
+        _lobbyCompact = r['lobby_compact'] != 'hide';
         final md = r['modes'];
         _modes = (md == 'normal' || md == 'both') ? md as String : 'draft';
         final sm = (r['subs_max_per_team'] as num?)?.toInt();
@@ -1086,13 +1090,22 @@ class _FancyPageState extends State<FancyPage> {
   // ─────────────────────────────────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────────────────────────────────
-  bool? _reportedInArena;
+  String? _reportedInArena;
+
+  /// top bar helpers (launch): back to the arena picker / jump straight to the other arena
+  void goArenaPicker() => setState(() { step = 0; saved = false; });
+  void switchArena() {
+    if (_flying) return;
+    enterArena(arena == 'EGYPT' ? 'WORLD' : 'EGYPT');
+  }
 
   @override
   Widget build(BuildContext context) {
     final inArena = step > 0;
-    if (_reportedInArena != inArena) {
-      _reportedInArena = inArena;
+    // the shell's top bar follows the step + arena (title, switch circle)
+    final key = '$inArena|$step|$arena|$_cfgLoaded';
+    if (_reportedInArena != key) {
+      _reportedInArena = key;
       WidgetsBinding.instance.addPostFrameCallback((_) => widget.onInArena?.call(inArena));
     }
     return Scaffold(
@@ -2408,6 +2421,9 @@ class _FantasyShellState extends State<FantasyShell> {
   bool _helpPulse = false;   // أول مرة: "؟" بينبض لحد ما يدوس عليه
   bool _statsPulse = false;  // أول مرة: دايرة الإحصائيات بتنبض لحد ما يدوس عليها
   bool _inArena = false;     // جوه أرينا: التابات فوق بتختفي علشان الصفحة تبقى فاضية
+  _FancyPageState? get _team => _teamKey.currentState is _FancyPageState ? _teamKey.currentState as _FancyPageState : null;
+  /// compact round bar: "Current GW" + arena in the top bar while inside an arena
+  bool get _gwBar => _FancyPageState._lobbyCompact && _inArena && _team != null;
   bool isArabic = AppLang.isArabic;   // لغة التطبيق
 
   /// عربي ⇄ English: بيتطبّق على كل صفحات الفانتازي وبيتحفظ كآخر اختيار
@@ -2587,28 +2603,54 @@ class _FantasyShellState extends State<FantasyShell> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
           child: Column(children: [
           Row(children: [
-            Container(width: 40, height: 40, padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: line)),
-              child: Image.asset(Brand.badger, fit: BoxFit.contain)),
+            // launch compact round page: the badger box = back to the arenas, title = Current GW + the arena
+            GestureDetector(
+              onTap: _gwBar && _team?.step == 1 ? () => _team?.goArenaPicker() : null,
+              child: Stack(clipBehavior: Clip.none, children: [
+                Container(width: 40, height: 40, padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: line)),
+                  child: Image.asset(Brand.badger, fit: BoxFit.contain)),
+                if (_gwBar && _team?.step == 1)
+                  PositionedDirectional(start: -5, top: 12, child: Container(width: 16, height: 16,
+                    decoration: BoxDecoration(color: cardBg, shape: BoxShape.circle, border: Border.all(color: line)),
+                    child: Icon(isArabic ? Icons.chevron_right : Icons.chevron_left, color: Colors.white70, size: 13))),
+              ]),
+            ),
             const SizedBox(width: 10),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              // اسم المنتج ثابت بالإنجليزي زي BDGR (جزء من اللوجو)
-              const Text('FANTASY', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5, height: 1.1)),
-              const Text('B D G R', style: TextStyle(color: muted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2)),
-            ]),
-            const Spacer(),
+            Expanded(child: _gwBar
+              ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(isArabic ? 'الجولة الحالية' : 'Current GW', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900, height: 1.1)),
+                  Text(_team?.arena == 'EGYPT' ? (isArabic ? 'محلي' : 'EGYPT') : (isArabic ? 'دولي' : 'WORLD'),
+                    style: const TextStyle(color: muted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2)),
+                ])
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  // اسم المنتج ثابت بالإنجليزي زي BDGR (جزء من اللوجو)
+                  const Text('FANTASY', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5, height: 1.1)),
+                  const Text('B D G R', style: TextStyle(color: muted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2)),
+                ])),
             _HelpPulse(active: _statsPulse && !_helpPulse, child: GestureDetector(
               onTap: () {
                 if (_statsPulse) { setState(() => _statsPulse = false); LocalStore.setFlag('fantasy_stats_hint'); }
-                openMyFantasyHub(context, isArabic, onToggleLanguage: _toggleLanguage);   // launch: ranking · leagues · Badger League
+                final st = _team;
+                openMyFantasyHub(context, isArabic, onToggleLanguage: _toggleLanguage,   // launch: ranking · leagues · Badger League
+                    showLanguage: _FancyPageState._lobbyCompact,
+                    onRecap: st != null && st._recap != null ? () => st._openRecap() : null);
               },
               child: Container(width: 36, height: 36,
                 decoration: BoxDecoration(color: cardBg, shape: BoxShape.circle, border: Border.all(color: const Color(0x99FFB300))),
                 child: const Icon(Icons.person_rounded, color: Colors.white, size: 19)),
             )),
             const SizedBox(width: 6),
-            FantasyLangToggle(isArabic: isArabic, onTap: _toggleLanguage),
-            const SizedBox(width: 6),
+            // compact: the language moved into My Fantasy; the arena switch circle sits here on the round page
+            if (!_FancyPageState._lobbyCompact) ...[
+              FantasyLangToggle(isArabic: isArabic, onTap: _toggleLanguage),
+              const SizedBox(width: 6),
+            ],
+            if (_gwBar && _team?.step == 1) ...[
+              _ArenaSwitchCircle(world: _team?.arena != 'EGYPT', onTap: () => _team?.switchArena()),
+              const SizedBox(width: 6),
+            ],
             _HelpPulse(active: _helpPulse, child: GestureDetector(
               onTap: () {
                 if (_helpPulse) { setState(() => _helpPulse = false); LocalStore.setFlag('fantasy_help_hint'); }
@@ -2641,7 +2683,7 @@ class _FantasyShellState extends State<FantasyShell> {
           children: [
             FancyPage(key: _teamKey, isArabicOverride: isArabic,
               onLanguageToggle: _toggleLanguage, showTopButtons: false,
-              onInArena: (v) { if (mounted && v != _inArena) setState(() => _inArena = v); }),
+              onInArena: (v) { if (mounted) setState(() => _inArena = v); }),
             FantasyRankTab(isArabic: isArabic, onToggleLanguage: _toggleLanguage),
             FantasyLeaguesTab(isArabic: isArabic),
           ],
@@ -2652,6 +2694,34 @@ class _FantasyShellState extends State<FantasyShell> {
           onDone: () { if (mounted) setState(() => _showIntro = false); })),
     ]);
   }
+}
+
+// ─── arena switch circle (launch top bar): flag inside, ⇄ badge, EG / WR under ───
+class _ArenaSwitchCircle extends StatelessWidget {
+  const _ArenaSwitchCircle({required this.world, required this.onTap});
+  final bool world;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: () { Buzz.tap(); onTap(); },
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Stack(clipBehavior: Clip.none, children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          transitionBuilder: (c, a) => RotationTransition(turns: Tween(begin: 0.5, end: 1.0).animate(a), child: FadeTransition(opacity: a, child: c)),
+          child: Container(key: ValueKey(world), width: 34, height: 34, alignment: Alignment.center,
+            decoration: BoxDecoration(color: cardBg, shape: BoxShape.circle, border: Border.all(color: Brand.green, width: 1.4)),
+            child: Text(world ? '🌍' : '🇪🇬', style: const TextStyle(fontSize: 16))),
+        ),
+        Positioned(right: -4, bottom: -3, child: Container(
+          padding: const EdgeInsets.all(1.5),
+          decoration: BoxDecoration(color: Brand.green, borderRadius: BorderRadius.circular(8)),
+          child: const Icon(Icons.swap_horiz_rounded, color: Colors.black, size: 11))),
+      ]),
+      const SizedBox(height: 1),
+      Text(world ? 'WR' : 'EG', style: const TextStyle(color: Colors.white70, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 1)),
+    ]),
+  );
 }
 
 // ─── Fantasy top tabs: فريقي | الترتيب | الليجز ───────────────────────────

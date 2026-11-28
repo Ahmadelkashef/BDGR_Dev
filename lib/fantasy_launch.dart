@@ -102,13 +102,20 @@ extension _LaunchLobby on _FancyPageState {
     return LayoutBuilder(key: const ValueKey('lobby'), builder: (context, constraints) => Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        StaggerIn(index: 0, child: backHeader(label: '', onBack: () => _v2Set(() => step = 0),
-            title: Text(t('Current GW', 'الجولة الحالية'), maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)))),
-        const SizedBox(height: 10),
-        StaggerIn(index: 1, dy: 24, child: _lInfoCard(event, ph, has)),
-        // the last finished round: "Round 1 · 9 pts · #5,457 ›" → the recap sheet
-        StaggerIn(index: 2, child: this._recapLine(event)),
+        // compact (fantasy_lobby_compact): the title + arena switch live in the top bar
+        if (!_FancyPageState._lobbyCompact) ...[
+          StaggerIn(index: 0, child: backHeader(label: '', onBack: () => _v2Set(() => step = 0),
+              title: Text(t('Current GW', 'الجولة الحالية'), maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)))),
+          const SizedBox(height: 10),
+          StaggerIn(index: 1, dy: 24, child: _lInfoCard(event, ph, has)),
+          // the last finished round: "Round 1 · 9 pts · #5,457 ›" → the recap sheet
+          StaggerIn(index: 2, child: this._recapLine(event)),
+        ] else ...[
+          StaggerIn(index: 1, dy: 24, child: _lDeadlineCard(event, ph, has)),
+          const SizedBox(height: 10),
+          StaggerIn(index: 2, dy: 24, child: _lPrizeCard(event)),
+        ],
         // modes = both (DB): pick which squad this page shows
         if (_FancyPageState._modes == 'both' && event.draftOn)
           Padding(padding: const EdgeInsets.only(top: 10), child: StaggerIn(index: 2, child: draftModeSwitch(onPick: (d) => _lSetMode(event, d)))),
@@ -125,7 +132,7 @@ extension _LaunchLobby on _FancyPageState {
               Text(isArabic ? '‹' : '›', style: const TextStyle(color: Brand.green, fontSize: 18, fontWeight: FontWeight.w900)),
             ])))),
         // open + no squad: nothing else, the team comes first
-        if (_squadChecked && (ph != 'open' || has))
+        if (!_FancyPageState._lobbyCompact && _squadChecked && (ph != 'open' || has))
           StaggerIn(index: 2, child: LaunchNudgeLine(key: ValueKey('nudge_${event.eventId}_$has'), isArabic: isArabic)),
         const SizedBox(height: 14),
         StaggerIn(index: 3, child: Row(children: [
@@ -280,6 +287,112 @@ extension _LaunchLobby on _FancyPageState {
         ],
       ]),
     );
+  }
+
+  /// compact deadline card (owner 28 Nov): its own card, countdown in boxes, saved chip, closing time
+  Widget _lDeadlineCard(FantasyEvent event, String ph, bool has) {
+    final left = _timeLeft;
+    String pad(int n) => n.toString().padLeft(2, '0');
+    final d = left.inDays, h = left.inHours.remainder(24), m = left.inMinutes.remainder(60), s = left.inSeconds.remainder(60);
+    final when = '${_fmtDeadline(event.deadlineAt)} ${_fmtDate(event.deadlineAt)}';
+    final c = switch (ph) { 'open' => Brand.green, 'live' => const Color(0xFFFF5C5C), _ => Colors.white70 };
+    Widget box(String v, String l) => Container(
+      width: 62, padding: const EdgeInsets.symmetric(vertical: 7),
+      decoration: BoxDecoration(color: const Color(0xFF0C0D10), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF2A2B31))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        RollingText(v, style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900, height: 1.1,
+            fontFeatures: [FontFeature.tabularFigures()])),
+        const SizedBox(height: 2),
+        Text(l, style: const TextStyle(color: muted, fontSize: 8.5, fontWeight: FontWeight.w800, letterSpacing: 1)),
+      ]),
+    );
+    const colon = Padding(padding: EdgeInsets.symmetric(horizontal: 4),
+        child: Text(':', style: TextStyle(color: Color(0xFF55585E), fontSize: 20, fontWeight: FontWeight.w900)));
+    final String title;
+    final String sub;
+    if (ph == 'live') {
+      title = t('Teams locked', 'التشكيلات اتقفلت');
+      sub = t('Matches are on · points come with the results', 'الماتشات شغالة · النقط بتنزل مع النتايج');
+    } else if (ph == 'finished') {
+      title = _myRank?['rank'] != null ? t('You finished #${_myRank!['rank']}', 'ترتيبك #${_myRank!['rank']}') : t('Round finished', 'الجولة خلصت');
+      sub = _myRank?['rank'] != null
+          ? t('${(_myRank!['total_points'] as num?)?.toStringAsFixed(0) ?? 0} pts · of ${_myRank!['total_players']} players',
+              '${(_myRank!['total_points'] as num?)?.toStringAsFixed(0) ?? 0} نقطة · من ${_myRank!['total_players']} لاعب')
+          : t('The next round is coming soon', 'الجولة الجاية قريب');
+    } else {
+      title = '';
+      sub = '';
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: c.withOpacity(0.5)),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: [Color.lerp(cardBg, c, 0.12)!, cardBg]),
+      ),
+      child: Column(children: [
+        Row(children: [
+          Expanded(child: Text(ph == 'open' ? t('DEADLINE', 'آخر ميعاد') : ph == 'live' ? t('LIVE', 'شغالة') : t('FINISHED', 'خلصت'),
+            style: TextStyle(color: c, fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 2))),
+          if (ph == 'open' && has) PopIn(delayMs: 250, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Brand.green.withOpacity(0.7))),
+            child: Text(t('✓ Team saved', '✓ تشكيلتك محفوظة'),
+              style: const TextStyle(color: Brand.green, fontSize: 10.5, fontWeight: FontWeight.w900)))),
+          if (ph != 'open') _phasePill(ph),
+        ]),
+        const SizedBox(height: 10),
+        if (ph == 'open') ...[
+          Directionality(textDirection: TextDirection.ltr, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (d > 0) ...[box('$d', t('DAYS', 'يوم')), colon],
+            box(pad(h), t('HRS', 'ساعة')), colon,
+            box(pad(m), t('MIN', 'دقيقة')),
+            if (d == 0) ...[colon, box(pad(s), t('SEC', 'ثانية'))],
+          ])),
+          const SizedBox(height: 9),
+          Text(t('Closes $when', 'بتتقفل $when'), style: const TextStyle(color: muted, fontSize: 12)),
+        ] else ...[
+          Text(title, textAlign: TextAlign.center,
+            style: TextStyle(color: c, fontSize: 19, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(sub, textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 12)),
+        ],
+      ]),
+    );
+  }
+
+  /// compact prize card: its own gold card under the deadline (tap → all prizes + the round sponsor)
+  Widget _lPrizeCard(FantasyEvent event) {
+    if (event.prizes.isEmpty) return const SizedBox.shrink();
+    final first = event.prizes.reduce((a, b) => a.rank <= b.rank ? a : b);
+    const gold = Color(0xFFFFC233);
+    return Pressable(child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _lPrizesSheet(event),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF5C4A1A)),
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [Color(0xFF241D0C), cardBg]),
+        ),
+        child: Row(children: [
+          const Text('🏆', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(t('1st PRIZE', 'الجايزة الأولى'), style: const TextStyle(color: Color(0xFFC9A84A), fontSize: 9.5, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+            const SizedBox(height: 1),
+            Text(first.text(isArabic), maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: gold, fontSize: 18, fontWeight: FontWeight.w900)),
+          ])),
+          Text(t('All prizes ›', 'كل الجوايز ›'), style: const TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w700)),
+        ]),
+      ),
+    ));
   }
 
   static const _cdStyle = TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900,
@@ -450,22 +563,27 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
 }
 
 // ─── "My Fantasy": ranking · leagues · Badger League (header person icon) ────
-void openMyFantasyHub(BuildContext context, bool isArabic, {VoidCallback? onToggleLanguage}) {
+void openMyFantasyHub(BuildContext context, bool isArabic, {VoidCallback? onToggleLanguage,
+    bool showLanguage = false, VoidCallback? onRecap}) {
   Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) =>
-      _LaunchHubPage(isArabic: isArabic, onToggleLanguage: onToggleLanguage)));
+      _LaunchHubPage(isArabic: isArabic, onToggleLanguage: onToggleLanguage, showLanguage: showLanguage, onRecap: onRecap)));
 }
 
 class _LaunchHubPage extends StatefulWidget {
-  const _LaunchHubPage({required this.isArabic, this.onToggleLanguage});
+  const _LaunchHubPage({required this.isArabic, this.onToggleLanguage, this.showLanguage = false, this.onRecap});
   final bool isArabic;
   final VoidCallback? onToggleLanguage;
+  /// compact round page (owner 28 Nov): the language switch + the last-round recap live here
+  final bool showLanguage;
+  final VoidCallback? onRecap;
   @override
   State<_LaunchHubPage> createState() => _LaunchHubPageState();
 }
 
 class _LaunchHubPageState extends State<_LaunchHubPage> {
   _LaunchStatus? _s;
-  bool get ar => widget.isArabic;
+  late bool _ar = widget.isArabic;   // flips with the language button on this page
+  bool get ar => _ar;
   String t(String en, String a) => ar ? a : en;
 
   @override
@@ -526,6 +644,14 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
               : t('Team up with 1 to 4 friends · ${_blMonthName(s?.month, false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s?.month, true)}'),
             maxLines: 2, overflow: TextOverflow.ellipsis, style: subStyle),
           onTap: () async { await _openBLeague(context); _load(true); }),
+        if (widget.onRecap != null)
+          _card(i: 3, icon: const Text('🏁', style: TextStyle(fontSize: 22)), title: t('Last round', 'آخر جولة'),
+            sub: Text(t('Your points, rank and best player', 'نقطك وترتيبك وأحسن لاعب عندك'), style: subStyle),
+            onTap: () => widget.onRecap!()),
+        if (widget.showLanguage && widget.onToggleLanguage != null)
+          _card(i: 4, icon: const Icon(Icons.language_rounded, color: Colors.white, size: 24), title: t('Language', 'اللغة'),
+            sub: Text(ar ? 'العربية · دوس علشان English' : 'English · tap for العربية', style: subStyle),
+            onTap: () { widget.onToggleLanguage!(); setState(() => _ar = !_ar); }),
       ],
     ));
   }
