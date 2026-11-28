@@ -5,13 +5,15 @@ import 'package:flutter/material.dart';
 import '../app_lang.dart';
 import '../motion_kit.dart';
 import 'profile_trophies.dart';
+import 'streak_card.dart' show StreakCard;
 
 // ═════════════════════════════════════════════════════════════════════════
 // Trophy cabinet (owner, 28 Nov): a lit glass cabinet instead of numbers.
 // Everything is computed on the phone from `profile_trophies` (rounds_list + titles): no new server call.
 // Each finished round gives its BEST place only: #1 gold ball · #2 silver · #3 bronze ·
 // top 1% crystal · 5% · 10% · 25% · 50% plaques. Titles: governorate #1, league #1, Badger Cup, Badger League.
-// Journey: first round, 5/10/25/50 rounds, streak (gameweeks in a row, both arenas together), best points.
+// Rounds: shirts 5/10/20/50. Streak = the fuel card (both arenas). One-time: first round, complete profile, best points.
+// The level (higher arena) sits above the cabinet as one slim line (CabinetLevelLine).
 // Drawn in code (no files, no egress). Locked (faded + 🔒) goals only for the owner.
 // ═════════════════════════════════════════════════════════════════════════
 
@@ -47,9 +49,11 @@ class _Trophy {
 }
 
 class _Shelf {
-  _Shelf(this.en, this.ar, this.items);
+  _Shelf(this.en, this.ar, this.items, {this.streak = false});
   final String en, ar;
   final List<_Trophy> items;
+  /// the streak "fuel" card lives here instead of trophies
+  final bool streak;
 }
 
 int _i(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
@@ -66,7 +70,7 @@ class CabinetData {
     final rows = t.roundsList;
     _Trophy tr(String k, TrophyShape s, _Metal m, String en, String ar, String hEn, String hAr, {String mark = ''}) =>
         _Trophy(k, s, m, en, ar, hEn, hAr, mark: mark,
-            countable: !const {'debut', 'rounds', 'streak', 'best', 'profile', 'level'}.contains(k));
+            countable: !k.startsWith('rounds') && !const {'debut', 'streak', 'best', 'profile', 'level'}.contains(k));
 
     final app1 = tr('app1', TrophyShape.ball, _Metal.gold, '#1 Round', '#1 الجولة',
         'Finished FIRST of everyone in a round', 'خلص الأول على الكل في جولة');
@@ -114,25 +118,13 @@ class CabinetData {
     final n = savedAll > rows.length ? savedAll : rows.length;
     final debut = tr('debut', TrophyShape.ticket, _Metal.silver, 'First round', 'أول جولة',
         'Played his first round', 'لعب أول جولة', mark: 'GW1')..count = n > 0 ? 1 : 0;
-    const steps = [5, 10, 25, 50];
-    final reached = steps.where((s) => n >= s).toList();
-    final nextStep = steps.firstWhere((s) => n < s, orElse: () => 0);
-    final shirtN = reached.isEmpty ? nextStep : reached.last;
-    final shirt = tr('rounds', TrophyShape.shirt, reached.isEmpty ? _Metal.silver : (shirtN >= 25 ? _Metal.gold : _Metal.silver),
-        '$shirtN rounds', '$shirtN جولة', 'Played $shirtN rounds', 'لعب $shirtN جولة', mark: '$shirtN')
-      ..count = reached.isEmpty ? 0 : 1;
-    // streak = finished gameweeks in a row (round numbers), any arena
-    final nos = rows.map((r) => _i(r['round_no'])).where((x) => x > 0).toSet().toList()..sort();
-    var bestRun = 0, run = 0, prev = -9;
-    for (final x in nos) {
-      run = x == prev + 1 ? run + 1 : 1;
-      prev = x;
-      bestRun = math.max(bestRun, run);
-    }
-    final streakGoal = bestRun >= 2 ? bestRun : 3;
-    final streak = tr('streak', TrophyShape.flame, _Metal.red, '$streakGoal in a row', '$streakGoal ورا بعض',
-        'Played $streakGoal gameweeks in a row (Egypt or World)', 'لعب $streakGoal جولات ورا بعض (محلي أو دولي)',
-        mark: '$streakGoal')..count = bestRun >= 2 ? 1 : 0;
+    // owner 28 Nov: the shirts are their own shelf, one shirt per milestone
+    const steps = [5, 10, 20, 50];
+    final shirts = [
+      for (final st in steps)
+        tr('rounds$st', TrophyShape.shirt, st >= 20 ? _Metal.gold : _Metal.silver,
+            '$st rounds', '$st جولة', 'Played $st rounds', 'لعب $st جولة', mark: '$st')..count = n >= st ? 1 : 0,
+    ];
     num bestPts = -1 << 30;
     Map<String, dynamic>? bestRow;
     for (final r in rows) {
@@ -146,12 +138,6 @@ class CabinetData {
     final prof = tr('profile', TrophyShape.profile, _Metal.crystal, 'Complete profile', 'بروفايل كامل',
         'Name, username, governorate and birth date are all set', 'الاسم واليوزرنيم والمحافظة وتاريخ الميلاد كلهم متسجلين',
         mark: '100%')..count = t.profileComplete ? 1 : 0;
-    // owner 28 Nov: a badge for the level reached (higher of Egypt / World), name always English
-    final lvl = [ArenaLevel.of(t, 'LOCAL').level, ArenaLevel.of(t, 'WORLD').level].reduce((a, b) => a > b ? a : b);
-    final lvlName = levelName(lvl);
-    final lvBadge = tr('level', TrophyShape.shield, lvl >= 5 ? _Metal.gold : lvl >= 3 ? _Metal.silver : _Metal.bronze,
-        lvlName, lvlName, 'Reached the $lvlName level', 'وصل لمستوى $lvlName')..count = lvl >= 1 ? 1 : 0;
-
     // locked goals (owner only)
     List<_Trophy> pick(List<_Trophy> all, List<_Trophy> goals) {
       final out = <_Trophy>[];
@@ -164,7 +150,6 @@ class CabinetData {
       }
       return out;
     }
-    final anyTop10 = p1.count + p5.count + p10.count > 0;
     // never played: one calm shelf of first goals (owner) instead of 4 faded shelves
     if (n == 0 && cup.count + bl.count == 0) {
       final first = <_Trophy>[debut..locked = true, app1..locked = true, p10..locked = true];
@@ -177,12 +162,16 @@ class CabinetData {
       return CabinetData._(shown.isEmpty ? const [] : [_Shelf('Your first trophies', 'أول كاساتك', shown)],
           prof.count, false);
     }
+    // owner 28 Nov, top → bottom: Titles · Podium · Elite (1–50%) · Rounds (shirts) · Streak · One-time
+    final elite = [p1, p5, p10, p25, p50];
     final shelves = <_Shelf>[
       _Shelf('Titles', 'الألقاب', pick([app1, cup, bl, gov1, lg1], [app1, cup, bl])),
-      _Shelf('Podium', 'المنصة', pick([r2, r3, p1], [r2, r3])),
-      _Shelf('Elite', 'النخبة', pick([p5, p10, p25, p50], anyTop10 ? [] : [p10])),
-      _Shelf('Journey', 'المشوار', pick([lvBadge, debut, shirt, pb, prof], [debut, shirt, prof])),
-    ].where((s) => s.items.isNotEmpty).toList();
+      _Shelf('Podium', 'المنصة', pick([r2, r3], [r2, r3])),
+      _Shelf('Elite', 'النخبة', pick(elite, elite)),
+      _Shelf('Rounds', 'الجولات', pick(shirts, shirts)),
+      if (owner || t.streakBest > 0) _Shelf('Streak', 'الستريك', const [], streak: true),
+      _Shelf('One-time', 'لمرة واحدة', pick([debut, prof, pb], [debut, prof])),
+    ].where((s) => s.items.isNotEmpty || s.streak).toList();
     final total = shelves.expand((s) => s.items).where((x) => !x.locked).fold<int>(0, (a, x) => a + x.count);
     return CabinetData._(shelves, total, n > 0);
   }
@@ -271,9 +260,19 @@ class TrophyCabinet extends StatelessWidget {
   );
 
   Widget _shelf(BuildContext context, _Shelf s) {
+    if (s.streak) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(AppLang.t(s.en, s.ar), style: const TextStyle(color: Color(0xFF9A9AA3), fontSize: 10.5, letterSpacing: 0.5))),
+          StreakCard(t: t!, isOwner: isOwner, embedded: true),
+        ]),
+      );
+    }
     final rows = <List<_Trophy>>[];
-    for (var i = 0; i < s.items.length; i += 4) {
-      rows.add(s.items.sublist(i, math.min(i + 4, s.items.length)));
+    for (var i = 0; i < s.items.length; i += 5) {
+      rows.add(s.items.sublist(i, math.min(i + 5, s.items.length)));
     }
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -286,7 +285,8 @@ class TrophyCabinet extends StatelessWidget {
             decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
                 colors: [Color(0x12FFF5D7), Color(0x00FFFFFF)])),
             child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, crossAxisAlignment: CrossAxisAlignment.end, children: [
-              for (final x in row) _item(context, x),
+              // up to 5 in a row: a narrow phone scales the trophies down instead of overflowing
+              for (final x in row) Expanded(child: FittedBox(fit: BoxFit.scaleDown, child: _item(context, x))),
             ]),
           ),
           // glass shelf
@@ -723,6 +723,63 @@ class _ArenaLevelCardState extends State<ArenaLevelCard> {
   }
 }
 
+
+/// Owner 28 Nov: the level sits right above the cabinet as ONE slim line:
+/// [badge] Rookie ──── 34 / 150 ──→ [faded badge] Semi-Pro · "116 pts to Semi-Pro". Higher arena wins.
+class CabinetLevelLine extends StatelessWidget {
+  const CabinetLevelLine({super.key, required this.t});
+  final ProfileTrophies t;
+
+  Widget _badge(int level, {required bool dim}) {
+    final m = _lvl[level].$2;
+    return Opacity(opacity: dim ? 0.35 : 1, child: SizedBox(width: 26, height: 32,
+        child: CustomPaint(painter: TrophyPainter(TrophyShape.shield, m == _Metal.dim ? _Metal.silver : m, ''))));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = ArenaLevel.of(t, 'LOCAL'), b = ArenaLevel.of(t, 'WORLD');
+    final lv = a.points >= b.points ? a : b;
+    final next = lv.next;
+    final frac = next == null ? 1.0 : ((lv.points - lv.floor) / (next - lv.floor)).clamp(0.0, 1.0).toDouble();
+    final accent = lv.level == 0 ? const Color(0xFFBFC2C8) : lv.color;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Directionality(
+        textDirection: AppLang.isArabic ? TextDirection.rtl : TextDirection.ltr,
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          _badge(lv.level, dim: false),
+          const SizedBox(width: 6),
+          Text(lv.name, style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.w900)),
+          const SizedBox(width: 10),
+          Expanded(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(3), child: SizedBox(height: 5, child: Stack(children: [
+                Container(color: Colors.white10),
+                FractionallySizedBox(widthFactor: frac, child: Container(decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [accent.withOpacity(0.55), accent])))),
+              ])))),
+              if (next != null) Icon(AppLang.isArabic ? Icons.chevron_left : Icons.chevron_right, color: Colors.white38, size: 16),
+            ]),
+            const SizedBox(height: 3),
+            Text(next == null ? AppLang.t('Top level 👑', 'أعلى مستوى 👑')
+                : AppLang.t('${fmtInt(lv.points)} / ${fmtInt(next)} · ${fmtInt(next - lv.points)} pts to go',
+                    '${fmtInt(lv.points)} / ${fmtInt(next)} · فاضل ${fmtInt(next - lv.points)} نقطة'),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+          ])),
+          if (next != null) ...[
+            const SizedBox(width: 4),
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              _badge(lv.level + 1, dim: true),
+              Text(levelName(lv.level + 1), style: const TextStyle(color: Colors.white30, fontSize: 9.5, fontWeight: FontWeight.w700)),
+            ]),
+          ],
+        ]),
+      ),
+    );
+  }
+}
 
 /// slow on/off glow (the trophy that wants to be earned); still when animations are off
 class _Breathe extends StatefulWidget {

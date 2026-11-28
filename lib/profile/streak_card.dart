@@ -18,9 +18,11 @@ import 'trophy_cabinet.dart' show streakSteps, streakPointsFor;
 const _flameA = Color(0xFFFF8A3D), _flameB = Color(0xFFFF3B3B), _gold = Color(0xFFFFD27A);
 
 class StreakCard extends StatelessWidget {
-  const StreakCard({super.key, required this.t, required this.isOwner});
+  const StreakCard({super.key, required this.t, required this.isOwner, this.embedded = false});
   final ProfileTrophies t;
   final bool isOwner;
+  /// inside the trophy cabinet (owner 28 Nov): its own shelf above One-time, no top margin
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +36,7 @@ class StreakCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: () => showStreakExplainer(context, best: best, current: cur),
       child: Container(
-        margin: const EdgeInsets.only(top: 12),
+        margin: EdgeInsets.only(top: embedded ? 6 : 12, bottom: embedded ? 4 : 0),
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
