@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../app_config.dart';
 import '../brand.dart';
+import '../media_cache.dart';
 import 'competition_sports.dart';
 
 /// كارت "WELCOME NEW BADGER": كارت دهبي على شكل درع (ستايل كروت اللاعيبة)
@@ -23,16 +24,18 @@ const _goldGradient = LinearGradient(
 );
 
 /// يجيب بيانات البروفايل ويفتح الكارت. مفيش حاجة بتتحفظ هنا.
-/// الكورة: بيرجّع 'captain' أو 'join' لو اليوزر اختار (وإلا null).
+/// الأونر (28 نوفمبر): زرار واحد "Edit" بس → بيرجّع 'edit' (يغيّر الرياضة الأساسية). ✕ / برّه = خلاص اتسجل (null).
+/// زراير الفرق (كابتن / انضم) اتشالت من الكارت؛ الفرق نفسها مستخبية بسويتش competition_teams.
 Future<String?> showBadgerWelcomeCard(BuildContext context, CompSport sport, {required bool arabic}) async {
-  String name = 'BDGR Athlete';
+  String name = '';
   String? avatar;
   try {
     final res = await supa.rpc('get_my_profile_info');
     if (res is List && res.isNotEmpty) {
       final d = res.first as Map<String, dynamic>;
       final n = (d['display_name'] ?? d['full_name'] ?? '').toString().trim();
-      if (n.isNotEmpty) name = n;
+      // الاسم الافتراضي "BDGR Athlete" = ملوش اسم → مش بيتكتب
+      if (n.isNotEmpty && n.toLowerCase() != 'bdgr athlete') name = n;
       final a = (d['avatar_url'] ?? d['provider_avatar_url'] ?? '').toString().trim();
       if (a.isNotEmpty) avatar = a;
     }
@@ -43,13 +46,13 @@ Future<String?> showBadgerWelcomeCard(BuildContext context, CompSport sport, {re
   // نحمّل الصورة الأول عشان الكارت يظهر كامل (والشير يطلع فيه الصورة)
   if (avatar != null) {
     try {
-      await precacheImage(NetworkImage(avatar), context).timeout(const Duration(seconds: 6));
+      await precacheImage(MediaCache.image(avatar), context).timeout(const Duration(seconds: 6));
     } catch (_) {}
   }
   if (!context.mounted) return null;
   return showGeneralDialog<String>(
     context: context,
-    barrierDismissible: false,
+    barrierDismissible: true,
     barrierLabel: 'badger-card',
     barrierColor: Colors.black.withOpacity(0.85),
     transitionDuration: const Duration(milliseconds: 420),
@@ -112,6 +115,9 @@ class _BadgerCardDialogState extends State<_BadgerCardDialog> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Align(alignment: AlignmentDirectional.centerEnd, child: IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white54))),
                 Text(t("You're in! 🎉", 'مبروك! 🎉'),
                     style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 4),
@@ -128,60 +134,20 @@ class _BadgerCardDialogState extends State<_BadgerCardDialog> {
                   ]),
                 ),
                 const SizedBox(height: 22),
-                // الكورة: بعد الكارت نسأله عن الفريق (بدل شير / تمام)
-                if (widget.sport.id == 'football') SizedBox(
-                  width: cardW,
-                  child: Column(children: [
-                    Text(t('Ready to play? Build your team', 'جاهز تلعب؟ كوّن فريقك'),
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 10),
-                    Row(children: [
-                      Expanded(child: SizedBox(height: 48, child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop('captain'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold, foregroundColor: Colors.black, elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                        child: Text(t('Captain: create', 'كابتن: اعمل فريق'), textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
-                      ))),
-                      const SizedBox(width: 10),
-                      Expanded(child: SizedBox(height: 48, child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop('join'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _gold, side: BorderSide(color: _gold.withOpacity(0.6)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                        child: Text(t('Join a team', 'انضم لفريق'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                      ))),
-                    ]),
-                    TextButton(onPressed: () => Navigator.of(context).pop(),
-                        child: Text(t('Later', 'بعدين'), style: const TextStyle(color: Colors.white54))),
-                  ]),
-                )
-                else SizedBox(
-                  width: cardW,
-                  child: Row(children: [
-                    Expanded(child: SizedBox(height: 48, child: OutlinedButton.icon(
-                      onPressed: _sharing ? null : _share,
-                      icon: _sharing
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _gold))
-                          : const Icon(Icons.ios_share_rounded, size: 18),
-                      label: Text(t('Share', 'شير'), style: const TextStyle(fontWeight: FontWeight.w800)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _gold, side: BorderSide(color: _gold.withOpacity(0.6)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ))),
-                    const SizedBox(width: 10),
-                    Expanded(child: SizedBox(height: 48, child: ElevatedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold, foregroundColor: Colors.black, elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: Text(t('Done', 'تمام'), style: const TextStyle(fontWeight: FontWeight.w900)),
-                    ))),
-                  ]),
-                ),
+                SizedBox(width: cardW, child: Text(
+                    t("We'll tell you as soon as the tournament opens. Stay tuned 🔔",
+                        'هنبلغك بالبطولة أول ما تتسجل، خليك متابع 🔔'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4))),
+                const SizedBox(height: 16),
+                SizedBox(width: cardW * 0.62, height: 46, child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).pop('edit'),
+                  icon: const Icon(Icons.edit_rounded, size: 18),
+                  label: Text(t('Edit', 'تعديل'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _gold, side: BorderSide(color: _gold.withOpacity(0.7)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                )),
               ]),
             ),
           ),
@@ -239,58 +205,37 @@ class BadgerCard extends StatelessWidget {
     );
   }
 
+  // الأونر (28 نوفمبر): الصورة بعرض الكارت فوق (من غير علم ولا عمود NEW/BADGER)،
+  // مفيش صورة → البادجر على الأسود؛ الاسم بس لو موجود.
   Widget _content(double w, double h, BuildContext context) {
-    final iw = w - 0; // عرض تقريبي للمحتوى
+    final iw = w;
     return Stack(children: [
-      // الصورة
       Positioned(
-        top: h * 0.085, right: iw * 0.04, width: iw * 0.66, height: h * 0.56,
+        top: 0, left: 0, right: 0, height: h * 0.6,
         child: ShaderMask(
           shaderCallback: (r) => const LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [Colors.white, Colors.white, Colors.transparent], stops: [0, 0.72, 1],
+            colors: [Colors.white, Colors.white, Colors.transparent], stops: [0, 0.7, 1],
           ).createShader(r),
           blendMode: BlendMode.dstIn,
           child: _photo(iw),
         ),
       ),
-      // العمود الشمال: NEW + BADGER + علم + لوجو اللعبة
       Positioned(
-        top: h * 0.12, left: iw * 0.075, width: iw * 0.24,
+        left: iw * 0.1, right: iw * 0.1, top: h * (name.isEmpty ? 0.6 : 0.56),
         child: Column(children: [
-          _goldText('NEW', iw * 0.135, FontWeight.w900, letterSpacing: 0.5),
-          SizedBox(height: h * 0.004),
-          _goldText('BADGER', iw * 0.045, FontWeight.w800, letterSpacing: 1.5),
-          SizedBox(height: h * 0.02),
-          Container(height: 1, width: iw * 0.16, color: _gold.withOpacity(0.5)),
-          SizedBox(height: h * 0.02),
-          _EgyptFlag(width: iw * 0.15),
-          SizedBox(height: h * 0.022),
-          Container(
-            width: iw * 0.15, height: iw * 0.15,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: _gold, width: 1.4),
-              gradient: RadialGradient(colors: [_gold.withOpacity(0.25), Colors.transparent]),
-            ),
-            child: Icon(sport.icon, color: _goldLight, size: iw * 0.085),
-          ),
-        ]),
-      ),
-      // الاسم + الترحيب
-      Positioned(
-        left: iw * 0.1, right: iw * 0.1, top: h * 0.6,
-        child: Column(children: [
-          FittedBox(fit: BoxFit.scaleDown, child: _goldText(name, iw * 0.095, FontWeight.w900)),
-          SizedBox(height: h * 0.012),
+          if (name.isNotEmpty) ...[
+            FittedBox(fit: BoxFit.scaleDown, child: _goldText(name, iw * 0.095, FontWeight.w900)),
+            SizedBox(height: h * 0.012),
+          ],
           Container(height: 1.2, decoration: BoxDecoration(gradient: LinearGradient(colors: [
             _gold.withOpacity(0), _gold, _gold.withOpacity(0)]))),
           SizedBox(height: h * 0.028),
-          _goldText('WELCOME NEW BADGER', iw * 0.058, FontWeight.w900, letterSpacing: 1.2),
+          FittedBox(fit: BoxFit.scaleDown, child: _goldText('WELCOME NEW BADGER', iw * 0.058, FontWeight.w900, letterSpacing: 1.2)),
           SizedBox(height: h * 0.012),
-          Text('FOR ${sport.en.toUpperCase()}',
+          FittedBox(fit: BoxFit.scaleDown, child: Text('FOR ${sport.en.toUpperCase()}',
               style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: iw * 0.046,
-                  fontWeight: FontWeight.w700, letterSpacing: 2.5)),
+                  fontWeight: FontWeight.w700, letterSpacing: 2.5))),
           SizedBox(height: h * 0.03),
           Text('B D G R', style: TextStyle(color: _gold.withOpacity(0.55), fontSize: iw * 0.032,
               fontWeight: FontWeight.w800, letterSpacing: 3)),
@@ -300,10 +245,15 @@ class BadgerCard extends StatelessWidget {
   }
 
   Widget _photo(double iw) {
-    final fallback = Center(child: _goldText(
-      name.isEmpty ? 'B' : name.characters.first.toUpperCase(), iw * 0.3, FontWeight.w900));
+    final fallback = Container(
+      decoration: const BoxDecoration(gradient: RadialGradient(center: Alignment(0, -0.1), radius: 0.8,
+          colors: [Color(0xFF2A2A2E), Color(0xFF121214), Color(0xFF0A0A0B)])),
+      alignment: const Alignment(0, 0.1),
+      child: FractionallySizedBox(widthFactor: 0.45,
+          child: Opacity(opacity: 0.9, child: Image.asset(Brand.badger, fit: BoxFit.contain))),
+    );
     if (avatarUrl == null) return fallback;
-    return Image.network(avatarUrl!, fit: BoxFit.cover, alignment: Alignment.topCenter,
+    return Image(image: MediaCache.image(avatarUrl!), fit: BoxFit.cover, alignment: Alignment.topCenter,
         errorBuilder: (_, __, ___) => fallback);
   }
 

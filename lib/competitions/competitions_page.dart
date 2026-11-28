@@ -21,6 +21,19 @@ import 'competition_sports.dart';
 
 const Color _gold = Color(0xFFFFD54F);
 
+/// DB switches for the competitions page (`competition_ui()`); teams hidden until the owner shows them.
+class CompUi {
+  CompUi._();
+  /// `app_settings.competition_teams` = show | hide (default hide): team hub, captain / join, team links
+  static bool teams = false;
+  static Future<void> load() async {
+    try {
+      final r = await supa.rpc('competition_ui');
+      if (r is Map) teams = r['teams']?.toString() == 'show';
+    } catch (_) {}
+  }
+}
+
 class CompetitionsPage extends StatefulWidget {
   const CompetitionsPage({super.key});
 
@@ -66,6 +79,7 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
   }
 
   Future<void> _load() async {
+    await CompUi.load();
     try {
       final res = await supa.rpc('competition_my_interests');
       final list = (res as List?)?.map((e) => e.toString()).toList() ?? <String>[];
@@ -93,8 +107,15 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
       if (fav != null && list.first != oldFav) {
         final next = await showBadgerWelcomeCard(context, fav, arabic: _ar);
         if (!mounted) return;
-        if (next == 'captain') await openTeamCreate(context);
-        if (next == 'join') await openTeamJoin(context);
+        // Edit = he picked the main sport by mistake → choose again, then save (card shows again)
+        if (next == 'edit') {
+          final before = _picked.isEmpty ? null : _picked.first;
+          await _editFavorite();
+          if (mounted && _picked.isNotEmpty && _picked.first != before) {
+            setState(() => _saving = false);
+            await _save();
+          }
+        }
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -118,9 +139,14 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
   }
 
   /// تعليم/شيل. أول تعليم = المفضلة؛ لو شال المفضلة اللي بعدها تطلع مكانها.
-  void _toggle(String id) => setState(() {
-        if (!_picked.remove(id)) _picked.add(id);
-      });
+  /// owner 28 Nov: the first tap = the MAIN sport (one only); after that taps = other interests.
+  /// Tapping the main sport = change it (sheet).
+  void _toggle(String id) {
+    if (_picked.isNotEmpty && _picked.first == id) { _editFavorite(); return; }
+    setState(() {
+      if (!_picked.remove(id)) _picked.add(id);
+    });
+  }
 
   /// اللعبة دي تبقى المفضلة، والمفضلة القديمة تنزل أول "اهتمامات تانية"
   void _setFavorite(String id) => setState(() {
@@ -147,7 +173,7 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
               child: Row(children: [
                 const Icon(Icons.star_rounded, color: _gold, size: 20),
                 const SizedBox(width: 8),
-                Expanded(child: Text(t('Choose your favorite sport', 'اختار رياضتك المفضلة'),
+                Expanded(child: Text(t('Choose your main sport', 'اختار رياضتك الأساسية'),
                     style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
               ]),
             ),
@@ -214,8 +240,11 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
                 style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1)),
           ),
           const SizedBox(height: 8),
-          Text(t('Your game. Your tournament.', 'لعبتك. بطولتك.'),
-              style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, height: 1.2)),
+          Text(t('Tournaments are coming 🏆', 'البطولات جاية قريب 🏆'),
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, height: 1.2)),
+          const SizedBox(height: 4),
+          Text(t('Which tournament are you waiting for most? Pick ONE.', 'إيه أكتر بطولة مستنيها؟ اختار واحدة بس.'),
+              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.3)),
         ]),
       );
 
@@ -286,7 +315,7 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(t('Your favorite', 'رياضتك المفضلة'),
+            Text(t('Your main sport', 'رياضتك الأساسية'),
                 style: const TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
             Text(fav == null ? '' : (_ar ? fav.ar : fav.en), maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -368,14 +397,16 @@ class _CompetitionsPageState extends State<CompetitionsPage> {
                   : CustomScrollView(slivers: [
                       SliverPadding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 14), sliver: SliverToBoxAdapter(child: _hero())),
                       // فريقي ⚽ (لو مسجّل في الكورة)
-                      if (_saved.contains('football'))
+                      if (CompUi.teams && _saved.contains('football'))
                         const SliverPadding(padding: EdgeInsets.fromLTRB(16, 0, 16, 18), sliver: SliverToBoxAdapter(child: TeamHubCard())),
                       // بانر إعلان (لو فيه)
                       const SliverToBoxAdapter(child: AdSlot('competitions_top', compact: true, banner: true, padding: EdgeInsets.fromLTRB(16, 0, 16, 18))),
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                         sliver: SliverToBoxAdapter(child: Text(
-                          t('Which sports do you want to compete in?', 'عايز تنافس في إيه؟'),
+                          _picked.isEmpty
+                              ? t('Pick your main sport', 'اختار رياضتك الأساسية')
+                              : t('Other sports you like (optional)', 'رياضات تانية بتحبها (اختياري)'),
                           style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         )),
                       ),

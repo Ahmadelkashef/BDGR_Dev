@@ -302,12 +302,17 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          flutter build apk --release \
-            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
-            --dart-define=SUPABASE_KEY="$SUPABASE_KEY" \
-            --dart-define=APP_ID="$APP_ID" \
-            --dart-define=APP_NAME="$APP_NAME" \
-            --dart-define=DEV_MODE="$DEV_MODE"
+          # Maven Central sometimes answers 429 (too many requests) → retry up to 3 times with a pause
+          for i in 1 2 3; do
+            flutter build apk --release \
+              --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+              --dart-define=SUPABASE_KEY="$SUPABASE_KEY" \
+              --dart-define=APP_ID="$APP_ID" \
+              --dart-define=APP_NAME="$APP_NAME" \
+              --dart-define=DEV_MODE="$DEV_MODE" && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            echo "Build failed (try $i), retrying in $((i*45))s"; sleep $((i*45))
+          done
           mv build/app/outputs/flutter-apk/app-release.apk \
              "build/app/outputs/flutter-apk/${APP_NAME}-${GITHUB_RUN_NUMBER}.apk"
 

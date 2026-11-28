@@ -341,11 +341,13 @@ class _MainShellState extends State<MainShell> {
   }
 
   // ── دعوة فريق (مسابقات): نروح للمسابقات ونفتح صفحة الانضمام بالكود ──
-  void _openPendingTeam() {
+  Future<void> _openPendingTeam() async {
     final code = DeepLinks.pendingTeamCode.value;
     if (code == null || !mounted) return;
     if (supa.auth.currentSession == null) return;   // بعد اللوجن
     DeepLinks.consumeTeam();
+    await CompUi.load();
+    if (!CompUi.teams || !mounted) return;   // teams hidden (competition_teams = hide)
     const tab = 3;
     setState(() => _index = tab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
