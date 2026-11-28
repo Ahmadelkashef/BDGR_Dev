@@ -52,10 +52,106 @@ class _Slide {
 }
 
 class _Kind {
-  _Kind(this.key, this.icon, this.en, this.ar, this.ring, this.slides, this.seenKey);
+  _Kind(this.key, this.icon, this.en, this.ar, this.ring, this.slides, this.seenKey, {this.user, this.badge, this.subEn, this.subAr, this.badgeColor});
   final String key, icon, en, ar, seenKey;
   final (Color, Color, Color) ring;
   final List<_Slide> slides;
+  // person circle (owner 28 Nov): one story per winner after the big highlights
+  final MomentUser? user;
+  final String? badge, subEn, subAr;
+  final Color? badgeColor;
+  bool get isPerson => user != null;
+}
+
+/// One achievement of one person, used to build the per-winner circles.
+class _Ach {
+  _Ach(this.weight, this.slide, {this.prize = 0, this.badge, this.subEn, this.subAr, this.ring = _gold, this.badgeColor});
+  final int weight; // bigger = shown first (inside the person's story too)
+  final int prize; // EGP value, the first sort key between people
+  final _Slide slide;
+  final String? badge, subEn, subAr;
+  final (Color, Color, Color) ring;
+  final Color? badgeColor;
+}
+
+String _ord(int r) => r == 1 ? '1st' : r == 2 ? '2nd' : '3rd';
+String _ordAr(int r) => r == 1 ? 'الأول' : r == 2 ? 'التاني' : 'التالت';
+const _medalEmoji = ['🥇', '🥈', '🥉'];
+
+/// Every winner once, biggest prize / achievement first (owner 28 Nov).
+List<_Kind> _people(Map<String, dynamic> d) {
+  final by = <int, List<_Ach>>{};
+  final users = <int, MomentUser>{};
+  final events = <int, Set<String>>{};
+  final covered = <String>{}; // event:user that already has a prize slide
+  void add(MomentUser u, String ev, _Ach a) {
+    if (u.userId == 0) return;
+    users[u.userId] ??= u;
+    (by[u.userId] ??= []).add(a);
+    (events[u.userId] ??= {}).add(ev);
+  }
+  for (final p in _list(d['prizes'])) {
+    for (final it in _list(p['items'])) {
+      final rank = (it['rank'] as num?)?.toInt() ?? 3;
+      final u = MomentUser(Map<String, dynamic>.from(it['user'] as Map? ?? {}));
+      final x = Map<String, dynamic>.from(it['x'] as Map? ?? {});
+      final v = (x['value_egp'] as num?)?.toInt() ?? 0;
+      covered.add('${p['event_id']}:${u.userId}');
+      add(u, '${p['event_id']}', _Ach(900 - rank * 100, _prizeSlide(p, it), prize: v,
+          badge: '${_medalEmoji[(rank - 1).clamp(0, 2)]} ${v > 0 ? _n(v) : '#$rank'}',
+          subEn: '${_ord(rank)} · ${_arena('${p['arena']}')} ${_flag('${p['arena']}')}',
+          subAr: '${_ordAr(rank)} · ${_arena('${p['arena']}')} ${_flag('${p['arena']}')}',
+          ring: _medal(rank), badgeColor: _medal(rank).$1));
+    }
+  }
+  for (final r in _list(d['round'])) {
+    for (final t in _list(r['top'])) {
+      final rank = (t['rank'] as num?)?.toInt() ?? 3;
+      final u = MomentUser(Map<String, dynamic>.from(t['user'] as Map? ?? {}));
+      if (covered.contains('${r['event_id']}:${u.userId}')) continue;
+      add(u, '${r['event_id']}', _Ach(890 - rank * 100, _championSlide(r, t),
+          badge: '${_medalEmoji[(rank - 1).clamp(0, 2)]} #$rank',
+          subEn: '${_ord(rank)} · ${_arena('${r['arena']}')} ${_flag('${r['arena']}')}',
+          subAr: '${_ordAr(rank)} · ${_arena('${r['arena']}')} ${_flag('${r['arena']}')}',
+          ring: _medal(rank), badgeColor: _medal(rank).$1));
+    }
+  }
+  for (final m in _list(d['month'])) {
+    for (final w in _list(m['winners'])) {
+      final u = MomentUser(Map<String, dynamic>.from(w['user'] as Map? ?? {}));
+      add(u, '${m['arena']}${m['key']}', _Ach(950, _monthSlide(m, w), badge: '👑',
+          subEn: 'Month · ${_arena('${m['arena']}')} ${_flag('${m['arena']}')}',
+          subAr: 'بطل الشهر · ${_arena('${m['arena']}')}', ring: _gold, badgeColor: _gold.$1));
+    }
+  }
+  for (final g in _list(d['govs'])) {
+    for (final c in _list(g['list'])) {
+      if (c['champ'] == null) continue;
+      final ch = Map<String, dynamic>.from(c['champ'] as Map);
+      final u = MomentUser(Map<String, dynamic>.from(ch['user'] as Map? ?? {}));
+      final gr = (c['rank'] as num?)?.toInt() ?? 9;
+      add(u, '${g['event_id']}g', _Ach(300 - gr * 10, _govChampSlide(g, c), badge: '🗺️ #1',
+          subEn: '#1 ${c['gov']}', subAr: 'بطل ${c['gov']}', ring: _redR, badgeColor: const Color(0xFFFF9A8A)));
+    }
+  }
+  final ids = by.keys.toList();
+  int prizeOf(int id) => by[id]!.fold(0, (a, b) => a > b.prize ? a : b.prize);
+  int weightOf(int id) => by[id]!.fold(0, (a, b) => a > b.weight ? a : b.weight);
+  ids.sort((a, b) {
+    final p = prizeOf(b).compareTo(prizeOf(a));
+    return p != 0 ? p : weightOf(b).compareTo(weightOf(a));
+  }); // stable: WORLD before LOCAL as the server sends them
+  return [
+    for (final id in ids) () {
+      final list = [...by[id]!]..sort((a, b) => b.weight.compareTo(a.weight));
+      final top = list.first;
+      final u = users[id]!;
+      final first = u.name.trim().split(RegExp(r'\s+')).first;
+      return _Kind('p$id', '', first, first, top.ring, [for (final a in list) a.slide],
+          'hl_seen_p_${id}_${events[id]!.join('_').hashCode}',
+          user: u, badge: top.badge, subEn: top.subEn, subAr: top.subAr, badgeColor: top.badgeColor);
+    }(),
+  ];
 }
 
 /// The circles at the top of the feed.
@@ -116,15 +212,21 @@ class _HighlightStoriesRowState extends State<HighlightStoriesRow> {
         for (final p in prizes) for (final it in _list(p['items'])) _prizeSlide(p, it),
       ], 'hl_seen_prizes_${prizes.map((p) => '${p['event_id']}${_list(p['items']).map((i) => i['photo'] ?? '').join()}').join('_').hashCode}'));
     }
+    if (AppLang.feedPeopleStories) out.addAll(_people(d));
     return out;
   }
+
+  static const double _size = 74;
 
   @override
   Widget build(BuildContext context) {
     final kinds = _kinds();
     if (kinds.isEmpty) return const SizedBox.shrink();
+    final firstPerson = kinds.indexWhere((k) => k.isPerson);
     return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      for (var i = 0; i < kinds.length; i++)
+      for (var i = 0; i < kinds.length; i++) ...[
+        if (i == firstPerson && i > 0)
+          Container(width: 1, height: 60, margin: const EdgeInsetsDirectional.only(end: 12, top: 8), color: const Color(0xFF2C2C33)),
         Padding(
           padding: const EdgeInsetsDirectional.only(end: 12),
           child: GestureDetector(
@@ -134,9 +236,10 @@ class _HighlightStoriesRowState extends State<HighlightStoriesRow> {
               setState(() => _seen.add(kinds[i].seenKey));
               await _openViewer(context, kinds, i);
             },
-            child: SizedBox(width: 66, child: Column(children: [
+            child: SizedBox(width: _size + 4, child: Column(children: [
+              Stack(clipBehavior: Clip.none, alignment: Alignment.bottomCenter, children: [
               Container(
-                width: 62, height: 62, padding: const EdgeInsets.all(2.5),
+                width: _size, height: _size, padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(shape: BoxShape.circle,
                     gradient: _seen.contains(kinds[i].seenKey) ? null
                         : LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
@@ -146,15 +249,29 @@ class _HighlightStoriesRowState extends State<HighlightStoriesRow> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0B0B0D), width: 2.5),
                       color: const Color(0xFF17120A)),
-                  child: Text(kinds[i].icon, style: const TextStyle(fontSize: 25)),
+                  clipBehavior: Clip.antiAlias,
+                  child: kinds[i].isPerson
+                      ? MomentAvatar(user: kinds[i].user!, size: _size - 11)
+                      : Text(kinds[i].icon, style: const TextStyle(fontSize: 30)),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(AppLang.t(kinds[i].en, kinds[i].ar), maxLines: 2, textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.15)),
+              if (kinds[i].badge != null) Positioned(bottom: -7, child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(color: const Color(0xFF0B0B0D), borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: (kinds[i].badgeColor ?? Colors.white).withValues(alpha: 0.35))),
+                child: Text(kinds[i].badge!, style: TextStyle(color: kinds[i].badgeColor ?? Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900)),
+              )),
+              ]),
+              SizedBox(height: kinds[i].badge != null ? 10 : 5),
+              Text(AppLang.t(kinds[i].en, kinds[i].ar), maxLines: kinds[i].isPerson ? 1 : 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.15)),
+              if (kinds[i].isPerson && kinds[i].subEn != null)
+                Text(AppLang.t(kinds[i].subEn!, kinds[i].subAr ?? kinds[i].subEn!), maxLines: 1, overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 9.5)),
             ])),
           ),
         ),
+      ],
     ]);
   }
 }
@@ -529,7 +646,7 @@ class _HlViewerState extends State<_HlViewer> with SingleTickerProviderStateMixi
                     const SizedBox(width: 8),
                     const Text('BDGR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5)),
                     const SizedBox(width: 6),
-                    Expanded(child: Text('· ${kind.icon} ${AppLang.t(kind.en, kind.ar).replaceAll('\n', ' ')}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    Expanded(child: Text(kind.isPerson ? '· ${kind.user!.name}' : '· ${kind.icon} ${AppLang.t(kind.en, kind.ar).replaceAll('\n', ' ')}', maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: Colors.white60, fontSize: 12.5))),
                     IconButton(onPressed: () => Navigator.of(context).maybePop(), icon: const Icon(Icons.close, color: Colors.white70)),
                   ]),

@@ -306,7 +306,18 @@ class _FeedPageState extends State<FeedPage> {
     );
   }
 
-  Widget _header() => Padding(
+  Widget _header() => AppLang.feedHeaderLogo
+      ? Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+          child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Image.asset('assets/logo_white.png', height: 32, cacheHeight: 110),
+            const SizedBox(height: 5),
+            const Text('HIGHLIGHTS', style: TextStyle(color: Colors.white, fontSize: 10.5, letterSpacing: 5, fontWeight: FontWeight.w900)),
+          ])),
+        )
+      : _headerText();
+
+  Widget _headerText() => Padding(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
         child: Row(children: [
           Text(_t('Feed', 'الفيد'),
