@@ -46,6 +46,8 @@ class _Trophy {
   final bool countable;
   final List<Map<String, dynamic>> rounds = [];
   final Set<String> arenas = {};
+  /// lit with ×0 (challenges: lights after the first one played, counts the wins)
+  bool lit = false;
 }
 
 class _Shelf {
@@ -176,13 +178,14 @@ class CabinetData {
         'Won a 1-vs-1 challenge in a gameweek', 'كسب تحدي واحد قصاد واحد في جولة', mark: 'H2H');
     for (final a in const ['LOCAL', 'WORLD']) {
       final w = t.h2hWins(a);
-      if (w > 0) { h2h.count += w; h2h.arenas.add(a); }
+      h2h.count += w;
+      if (t.h2hPlayed(a) > 0) { h2h.lit = true; h2h.arenas.add(a); }
     }
     // locked goals (owner only)
     List<_Trophy> pick(List<_Trophy> all, List<_Trophy> goals) {
       final out = <_Trophy>[];
       for (final x in all) {
-        if (x.count > 0) {
+        if (x.count > 0 || x.lit) {
           out.add(x);
         } else if (owner && goals.contains(x)) {
           out.add(x..locked = true);
