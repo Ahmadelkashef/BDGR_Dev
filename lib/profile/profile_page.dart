@@ -2730,6 +2730,9 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
               if (p.containsKey('username')) _username = p['username'] as String;
             });
             if (ctx.mounted) Navigator.pop(ctx);
+            // the "complete profile" points follow the profile as it IS now (filling it can level up;
+            // editing a complete profile changes nothing; emptying a field can drop it) → reload + level check
+            _loadTrophies(_userId);
           } catch (e) {
             setS(() { busy = false; err = msg(e); });
           }
@@ -2767,6 +2770,32 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             const SizedBox(height: 6),
             TextField(controller: userC, maxLength: 30, style: const TextStyle(color: Colors.white),
                 autocorrect: false, decoration: deco(_s('Username', 'اليوزرنيم'), prefix: '@')),
+            // something only the complete-profile sheet can fill (governorate by GPS / birth date) → open it from here
+            if (_trophies != null && !_trophies!.profileComplete) ...[
+              const SizedBox(height: 8),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: busy ? null : () async {
+                  Navigator.pop(ctx);
+                  await showCompleteProfileSheet(context);
+                  if (!mounted) return;
+                  await _loadProfile();
+                  await _loadTrophies(_userId);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(color: const Color(0x22FFD27A), borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0x88FFD27A))),
+                  child: Row(children: [
+                    const Text('🎯', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_s('Complete your profile · +30 pts', 'كمّل بروفايلك · +30 نقطة'),
+                        style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 13, fontWeight: FontWeight.w800))),
+                    const Icon(Icons.chevron_right, color: Color(0xFFFFD27A)),
+                  ]),
+                ),
+              ),
+            ],
             if (meta.isNotEmpty) ...[
               const SizedBox(height: 4),
               Row(children: [
