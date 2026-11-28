@@ -50,6 +50,9 @@ class ProfileTrophies {
   int get streakCurrent => j['streak'] is Map ? (((j['streak'] as Map)['current'] as num?)?.toInt() ?? 0) : 0;
   int get streakBest => j['streak'] is Map ? (((j['streak'] as Map)['best'] as num?)?.toInt() ?? 0) : 0;
 
+  /// head-to-head challenges won per arena (server `_ch_wins`)
+  int h2hWins(String arena) => j['h2h'] is Map ? (((j['h2h'] as Map)[arena] as num?)?.toInt() ?? 0) : 0;
+
   static Future<ProfileTrophies?> load(int userId) async {
     try {
       final r = await Supabase.instance.client.rpc('profile_trophies', params: {'p_user_id': userId});

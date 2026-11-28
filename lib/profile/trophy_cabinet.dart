@@ -171,6 +171,13 @@ class CabinetData {
     final prof = tr('profile', TrophyShape.profile, _Metal.crystal, 'Complete profile', 'بروفايل كامل',
         'Name, username, governorate and birth date are all set', 'الاسم واليوزرنيم والمحافظة وتاريخ الميلاد كلهم متسجلين',
         mark: '100%')..count = t.profileComplete ? 1 : 0;
+    // owner 28 Nov: head-to-head challenges won (Egypt + World)
+    final h2h = tr('h2h', TrophyShape.shield, _Metal.red, 'Challenge wins', 'تحديات كسبها',
+        'Won a 1-vs-1 challenge in a gameweek', 'كسب تحدي واحد قصاد واحد في جولة', mark: 'H2H');
+    for (final a in const ['LOCAL', 'WORLD']) {
+      final w = t.h2hWins(a);
+      if (w > 0) { h2h.count += w; h2h.arenas.add(a); }
+    }
     // locked goals (owner only)
     List<_Trophy> pick(List<_Trophy> all, List<_Trophy> goals) {
       final out = <_Trophy>[];
@@ -204,6 +211,7 @@ class CabinetData {
       _Shelf('Season', 'السيزون', pick([season1], [season1]), season: true),
       _Shelf('Titles', 'الألقاب', pick([month1, cup, bl, app1, gov1, lg1], [month1, cup, bl, app1])),
       _Shelf('Podium', 'المنصة', pick([r2, r3], [r2, r3])),
+      _Shelf('Head to head', 'التحديات', pick([h2h], [h2h])),
       _Shelf('Elite', 'النخبة', pick(elite, elite)),
       _Shelf('Rounds', 'الجولات', pick(shirts, shirts)),
       if (owner || t.streakBest > 0) _Shelf('Streak', 'الستريك', const [], streak: true),

@@ -24,6 +24,7 @@ import 'profile/streak_card.dart' show StreakLobbyLine;
 import 'home/home_page.dart' show HomeActions;
 import 'fantasy_stadium.dart';
 import 'fantasy_motion.dart';
+import 'fantasy_challenges.dart';
 import 'diag.dart';
 import 'safe_svg.dart';
 import 'team_initials_crest.dart';

@@ -27,6 +27,7 @@ import 'local_store.dart';
 import 'profile/profile_ambient.dart';
 import 'web/web_layout.dart';
 import 'web/web_side_rail.dart';
+import 'fantasy_challenges.dart';
 
 // ── أيقونات التابات ──────────────────────────────────────────────────────────
 const _navItems = [
@@ -270,6 +271,8 @@ class _MainShellState extends State<MainShell> {
       if (id != null) { tab = 0; page = supportThreadRoute(id); }
     } else if ((kind == 'team_request' || kind == 'team_accepted') && (d['team_id']?.toString() ?? '').isNotEmpty) {
       tab = 3; page = teamPageRoute(d['team_id'].toString());
+    } else if (d['challenges'] != null) {
+      tab = 1; page = challengesPageRoute();
     } else if (_pushTabs.containsKey(d['open'])) {
       tab = _pushTabs[d['open']];
     }

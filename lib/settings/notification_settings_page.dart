@@ -88,7 +88,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   }
 
   // الأنواع اللي بتتبعت فعلًا دلوقتي. الباقي محفوظ وجاهز، وعليه علامة "قريب" لحد ما يتبني.
-  static const _live = {'fantasy_deadline', 'fantasy_results', 'squad_social', 'badger_cup', 'badger_league', 'marketing'};
+  static const _live = {'fantasy_deadline', 'fantasy_results', 'squad_social', 'badger_cup', 'badger_league', 'challenges', 'marketing'};
 
   Widget _row(IconData icon, String key, String title, String desc) => SRow(
         icon: icon,
@@ -178,6 +178,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                   _t('When the round results and your points are out.', 'لما نتايج الجولة ونقطك تنزل.')),
               _row(Icons.groups_2_outlined, 'badger_league', _t('Badger League team', 'فريقي في دوري بادجر'),
                   _t('When a friend joins your team.', 'لما صاحب ينضم لفريقك.')),
+              _row(Icons.sports_mma_outlined, 'challenges', _t('Challenges', 'التحديات'),
+                  _t('A new challenge, an answer, or the result.', 'تحدي جديد، أو رد عليه، أو النتيجة.')),
               _row(Icons.emoji_events_outlined, 'badger_cup', _t('Badger Cup', 'كاس بادجر'),
                   _t('Your group, qualifying or going out.', 'مجموعتك، والتأهل أو الخروج.')),
               _row(Icons.local_fire_department_outlined, 'squad_social', _t('Reactions & comments on my squad', 'ريأكشن وكومنتات على تشكيلتي'),

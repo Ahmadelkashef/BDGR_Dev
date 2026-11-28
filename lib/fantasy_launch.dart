@@ -610,9 +610,11 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
   bool get ar => _ar;
   String t(String en, String a) => ar ? a : en;
 
+  int _chIn = 0;   // challenge invites waiting for me
   @override
   void initState() { super.initState(); _load(true); }
   Future<void> _load(bool fresh) async {
+    ChallengeApi.badge().then((n) { if (mounted) setState(() => _chIn = n); });
     final s = await _launchStatus(fresh: fresh);
     if (mounted) setState(() => _s = s);
   }
@@ -671,6 +673,12 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
                   : t('Team up with 1 to 4 friends · ${_blMonthName(s.bl!.newTeamMonthIn(s.arena), false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s.bl!.newTeamMonthIn(s.arena), true)}'),
             maxLines: 2, overflow: TextOverflow.ellipsis, style: subStyle),
           onTap: () async { await _openBLeague(context); _load(true); }),
+        _card(i: 3, icon: const Text('⚔️', style: TextStyle(fontSize: 22)), title: t('Challenges', 'التحديات'),
+          sub: _chIn > 0
+              ? Text(t('$_chIn new challenge${_chIn == 1 ? '' : 's'} waiting for you', '$_chIn تحدي جديد مستني ردك'),
+                  style: const TextStyle(color: Color(0xFFFF5C5C), fontSize: 12.5, fontWeight: FontWeight.w800))
+              : Text(t('1 vs 1 with anyone · max 5 per gameweek', 'واحد قصاد واحد مع أي حد · 5 بالكتير في الجولة'), style: subStyle),
+          onTap: () async { await openChallengesPage(context); _load(true); }),
         if (widget.onRecap != null)
           _card(i: 3, icon: const Text('🏁', style: TextStyle(fontSize: 22)), title: t('Last round', 'آخر جولة'),
             sub: Text(t('Your points, rank and best player', 'نقطك وترتيبك وأحسن لاعب عندك'), style: subStyle),

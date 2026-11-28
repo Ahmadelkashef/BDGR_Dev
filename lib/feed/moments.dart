@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_lang.dart';
 import '../fantasy.dart' show openProfileRoundSquad;
+import '../fantasy_challenges.dart';
 import '../media_cache.dart';
 import '../profile/profile_trophies.dart';
 import '../profile/visitor_profile_sheet.dart';
@@ -199,6 +200,17 @@ void _openSquad(BuildContext context, Moment m, {MomentUser? who, Map<String, dy
 /// "⚔️ Challenge": my result in the same round vs his
 Future<void> showMomentChallenge(BuildContext context, Moment m) async {
   final sb = Supabase.instance.client;
+  final hisUid = m.user.uid;
+  Map<String, dynamic>? target;
+  if (hisUid != null) {
+    try { target = await ChallengeApi.target(hisUid); } catch (_) {}
+  }
+  final gender = target == null ? null : (target['user'] as Map?)?['gender']?.toString();
+  // a moment without a round (streak…) → straight to the invite (owner 28 Nov)
+  if (m.eventId == null) {
+    if (hisUid != null && context.mounted) await showChallengeInvite(context, uid: hisUid, target: target);
+    return;
+  }
   Map<String, dynamic>? mine;
   MomentUser? me;
   try {
@@ -248,16 +260,26 @@ Future<void> showMomentChallenge(BuildContext context, Moment m) async {
             : AppLang.t('He beat you this round. Get him next time 🔥', 'هو كسبك الجولة دي. خد حقك الجاية 🔥'),
             textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 13)),
         const SizedBox(height: 14),
+        if (hisUid != null && target != null && target['on'] != false) ...[
+          SizedBox(width: double.infinity, height: 48, child: FilledButton.icon(
+            onPressed: () { Navigator.pop(ctx); showChallengeInvite(context, uid: hisUid, target: target); },
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF1A1A), foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+            icon: const Text('⚔️', style: TextStyle(fontSize: 16)),
+            label: Text(gender == 'female' ? AppLang.t('I want to challenge her', 'عايز أتحداها') : AppLang.t('I want to challenge him', 'عايز أتحداه'),
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))),
+          const SizedBox(height: 10),
+        ],
         Row(children: [
           if (mine != null && me != null) Expanded(child: OutlinedButton(
             onPressed: () { Navigator.pop(ctx); _openSquad(context, m, who: me, row: mine); },
             style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
             child: Text(AppLang.t('My team', 'تشكيلتي')))),
           if (mine != null) const SizedBox(width: 10),
-          Expanded(child: FilledButton(
+          Expanded(child: OutlinedButton(
             onPressed: () { Navigator.pop(ctx); _openSquad(context, m); },
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF1A1A)),
-            child: Text(AppLang.t('His team', 'تشكيلته')))),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
+            child: Text(gender == 'female' ? AppLang.t('Her team', 'تشكيلتها') : AppLang.t('His team', 'تشكيلته')))),
         ]),
       ])),
     ),
@@ -391,10 +413,9 @@ class _MomentCardState extends State<MomentCard> {
             ),
           ),
           const Spacer(),
-          if (m.eventId != null) ...[
-            _action('👀', AppLang.t('Team', 'تشكيلته'), () => _openSquad(context, m)),
-            if (!m.isMe) _action('⚔️', AppLang.t('Challenge', 'تحدّاه'), () => showMomentChallenge(context, m)),
-          ],
+          if (m.eventId != null) _action('👀', AppLang.t('Team', 'تشكيلته'), () => _openSquad(context, m)),
+          // owner 28 Nov: Challenge on EVERY user's post (followed or not), never on my own
+          if (!m.isMe && m.user.uid != null) _action('⚔️', AppLang.t('Challenge', 'تحدّاه'), () => showMomentChallenge(context, m)),
         ]),
         const SizedBox(height: 14),
         const Divider(height: 1, thickness: 1, color: Color(0x14FFFFFF)),
