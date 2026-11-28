@@ -676,7 +676,8 @@ class ProfileUi {
   static bool cabinet = true;       // trophy cabinet under FANTASY (hide = the old numbers box in each arena tab)
   static bool navFill = true;
   static bool levelLooks = true;    // profile look grows with the level (frame, light, sparks, chip, ring, crown…)
-  static bool editPencil = true;    // pencil at the top: photo · name · username
+  static bool editPencil = true;
+  static bool cardRank = false;     // arena cards: show the rating rank (#1,622) instead of the level name    // pencil at the top: photo · name · username
   /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
   static Map<String, int> levelPts = const {};
   static List<int> levelSteps = const [];       // the strip above the bottom bar takes the profile colour (no 2-colour line)
@@ -699,6 +700,7 @@ class ProfileUi {
     cabinet = on('cabinet', cabinet);
     levelLooks = on('level_looks', levelLooks);
     editPencil = on('edit_pencil', editPencil);
+    cardRank = on('card_rank', cardRank);
     try {
       final lp = m['level_pts'];
       if (lp is String && lp.isNotEmpty) {
@@ -950,10 +952,18 @@ Widget fantasyArenaCard(double w, ProfileTrophies t, Map<String, dynamic> a, {St
     pill: world ? 'WORLD' : 'EGYPT',
     main: (w) => rank == null
         ? Text('—', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1))
+        // owner 28 Nov: the LEVEL name big on the card (the rank lives in the spotlight); switch profile_card_rank
+        : ProfileUi.cabinet && !ProfileUi.cardRank ? () {
+            final lv = ArenaLevel.of(t, '${a['arena']}');
+            return Text(lv.name.toUpperCase(), maxLines: 1,
+                style: TextStyle(color: lv.color, fontSize: w * 0.12, fontWeight: FontWeight.w900, height: 1, letterSpacing: 0.5,
+                    shadows: const [Shadow(color: Colors.black, blurRadius: 6)]));
+          }()
         : ProfileUi.cardPills ? _rankLine(w, rank, world ? '🌍' : 'EG', tt.text)
         : Text('#${fmtInt(rank)}', style: TextStyle(color: Colors.white, fontSize: w * 0.15, fontWeight: FontWeight.w900, height: 1)),
     // launch (owner 28 Nov): the arena LEVEL under the rank (cabinet on); old = rating pts · rounds
     label: rank == null ? 'NOT PLAYED'
+        : ProfileUi.cabinet && !ProfileUi.cardRank ? '${fmtInt(ArenaLevel.of(t, '${a['arena']}').points)} PTS'
         : ProfileUi.cabinet ? ArenaLevel.of(t, '${a['arena']}').name.toUpperCase()
         : '${a['rating'] ?? 0} PTS · ${a['rounds'] ?? 0} GW',
   );

@@ -508,6 +508,8 @@ class ArenaLevel {
   final List<(String key, int count, int each)> rows;
 
   String get name => AppLang.t(_lvl[level].$1, _lvl[level].$2);
+  /// colour of the level (Rookie grey → bronze → silver → gold → Icon red)
+  Color get color => level == 0 ? const Color(0xFFBFC2C8) : _metal[_lvl[level].$3]![level == 7 ? 1 : 0];
 
   static ArenaLevel of(ProfileTrophies t, String arena) {
     final pts = {..._defPts, ...ProfileUi.levelPts};
