@@ -49,6 +49,12 @@ class BLeagueInfo {
   String get nextMonth => '${raw['next_month'] ?? ''}';
   /// the month a new team goes to (start month before it starts, next month once it started)
   String get newTeamMonth => '${raw['new_team_month'] ?? month}';
+  /// owner 28 Nov: a league month starts per arena when its FIRST round deadline passes
+  bool startedIn(String a) => arena(a)['started'] is bool ? arena(a)['started'] == true : started;
+  /// the month a new team of this arena goes to
+  String newTeamMonthIn(String a) => '${arena(a)['new_team_month'] ?? newTeamMonth}';
+  /// big announcement: shown again every N days until the user has a team (0 = once per month)
+  int get popupDays => (raw['popup_days'] as num?)?.toInt() ?? 1;
   int? nextPerMember(String a) => ((arena(a)['next_prize'] as Map?)?['per_member_egp'] as num?)?.toInt();
 
   /// DB switches for every Badger League spot (`app_settings.badger_league_ui`, 1 = show)

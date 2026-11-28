@@ -546,7 +546,7 @@ Future<bool> showLaunchSavedNudge(BuildContext context, bool isArabic, String ev
               ? t('Your team enters the Badger League table once it has 2 players. Send your code to a friend now.',
                   'فريقك بيدخل ترتيب دوري بادجر لما يبقى فيه اتنين. ابعت الكود لصاحبك دلوقتي.')
               : badger
-              ? (s.bl!.started
+              ? (s.bl!.startedIn(s.arena)
                   ? t('Make a team of 2 to 5 friends. Your points add up, so every friend you add raises your chances. If your team finishes #1 this month, all of you win the prize.',
                       'اعمل فريق من 2 لـ 5 صحاب. نقطكم بتتجمع، فكل صاحب بتضيفه فرصتكم بتكبر. ولو فريقكم طلع الأول الشهر ده، كلكم تكسبوا الجايزة.')
                   : t('${blStartLine(s.bl!)}. Make your team of 2 to 5 friends now, so it is ready. If your team finishes #1, all of you win the prize.',
@@ -665,10 +665,10 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
               ? (s!.teamTooSmall
                   ? t('${team['name']} · not in the table yet · invite a friend (${_blMembers(team)}/5)', '${team['name']} · لسه مش في الترتيب · اعزم صاحب (${_blMembers(team)}/5)')
                   : '${team['name']} · #${team['rank'] ?? '-'} · ${_blPts(team['points'])} ${t('pts', 'نقطة')}${_blMembers(team) < 5 ? ' · ${t('invite a friend', 'اعزم صاحب')} (${_blMembers(team)}/5)' : ''}')
-              : (s!.bl!.started && s.bl!.ui('next'))
+              : (s!.bl!.startedIn(s.arena) && s.bl!.ui('next'))
                   ? t('The ${_blMonthName(s.bl!.month, false)} league is on · get ready for ${_blMonthName(s.bl!.nextMonth, false)}: make your team now',
                       'دوري ${_blMonthName(s.bl!.month, true)} شغال · جهّز فريقك لدوري ${_blMonthName(s.bl!.nextMonth, true)} من دلوقتي')
-                  : t('Team up with 1 to 4 friends · ${_blMonthName(s.bl!.newTeamMonth, false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s.bl!.newTeamMonth, true)}'),
+                  : t('Team up with 1 to 4 friends · ${_blMonthName(s.bl!.newTeamMonthIn(s.arena), false)}', 'اعمل فريق من 2 لـ 5 صحاب · ${_blMonthName(s.bl!.newTeamMonthIn(s.arena), true)}'),
             maxLines: 2, overflow: TextOverflow.ellipsis, style: subStyle),
           onTap: () async { await _openBLeague(context); _load(true); }),
         if (widget.onRecap != null)

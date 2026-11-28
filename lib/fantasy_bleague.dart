@@ -20,6 +20,24 @@ String _blMonthName(String? m, bool ar) {
   return '${ar ? arM[i.clamp(0, 11).toInt()] : enM[i.clamp(0, 11).toInt()]} ${p[0]}';
 }
 
+/// owner 28 Nov: join any time; a new member counts from the next round whose deadline has not passed
+String _blCountsFrom(Map p) {
+  final ar = AppLang.isArabic;
+  final m = _blMonthName('${p['month'] ?? ''}', ar);
+  final c = p['counts_from'] as Map?;
+  if (c != null) {
+    final dl = DateTime.tryParse('${c['deadline_at']}')?.toLocal();
+    final when = dl == null ? '' : ' · ${ar ? 'الديدلاين' : 'deadline'} ${dl.day}/${dl.month} ${dl.hour.toString().padLeft(2, '0')}:${dl.minute.toString().padLeft(2, '0')}';
+    final r = c['round_no'];
+    return ar ? '⏱️ نقطك هتتحسب من الجولة $r$when. لو دخلت بعد الديدلاين، هتتحسب من الجولة اللي بعدها.'
+              : '⏱️ Your points count from Gameweek $r$when. Join after the deadline and you count from the next one.';
+  }
+  if (p['month_started'] == true) {
+    return ar ? '⏱️ نقطك هتتحسب من الجولة الجاية في $m.' : '⏱️ Your points count from the next $m gameweek.';
+  }
+  return ar ? '⏱️ نقطك هتتحسب من أول جولة في $m.' : '⏱️ Your points count from the first $m gameweek.';
+}
+
 String _blPts(dynamic v) {
   final n = v is num ? v : num.tryParse('$v') ?? 0;
   return n == n.roundToDouble() ? '${n.toInt()}' : n.toStringAsFixed(1);
@@ -221,9 +239,9 @@ class _BLeaguePageState extends State<_BLeaguePage> {
     final x = info.arena(a);
     final prize = Map<String, dynamic>.from(x['prize'] as Map? ?? const {});
     return {
-      'month': info.month, 'arena': a, 'started': info.started, 'state': info.state,
+      'month': info.month, 'arena': a, 'started': info.startedIn(a), 'state': info.state,
       'icons': info.raw['icons'], 'colors': info.raw['colors'],
-      'team': x['team'] ?? x['next_team'], 'per_member': x['team'] == null && x['next_team'] != null && info.started
+      'team': x['team'] ?? x['next_team'], 'per_member': x['team'] == null && x['next_team'] != null && info.startedIn(a)
           ? ((x['next_prize'] as Map?)?['per_member_egp'] ?? prize['per_member_egp']) : prize['per_member_egp'],
       'prize_ar': prize['prize_ar'], 'prize_en': prize['prize_en'],
     };
@@ -376,6 +394,9 @@ class _BLeaguePageState extends State<_BLeaguePage> {
           const SizedBox(height: 12),
           Text(t('Once you join you stay in this team all month (this arena).', 'أول ما تنضم هتفضل في الفريق ده الشهر كله (في الأرينا دي).'),
               textAlign: TextAlign.center, style: const TextStyle(color: _blGold, fontSize: 12.5, height: 1.4)),
+          const SizedBox(height: 8),
+          Text(_blCountsFrom(p), textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.4)),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: Text(t('Cancel', 'إلغاء'), style: const TextStyle(color: muted))),
@@ -527,7 +548,7 @@ class _BLeaguePageState extends State<_BLeaguePage> {
             const PopIn(from: 0.3, child: Text('🥇', style: TextStyle(fontSize: 44))),
             const SizedBox(height: 6),
             Text(t('Play with your friends', 'العب مع صحابك'), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
-            if (_info != null && _info!.started) ...[
+            if (_info != null && _info!.startedIn(_arena)) ...[
               const SizedBox(height: 6),
               Text(t('The ${_blMonthName(_info!.month, false)} league is on. A new team plays from 1 ${_blMonthName(_info!.nextMonth, false)}.',
                      'دوري ${_blMonthName(_info!.month, true)} شغال. الفريق الجديد بيلعب من 1 ${_blMonthName(_info!.nextMonth, true)}.'),

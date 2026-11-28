@@ -28,7 +28,7 @@ const kBLMascotFace = 'assets/mascot/badger_jersey_face.webp';
 Future<void> showBLAnnouncement(BuildContext context, {required Future<void> Function(String arena) onOpen}) async {
   final info = await BLeagueInfo.load();
   if (info == null || !info.visible || !context.mounted) return;
-  await LocalStore.setFlag('bl_announce_${info.newTeamMonth}');
+  await LocalStore.setFlag(blPopupKey(info));
   if (!context.mounted) return;
   await Navigator.of(context, rootNavigator: true).push(PageRouteBuilder<void>(
     opaque: true,
@@ -40,8 +40,17 @@ Future<void> showBLAnnouncement(BuildContext context, {required Future<void> Fun
   ));
 }
 
+/// phone key of the big announcement: one per league month, or one per N days (`popup_days`)
+String blPopupKey(BLeagueInfo info) {
+  final d = info.popupDays;
+  if (d <= 0) return 'bl_announce_${info.newTeamMonth}';
+  final day = DateTime.now().difference(DateTime(2026)).inDays ~/ d;
+  return 'bl_announce_${info.newTeamMonth}_$day';
+}
+
 /// when the fantasy tab opens (owner 28 Nov):
-/// · no team at all → the big announcement, once per league month (switch ui.popup)
+/// · no team at all (did not make or join one) → the big announcement every `popup_days` days until he has one
+///   (before the month's first deadline it is for this month, after it for the next month) (switch ui.popup)
 /// · captain of a team that is not full → "complete your team" pop-up in the middle, once a day (switch ui.complete)
 /// · full team(s) → nothing
 Future<void> maybeShowBLAnnouncement(BuildContext context, {required Future<void> Function(String arena) onOpen}) async {
@@ -49,7 +58,7 @@ Future<void> maybeShowBLAnnouncement(BuildContext context, {required Future<void
   if (info == null || !info.visible || !context.mounted) return;
   if (!info.hasAnyTeam) {
     if (!info.ui('popup')) return;
-    if (await LocalStore.getFlag('bl_announce_${info.newTeamMonth}')) return;
+    if (await LocalStore.getFlag(blPopupKey(info))) return;
     if (!context.mounted) return;
     await showBLAnnouncement(context, onOpen: onOpen);
     return;
