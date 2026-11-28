@@ -993,8 +993,10 @@ class _CardItem {
 /// الكروت اللي جنبه أصغر وباهتة.
 class ProfileCardCarousel extends StatefulWidget {
   const ProfileCardCarousel({super.key, required this.width, required this.t, required this.name,
-      required this.isOwner, this.photo, this.onChangePhoto});
+      required this.isOwner, this.photo, this.onChangePhoto, this.onRound});
   final double width;
+  /// a round line in the arena spotlight → that user's squad in that round
+  final void Function(Map<String, dynamic> round)? onRound;
   final ProfileTrophies? t;
   final String name;
   final bool isOwner;
@@ -1067,7 +1069,8 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
           child: AnimatedOpacity(
             opacity: mid ? 1 : 0.5, duration: dur,
             child: GestureDetector(
-              onTap: () => mid ? items[i].open() : _swap(s),
+              // owner 28 Nov: cards never move; a side card opens its big spotlight in the middle of the screen
+              onTap: () => items[i].open(),
               child: _faceAt(items, i, cw),
             ),
           ),
@@ -1078,12 +1081,6 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
       textDirection: TextDirection.ltr,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         GestureDetector(
-          // swipe: left brings the right card in, right brings the left card in
-          onHorizontalDragEnd: (d) {
-            final v = d.primaryVelocity ?? 0;
-            if (v < -200) _swap(2);
-            if (v > 200) _swap(0);
-          },
           child: SizedBox(height: ch, width: w, child: Stack(clipBehavior: Clip.none, children: [
             slot(0), slot(2), slot(1), // middle painted last = on top
           ])),
@@ -1165,7 +1162,10 @@ class _ProfileCardCarouselState extends State<ProfileCardCarousel> {
           final a = t.arenaRatings.firstWhere((x) => x['arena'] == arena, orElse: () => <String, dynamic>{'arena': arena});
           final an = _arenaName(arena);
           final played = a['rank'] != null;
-          (arena == 'LOCAL' ? left : right).add(_CardItem(an, (w) => fantasyArenaCard(w, t, a), () => _sheet(
+          (arena == 'LOCAL' ? left : right).add(_CardItem(an, (w) => fantasyArenaCard(w, t, a), ProfileUi.cabinet
+              ? () => _openSpotlight(context, t: t, arena: arena, a: a, isOwner: widget.isOwner, onRound: widget.onRound,
+                  fromLeft: arena == 'LOCAL')
+              : () => _sheet(
               (w) => fantasyArenaCard(w, t, a, name: name), AppLang.t('Fantasy · $an', 'الفانتازي · $an'), tt.text,
               played
                   ? AppLang.t('#${fmtInt((a['rank'] as num?)?.toInt() ?? 0)} of ${fmtInt((a['players'] as num?)?.toInt() ?? 0)} · ${a['rounds'] ?? 0} rounds',
@@ -1460,4 +1460,166 @@ class _TierUpViewState extends State<_TierUpView> with SingleTickerProviderState
       ])),
     );
   }
+}
+
+
+/// Arena spotlight (owner 28 Nov): tap EGYPT / WORLD → the card grows into the middle of the screen with
+/// the user's level, rank, highlights in that arena and the last round (tap = his squad). ✕ = back, nothing moves.
+void _openSpotlight(BuildContext context, {required ProfileTrophies t, required String arena,
+    required Map<String, dynamic> a, required bool isOwner, required bool fromLeft,
+    void Function(Map<String, dynamic>)? onRound}) {
+  Buzz.tap();
+  showGeneralDialog(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: true,
+    barrierLabel: 'arena',
+    barrierColor: Colors.black.withOpacity(0.82),
+    transitionDuration: const Duration(milliseconds: 320),
+    pageBuilder: (ctx, _, __) => _ArenaSpotlight(t: t, arena: arena, a: a, isOwner: isOwner, onRound: onRound),
+    transitionBuilder: (ctx, anim, _, child) {
+      final c = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+      return FadeTransition(opacity: c, child: ScaleTransition(
+        scale: Tween(begin: 0.55, end: 1.0).animate(c),
+        alignment: Alignment(fromLeft ? -0.6 : 0.6, -0.55), // grows out of its spot
+        child: child,
+      ));
+    },
+  );
+}
+
+class _ArenaSpotlight extends StatelessWidget {
+  const _ArenaSpotlight({required this.t, required this.arena, required this.a, required this.isOwner, this.onRound});
+  final ProfileTrophies t;
+  final String arena;
+  final Map<String, dynamic> a;
+  final bool isOwner;
+  final void Function(Map<String, dynamic>)? onRound;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final cw = (mq.size.width * 0.42).clamp(140.0, 190.0).toDouble();
+    final an = _arenaName(arena);
+    final rows = t.roundsList.where((r) => r['arena'] == arena).toList();
+    final played = rows.isNotEmpty || a['rank'] != null;
+    final last = rows.isEmpty ? null : rows.first; // newest first
+    int ri(dynamic v) => v is num ? v.toInt() : 0;
+    double rd(dynamic v) => v is num ? v.toDouble() : 1;
+    num? bestPts;
+    int? bestRank;
+    var podium = 0, top10 = 0;
+    for (final r in rows) {
+      final p = r['points'];
+      if (p is num && (bestPts == null || p > bestPts)) bestPts = p;
+      final k = ri(r['rank']);
+      if (k > 0 && (bestRank == null || k < bestRank)) bestRank = k;
+      if (k > 0 && k <= 3) podium++;
+      if (k > 3 && rd(r['pct']) <= 0.10) top10++;
+    }
+    String pts(num? p) => p == null ? '—' : (p == p.roundToDouble() ? '${p.toInt()}' : '$p');
+    Widget stat(String v, String l) => Expanded(child: Column(children: [
+      Text(v, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 2),
+      Text(l, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+    ]));
+    return SafeArea(child: Material(
+      type: MaterialType.transparency,
+      child: Center(child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 420, maxHeight: mq.size.height * 0.9),
+        child: Stack(children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 44, 18, 18),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Center(child: fantasyArenaCard(cw, t, a)),
+              const SizedBox(height: 10),
+              Text(AppLang.t('Fantasy · $an', 'الفانتازي · $an'), textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 14),
+              if (!played)
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(color: const Color(0xFF16171B), borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white12)),
+                  child: Text(isOwner ? AppLang.t("You haven't played $an yet", 'لسه ما لعبتش $an')
+                                      : AppLang.t("Hasn't played $an yet", 'لسه ما لعبش $an'),
+                      textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                )
+              else ...[
+                ArenaLevelCard(t: t, arena: arena),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+                  decoration: BoxDecoration(color: const Color(0xFF16171B), borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white12)),
+                  child: Row(children: [
+                    stat(a['rank'] == null ? '—' : '#${fmtInt(ri(a['rank']))}',
+                        AppLang.t('Rank of ${fmtInt(ri(a['players']))}', 'الترتيب من ${fmtInt(ri(a['players']))}')),
+                    stat(bestRank == null ? '—' : '#${fmtInt(bestRank)}', AppLang.t('Best round', 'أحسن جولة')),
+                    stat(pts(bestPts), AppLang.t('Best points', 'أعلى نقط')),
+                    stat('${rows.length}', AppLang.t('Rounds', 'جولات')),
+                  ]),
+                ),
+                if (podium + top10 > 0) ...[
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    if (podium > 0) Expanded(child: _chip('🏆', AppLang.t('Top 3 ×$podium', 'توب 3 ×$podium'))),
+                    if (podium > 0 && top10 > 0) const SizedBox(width: 8),
+                    if (top10 > 0) Expanded(child: _chip('⭐', AppLang.t('Top 10% ×$top10', 'توب 10% ×$top10'))),
+                  ]),
+                ],
+                if (last != null) ...[
+                  const SizedBox(height: 14),
+                  Text(AppLang.t('LAST ROUND', 'آخر جولة'), style: const TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 1.5)),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: onRound == null ? null : () { Navigator.of(context).pop(); onRound!(last); },
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                      decoration: BoxDecoration(color: const Color(0xFF1F2026), borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white12)),
+                      child: Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(AppLang.t('${last['name_en'] ?? ''}', '${last['name_ar'] ?? ''}'),
+                              style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 2),
+                          Text(AppLang.t('#${fmtInt(ri(last['rank']))} of ${fmtInt(ri(last['players']))}',
+                              '#${fmtInt(ri(last['rank']))} من ${fmtInt(ri(last['players']))}'),
+                              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        ])),
+                        Text(AppLang.t('${pts(last['points'] as num?)} pts', '${pts(last['points'] as num?)} نقطة'),
+                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                        if (onRound != null) ...[
+                          const SizedBox(width: 6),
+                          Text(AppLang.t('Squad', 'التشكيلة'), style: const TextStyle(color: Color(0xFFFF4D4D), fontSize: 12, fontWeight: FontWeight.w800)),
+                          const Icon(Icons.chevron_right, color: Color(0xFFFF4D4D), size: 18),
+                        ],
+                      ]),
+                    ),
+                  ),
+                ],
+              ],
+            ]),
+          ),
+          Positioned(top: 0, right: 8, child: IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: Container(width: 34, height: 34,
+                decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle, border: Border.all(color: Colors.white24)),
+                child: const Icon(Icons.close, color: Colors.white, size: 18)),
+          )),
+        ]),
+      )),
+    ));
+  }
+
+  Widget _chip(String icon, String text) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
+    decoration: BoxDecoration(color: const Color(0xFF1F1A10), borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x55E6B649))),
+    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(icon, style: const TextStyle(fontSize: 14)),
+      const SizedBox(width: 6),
+      Flexible(child: Text(text, style: const TextStyle(color: Color(0xFFFFD27A), fontSize: 12.5, fontWeight: FontWeight.w800))),
+    ]),
+  );
 }

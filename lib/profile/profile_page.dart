@@ -1389,6 +1389,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
             name: _displayName.isNotEmpty ? _displayName : 'BDGR Athlete',
             isOwner: _isOwner, photo: _avatarImage,
             onChangePhoto: _isOwner ? _pickAvatar : null,
+            onRound: _openRound,
           ),
         ),
         // زرار الكاميرا بره طرف الكارت (ما يغطيش الكلام اللي جوه)
