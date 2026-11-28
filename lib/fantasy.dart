@@ -19,6 +19,7 @@ import 'profile/visitor_profile_sheet.dart';
 import 'profile/complete_profile.dart' show maybePromptCompleteProfile;
 import 'profile/level_looks.dart' show maybeLevelUpAfterSave;
 import 'profile/first_achievement.dart' show maybeFirstAchievement;
+import 'push/push_ask.dart' show maybeAskPush;
 import 'profile/streak_card.dart' show StreakLobbyLine;
 import 'home/home_page.dart' show HomeActions;
 import 'fantasy_stadium.dart';
@@ -472,6 +473,8 @@ class _FancyPageState extends State<FancyPage> {
   String?       _lobbyError;
   FantasyEvent? _localEvent;
   FantasyEvent? _worldEvent;
+  /// owner 28 Nov: when an arena has no round, when does the next one open? (fantasy_upcoming, null = unknown)
+  final Map<String, DateTime?> _nextOpens = {};
 
   bool              _playersLoading = false;
   String?           _playersError;
@@ -682,6 +685,18 @@ class _FancyPageState extends State<FancyPage> {
         _worldEvent = ev(data['WORLD']);
         _lobbyLoading = false;
       });
+      for (final type in const ['LOCAL', 'WORLD']) {
+        if ((type == 'LOCAL' ? _localEvent : _worldEvent) != null) continue;
+        try {
+          final up = await _sb.rpc('fantasy_upcoming', params: {'p_type': type});
+          DateTime? first;
+          for (final r in (up as List? ?? const [])) {
+            final o = DateTime.tryParse('${(r as Map)['opens_at']}')?.toLocal();
+            if (o != null && o.isAfter(DateTime.now()) && (first == null || o.isBefore(first))) first = o;
+          }
+          if (mounted) setState(() => _nextOpens[type] = first);
+        } catch (_) {}
+      }
     } catch (e) {
       setState(() { _lobbyLoading = false; _lobbyError = e.toString(); });
     }
@@ -756,12 +771,16 @@ class _FancyPageState extends State<FancyPage> {
           await LocalStore.setStr('cp_prompt_$evId', '1');
           return;
         }
+        // owner 28 Nov: ONE popup per save, by priority; the rest wait for the next save:
+        // first achievement → notification permission → new level → complete profile → Badger League / league → ad
         if (!mounted) return;
-        // owner 28 Nov: once per round, a small "complete your profile (+30 pts)" sheet when something is missing
-        await maybePromptCompleteProfile(context, evId);
+        if (await maybeAskPush(context)) return;
         if (!mounted) return;
-        // the 2 "round played" points count at save → a new level is celebrated right here (owner 28 Nov)
-        await maybeLevelUpAfterSave(context, onSeeProfile: () => HomeActions.showProfileTab?.call());
+        // the 2 "round played" points count at save → a new level is celebrated right here
+        if (await maybeLevelUpAfterSave(context, onSeeProfile: () => HomeActions.showProfileTab?.call())) return;
+        if (!mounted) return;
+        // once per round, a small "complete your profile (+30 pts)" sheet when something is missing
+        if (await maybePromptCompleteProfile(context, evId)) return;
         if (!mounted) return;
         final shown = await showLaunchSavedNudge(context, isArabic, evId);
         if (!shown && mounted) _showSavedAd();
@@ -1294,11 +1313,11 @@ class _FancyPageState extends State<FancyPage> {
     return Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         AnimatedContainer(duration: arenaAnim, curve: arenaCurve, width: leftW,
-          child: StaggerIn(index: 2, dy: 60, durationMs: 560, child: _arenaHalf(id: 'EGYPT', tag: _arenaTag(_localEvent),
+          child: StaggerIn(index: 2, dy: 60, durationMs: 560, child: _arenaHalf(id: 'EGYPT', tag: _arenaTag(_localEvent, 'LOCAL'),
             image: egyptArenaImage, tint: egyptTint, isLeft: true, available: _localEvent != null))),
         const SizedBox(width: gap),
         AnimatedContainer(duration: arenaAnim, curve: arenaCurve, width: rightW,
-          child: StaggerIn(index: 3, dy: 60, durationMs: 560, child: _arenaHalf(id: 'WORLD', tag: _arenaTag(_worldEvent),
+          child: StaggerIn(index: 3, dy: 60, durationMs: 560, child: _arenaHalf(id: 'WORLD', tag: _arenaTag(_worldEvent, 'WORLD'),
             image: worldArenaImage, tint: worldTint, isLeft: false, available: _worldEvent != null))),
       ]),
       AnimatedPositioned(duration: arenaAnim, curve: arenaCurve,
@@ -1307,9 +1326,25 @@ class _FancyPageState extends State<FancyPage> {
     ]);
   });
 
+  /// owner 28 Nov: an arena without a round says WHEN the next one opens (or that we'll notify), never just "no round"
+  String _nextRoundText(String? type, {bool long = false}) {
+    final o = type == null ? null : _nextOpens[type];
+    if (o == null) {
+      return long ? t("Next gameweek soon · we'll notify you 🔔", 'الجولة الجاية قريب · هنبعتلك أول ما تفتح 🔔')
+                  : t('Next gameweek soon', 'الجولة الجاية قريب');
+    }
+    const dEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dAr = ['الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت', 'الحد'];
+    final h = o.hour % 12 == 0 ? 12 : o.hour % 12;
+    final mm = o.minute.toString().padLeft(2, '0');
+    final ap = o.hour < 12 ? t('AM', 'ص') : t('PM', 'م');
+    return t('Next gameweek opens ${dEn[o.weekday - 1]} ${o.day}/${o.month} · $h:$mm $ap',
+        'الجولة الجاية بتفتح ${dAr[o.weekday - 1]} ${o.day}/${o.month} · $h:$mm $ap');
+  }
+
   /// معلومة مفيدة على الكارت: عدد الماتشات + فاضل قد إيه على الديدلاين
-  String _arenaTag(FantasyEvent? ev) {
-    if (ev == null) return t('No round now', 'مفيش جولة دلوقتي');
+  String _arenaTag(FantasyEvent? ev, [String? type]) {
+    if (ev == null) return _nextRoundText(type);
     final n = ev.matches.length;
     final matches = t('$n ${n == 1 ? 'match' : 'matches'}', '$n ${n == 1 ? 'ماتش' : 'ماتشات'}');
     final ph = phaseOf(ev);
@@ -1379,7 +1414,8 @@ class _FancyPageState extends State<FancyPage> {
         child: Text(idLabel, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 1))),
       if (!available) ...[
         const SizedBox(height: 6),
-        Text(t('No active event','مفيش إيفنت نشط'), style: const TextStyle(color: muted, fontSize: 11)),
+        Text(_nextRoundText(id == 'EGYPT' ? 'LOCAL' : 'WORLD', long: true), maxLines: 2,
+            style: const TextStyle(color: muted, fontSize: 11, height: 1.3)),
       ],
       const SizedBox(height: 16),
       Pressable(enabled: available, child: SizedBox(width: double.infinity, height: 46,
@@ -4963,9 +4999,9 @@ class FantasyLangToggle extends StatelessWidget {
   final bool isArabic;
   final VoidCallback onTap;
 
-  /// دايرة صغيرة: 🌐 وتحتها اللغة اللي هتتحول لها
+  /// دايرة صغيرة: 🌐 وتحتها اللغة اللي هتتحول لها — owner 28 Nov: hidden unless app_lang_toggles = everywhere
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) => !AppLang.togglesEverywhere ? const SizedBox.shrink() : GestureDetector(
     onTap: onTap,
     child: Container(
       width: 36, height: 36,

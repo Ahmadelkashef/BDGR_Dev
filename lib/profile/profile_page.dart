@@ -2345,7 +2345,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
       );
 
   // ── Language toggle button ────────────────────────────────────────────────
-  Widget _langBtn() => GestureDetector(
+  Widget _langBtn() => !AppLang.togglesEverywhere ? const SizedBox.shrink() : GestureDetector(
     onTap: () { AppLang.set(_isArabic ? 'en' : 'ar'); LocalStore.setLang(AppLang.isArabic ? 'ar' : 'en'); },
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

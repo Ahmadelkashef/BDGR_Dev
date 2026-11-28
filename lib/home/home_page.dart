@@ -808,9 +808,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            const SizedBox(width: 9),
-            // زرار اللغة (مكان الجرس): بيقلب الهوم عربي/إنجليزي وبيتحفظ
-            _Pressable(
+            // زرار اللغة (مكان الجرس): بيقلب الهوم عربي/إنجليزي وبيتحفظ — owner 28 Nov: Settings only (switch)
+            if (AppLang.togglesEverywhere) const SizedBox(width: 9),
+            if (AppLang.togglesEverywhere) _Pressable(
               onTap: _toggleLang,
               child: _IconBox(
                 child: Column(

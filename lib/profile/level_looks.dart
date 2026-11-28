@@ -271,14 +271,14 @@ class _Slide extends GradientTransform {
 
 /// Owner only, once per new level: the big "level up" moment.
 /// [card] draws the BADGER card in a given look; [onSeeProfile] (optional) jumps to the profile tab.
-Future<void> maybeShowLevelUp(BuildContext context, ProfileTrophies t, Widget Function(LevelLook l, double w) card,
+Future<bool> maybeShowLevelUp(BuildContext context, ProfileTrophies t, Widget Function(LevelLook l, double w) card,
     {VoidCallback? onSeeProfile}) async {
   final look = LevelLook.of(t);
   final seen = await LocalStore.getStr('profile_level_seen');
   await LocalStore.setStr('profile_level_seen', '${look.level}');
-  if (seen == null || !context.mounted) return; // first time: just remember
+  if (seen == null || !context.mounted) return false; // first time: just remember
   final old = int.tryParse(seen) ?? 0;
-  if (look.level <= old) return;
+  if (look.level <= old) return false;
   await showGeneralDialog(
     context: context,
     useRootNavigator: true,
@@ -289,27 +289,31 @@ Future<void> maybeShowLevelUp(BuildContext context, ProfileTrophies t, Widget Fu
     pageBuilder: (ctx, __, ___) => _LevelUpView(look: look, old: LevelLook._(old.clamp(0, 7).toInt()), card: card,
         onSeeProfile: onSeeProfile),
   );
+  return true;
 }
 
 /// After a squad save (fantasy): the 2 "round played" points count at save, so the level can change right here.
-Future<void> maybeLevelUpAfterSave(BuildContext context, {VoidCallback? onSeeProfile}) async {
+/// Returns true when the celebration was shown (the save flow then shows nothing else that time).
+Future<bool> maybeLevelUpAfterSave(BuildContext context, {VoidCallback? onSeeProfile}) async {
   try {
     final sb = Supabase.instance.client;
     final id = await sb.rpc('get_my_iplay_user_id');
     final uid = id is num ? id.toInt() : int.tryParse('$id');
-    if (uid == null) return;
+    if (uid == null) return false;
     final t = await ProfileTrophies.load(uid);
-    if (t == null || !ProfileUi.levelLooks || !context.mounted) return;
+    if (t == null || !ProfileUi.levelLooks || !context.mounted) return false;
     ImageProvider? photo;
     try {
       final row = await sb.from('user_profile').select('avatar_url').eq('user_id', uid).maybeSingle();
       final url = row?['avatar_url']?.toString();
       if (url != null && url.isNotEmpty) photo = MediaCache.image(url);
     } catch (_) {}
-    if (!context.mounted) return;
-    await maybeShowLevelUp(context, t, (l, w) => LevelDecor(look: l, width: w,
+    if (!context.mounted) return false;
+    return await maybeShowLevelUp(context, t, (l, w) => LevelDecor(look: l, width: w,
         child: badgerProfileCard(w, t, photo: photo, frame: l.frame)), onSeeProfile: onSeeProfile);
-  } catch (_) {}
+  } catch (_) {
+    return false;
+  }
 }
 
 class _LevelUpView extends StatefulWidget {

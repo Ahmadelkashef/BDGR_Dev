@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_lang.dart';
 import '../local_store.dart';
 import '../motion_kit.dart';
+import '../push/push_ask.dart' show PushRemindButton;
 import 'level_looks.dart' show ConfettiBit, ConfettiPainter;
 import 'profile_trophies.dart';
 import 'trophy_cabinet.dart' show debutTrophyArt, ArenaLevel, levelName;
@@ -130,6 +131,8 @@ class _FirstViewState extends State<_FirstView> with SingleTickerProviderStateMi
           ),
           TextButton(onPressed: () => Navigator.of(context).pop(false),
               child: Text(AppLang.t('Later', 'بعدين'), style: const TextStyle(color: Colors.white54))),
+          // owner 28 Nov: the notification permission is offered here (first save), not at app open
+          const PushRemindButton(),
         ]))),
       ]),
     );

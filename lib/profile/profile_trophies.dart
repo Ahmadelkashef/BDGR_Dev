@@ -685,6 +685,8 @@ class ProfileUi {
   static bool levelLooks = true;    // profile look grows with the level (frame, light, sparks, chip, ring, crown…)
   static bool editPencil = true;
   static bool firstAchv = true;     // first saved squad ever → first-achievement moment (profile_first_achv)
+  /// owner 28 Nov: the main number is the LEVEL; the Badger Rating rank (#1,622 of …) stays hidden (switch profile_rating_rank)
+  static bool ratingRank = false;
   static bool cardRank = false;     // arena cards: show the rating rank (#1,622) instead of the level name    // pencil at the top: photo · name · username
   /// level points per trophy + level thresholds (`profile_level_pts` / `profile_level_steps`); empty = app defaults
   static Map<String, int> levelPts = const {};
@@ -713,6 +715,7 @@ class ProfileUi {
     editPencil = on('edit_pencil', editPencil);
     firstAchv = on('first_achv', firstAchv);
     cardRank = on('card_rank', cardRank);
+    ratingRank = on('rating_rank', ratingRank);
     try {
       final lp = m['level_pts'];
       if (lp is String && lp.isNotEmpty) {
@@ -1581,8 +1584,9 @@ class _ArenaSpotlight extends StatelessWidget {
                   decoration: BoxDecoration(color: const Color(0xFF16171B), borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.white12)),
                   child: Row(children: [
-                    stat(a['rank'] == null ? '—' : '#${fmtInt(ri(a['rank']))}',
-                        AppLang.t('Rank of ${fmtInt(ri(a['players']))}', 'الترتيب من ${fmtInt(ri(a['players']))}')),
+                    if (ProfileUi.ratingRank)
+                      stat(a['rank'] == null ? '—' : '#${fmtInt(ri(a['rank']))}',
+                          AppLang.t('Rank of ${fmtInt(ri(a['players']))}', 'الترتيب من ${fmtInt(ri(a['players']))}')),
                     stat(bestRank == null ? '—' : '#${fmtInt(bestRank)}', AppLang.t('Best round', 'أحسن جولة')),
                     stat(pts(bestPts), AppLang.t('Best points', 'أعلى نقط')),
                     stat('${rows.length}', AppLang.t('Rounds', 'جولات')),

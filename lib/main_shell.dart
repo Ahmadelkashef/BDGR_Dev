@@ -63,6 +63,9 @@ const _navItems = [
 ];
 
 // ── MainShell ────────────────────────────────────────────────────────────────
+/// owner 28 Nov: false = no notification prompt at app open (it comes after the first squad save)
+const bool pushAskAtOpen = false;
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -137,6 +140,7 @@ class _MainShellState extends State<MainShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() {}); });
     Diag.sendPending();
     AppUsage.trackOpen(); // user_apps: اليوزر فتح التطبيق ده
+    AppLang.loadUi().then((_) { if (mounted) setState(() {}); });
     HomeActions.showFantasyTab = () { if (mounted && _index != 1) setState(() => _index = 1); };
     HomeActions.showProfileTab = () { if (mounted && _index != 4) setState(() => _index = 4); };
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);
@@ -181,6 +185,8 @@ class _MainShellState extends State<MainShell> {
     await PushService.checkInitialMessage();
     await PushService.sync();
     if (!mounted || _legalShown) return;
+    // owner 28 Nov: the permission is asked after the FIRST squad save (first achievement / save flow), not at app open
+    if (pushAskAtOpen == false) return;
     if (await LocalStore.getFlag('push_prompt_shown') || !await PushService.notAskedYet()) return;
     await Future<void>.delayed(const Duration(seconds: 2));
     if (!mounted) return;

@@ -651,7 +651,7 @@ class _LaunchHubPageState extends State<_LaunchHubPage> {
           _card(i: 3, icon: const Text('🏁', style: TextStyle(fontSize: 22)), title: t('Last round', 'آخر جولة'),
             sub: Text(t('Your points, rank and best player', 'نقطك وترتيبك وأحسن لاعب عندك'), style: subStyle),
             onTap: () => widget.onRecap!()),
-        if (widget.showLanguage && widget.onToggleLanguage != null)
+        if (widget.showLanguage && widget.onToggleLanguage != null && AppLang.togglesEverywhere)
           _card(i: 4, icon: const Icon(Icons.language_rounded, color: Colors.white, size: 24), title: t('Language', 'اللغة'),
             sub: Text(ar ? 'العربية · دوس علشان English' : 'English · tap for العربية', style: subStyle),
             onTap: () { widget.onToggleLanguage!(); setState(() => _ar = !_ar); }),
