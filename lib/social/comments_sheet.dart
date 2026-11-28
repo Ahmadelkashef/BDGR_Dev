@@ -319,6 +319,7 @@ class CommentButton extends StatelessWidget {
   final bool vertical;
   @override
   Widget build(BuildContext context) {
+    if (!CommentsUi.on) return const SizedBox.shrink();   // owner 28 Nov: comments off in the feed
     const c = Color(0xFFC5C9D2);
     final icon = Icon(Icons.mode_comment_outlined, color: vertical ? Colors.white : c, size: vertical ? 28 : 21);
     final label = Text(count > 0 ? FeedApi.count(count) : AppLang.t('Comment', 'كومنت'),
@@ -363,6 +364,12 @@ class ShareButton extends StatelessWidget {
 }
 
 /// شريط الأزرار تحت الكارت: كل زرار واخد نفس المساحة بالظبط
+/// owner 28 Nov: comments are off (switch `feed_comments` = show brings them back). Loaded by MomentsApi.
+class CommentsUi {
+  CommentsUi._();
+  static bool on = false;
+}
+
 class PostActionBar extends StatelessWidget {
   const PostActionBar({super.key, required this.children});
   final List<Widget> children;
@@ -370,7 +377,8 @@ class PostActionBar extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
         child: Row(children: [
-          for (final c in children) Expanded(child: Center(child: FittedBox(fit: BoxFit.scaleDown, child: c))),
+          for (final c in children)
+            if (!(c is CommentButton && !CommentsUi.on)) Expanded(child: Center(child: FittedBox(fit: BoxFit.scaleDown, child: c))),
         ]),
       );
 }

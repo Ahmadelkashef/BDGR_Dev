@@ -14,6 +14,7 @@ import 'external_media.dart';
 import 'feed_api.dart';
 import 'feed_stories.dart';
 import 'feed_viewer.dart';
+import 'moments.dart';
 import '../social/comments_sheet.dart';
 import '../ugc/ugc_api.dart';
 import '../ugc/ugc_viewer.dart';
@@ -39,12 +40,16 @@ class _FeedPageState extends State<FeedPage> {
   // بوستات كل اليوزرز (الحسابات العامة + اللي متابعهم + ريبوستات اللي متابعهم) — بتتخلط مع بوستات BDGR بالوقت
   final List<UgcItem> _ugc = [];
   bool _ugcEnd = false;
+  // owner 28 Nov: the feed shows BDGR posts + "moments" (achievement cards made by the app); user uploads are off
+  final List<Moment> _moments = [];
+  bool _momEnd = false;
+  List<List<Moment>> _momStories = [];
 
-  DateTime _at(Object o) => o is FeedPost ? o.createdAt : (o as UgcItem).sortAt;
+  DateTime _at(Object o) => o is FeedPost ? o.createdAt : o is Moment ? o.at : (o as UgcItem).sortAt;
 
   /// المثبّت فوق، وبعدين كل حاجة بالأحدث
   List<Object> get _entries {
-    final rest = <Object>[..._posts.where((p) => !p.isPinned), ..._ugc]
+    final rest = <Object>[..._posts.where((p) => !p.isPinned), ..._ugc, ..._moments]
       ..sort((a, b) => _at(b).compareTo(_at(a)));
     return [..._posts.where((p) => p.isPinned), ...rest];
   }
@@ -90,21 +95,25 @@ class _FeedPageState extends State<FeedPage> {
       final results = await Future.wait<Object>([
         FeedApi.page(),
         FeedApi.stories(),
-        UgcApi.feed().catchError((Object e) { debugPrint('ugc feed error: $e'); return <UgcItem>[]; }),
+        MomentsApi.feed().catchError((Object e) { debugPrint('moments error: $e'); return <Moment>[]; }),
+        MomentsApi.stories().catchError((Object e) { debugPrint('moment stories error: $e'); return <List<Moment>>[]; }),
       ]);
       if (!mounted) return;
       setState(() {
         _posts..clear()..addAll(results[0] as List<FeedPost>);
         _stories = results[1] as List<FeedStory>;
         _end = (results[0] as List).length < 10;
-        _ugc..clear()..addAll(results[2] as List<UgcItem>);
-        _ugcEnd = (results[2] as List).length < 10;
+        _ugc.clear();
+        _ugcEnd = true;   // user uploads are off on launch (moments instead)
+        _moments..clear()..addAll(results[2] as List<Moment>);
+        _momEnd = (results[2] as List).length < 10;
+        _momStories = results[3] as List<List<Moment>>;
         _loading = false;
         _lastLoad = DateTime.now();
       });
     } catch (e) {
       debugPrint('feed load error: $e');
-      if (mounted) setState(() { _loading = false; _failed = _posts.isEmpty && _ugc.isEmpty; });
+      if (mounted) setState(() { _loading = false; _failed = _posts.isEmpty && _ugc.isEmpty && _moments.isEmpty; });
     }
   }
 
@@ -113,7 +122,7 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   Future<void> _loadMore() async {
-    if (_loadingMore || (_end && _ugcEnd) || (_posts.isEmpty && _ugc.isEmpty)) return;
+    if (_loadingMore || (_end && _ugcEnd && _momEnd) || (_posts.isEmpty && _ugc.isEmpty && _moments.isEmpty)) return;
     setState(() => _loadingMore = true);
     try {
       final lastOfficial = _posts.where((p) => !p.isPinned).lastOrNull;
@@ -124,6 +133,9 @@ class _FeedPageState extends State<FeedPage> {
         !_ugcEnd && _ugc.isNotEmpty
             ? UgcApi.feed(before: _ugc.last.sortAt).catchError((Object _) => <UgcItem>[])
             : Future.value(<UgcItem>[]),
+        !_momEnd && _moments.isNotEmpty
+            ? MomentsApi.feed(before: _moments.last.at).catchError((Object _) => <Moment>[])
+            : Future.value(<Moment>[]),
       ]);
       if (!mounted) return;
       setState(() {
@@ -135,6 +147,10 @@ class _FeedPageState extends State<FeedPage> {
         final uids = _ugc.map((p) => p.id).toSet();
         _ugc.addAll(um.where((p) => !uids.contains(p.id)));
         if (!_ugcEnd) _ugcEnd = um.length < 10;
+        final mm = res[2].cast<Moment>();
+        final mids = _moments.map((x) => x.id).toSet();
+        _moments.addAll(mm.where((x) => !mids.contains(x.id)));
+        if (!_momEnd) _momEnd = mm.length < 10;
       });
     } catch (e) {
       debugPrint('feed more error: $e');
@@ -230,7 +246,7 @@ class _FeedPageState extends State<FeedPage> {
                         _t("Couldn't load the feed", 'مقدرناش نحمّل الفيد'),
                         action: TextButton(onPressed: _refresh,
                             child: Text(_t('Try again', 'جرّب تاني'), style: const TextStyle(color: _gold)))))
-                  else if (_posts.isEmpty && _ugc.isEmpty)
+                  else if (_posts.isEmpty && _ugc.isEmpty && _moments.isEmpty)
                     SliverFillRemaining(hasScrollBody: false, child: _message(
                         Icons.dynamic_feed_outlined,
                         _t('Posts from BDGR and the BDGR community show up here', 'بوستات BDGR وكل الناس على BDGR هتظهر هنا')))
@@ -249,6 +265,7 @@ class _FeedPageState extends State<FeedPage> {
                               child: AdView(e.ad),
                             );
                           }
+                          if (e is Moment) return MomentCard(key: ValueKey('m-${e.id}'), m: e);
                           if (e is UgcItem) {
                             return UgcFeedCard(
                               key: ValueKey('u-${e.id}'),
@@ -272,7 +289,7 @@ class _FeedPageState extends State<FeedPage> {
                       padding: const EdgeInsets.fromLTRB(0, 8, 0, 120),
                       child: Center(child: _loadingMore
                           ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: _gold, strokeWidth: 2))
-                          : _end && _ugcEnd && (_posts.length + _ugc.length) > 3
+                          : _end && _ugcEnd && _momEnd && (_posts.length + _ugc.length + _moments.length) > 3
                               ? Text(_t("You're all caught up", 'كده شفت كل حاجة'),
                                   style: const TextStyle(color: Colors.white38, fontSize: 12))
                               : const SizedBox.shrink()),
@@ -330,7 +347,14 @@ class _FeedPageState extends State<FeedPage> {
             if (ad == null) return const SizedBox.shrink();
             return Padding(padding: const EdgeInsetsDirectional.only(end: 10), child: AdStoryCircle(ad, size: 58));
           }),
-          Expanded(child: FantasyHighlightsStrip(isArabic: _ar)),
+          // moment stories (24h by default; the owner sets the hours) + fantasy winners
+          Expanded(child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              MomentStoriesRow(groups: _momStories),
+              SizedBox(width: 300, child: FantasyHighlightsStrip(isArabic: _ar)),
+            ]),
+          )),
         ]),
       );
 
@@ -476,9 +500,10 @@ class _PostCardState extends State<_PostCard> {
         // Hype · كومنت · شير — كل واحد واخد نفس المساحة
         PostActionBar(children: [
           HypeButton(active: p.myHype, count: p.hypes, onTap: widget.onHype),
-          CommentButton(count: p.comments, onTap: () => showCommentsSheet(context,
-              postType: 'official', postId: p.id,
-              onCount: (n) { if (mounted) setState(() => p.comments = n); })),
+          // owner 28 Nov: comments are off in the feed (CommentsUi / feed_comments switch)
+            CommentButton(count: p.comments, onTap: () => showCommentsSheet(context,
+                postType: 'official', postId: p.id,
+                onCount: (n) { if (mounted) setState(() => p.comments = n); })),
           ShareButton(onTap: widget.onShare),
         ]),
       ]),
@@ -504,9 +529,9 @@ class HypeMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mark = Image.asset('assets/badger_white.png',
-        width: size, height: size * 0.565, fit: BoxFit.contain,
-        color: active ? Brand.navAccent : const Color(0xFFC5C9D2), filterQuality: FilterQuality.medium);
+    // owner 28 Nov: no badger in the reaction any more → a flame
+    final mark = Icon(active ? Icons.local_fire_department_rounded : Icons.local_fire_department_outlined,
+        size: size * 0.85, color: active ? Brand.navAccent : const Color(0xFFC5C9D2));
     if (!glow || !active) return mark;
     return DecoratedBox(
       decoration: BoxDecoration(boxShadow: [BoxShadow(color: Brand.navAccent.withValues(alpha: 0.45), blurRadius: size * 0.5)]),
@@ -555,7 +580,7 @@ class _HypeButtonState extends State<HypeButton> with SingleTickerProviderStateM
       builder: (_, __) => Transform.scale(scale: _scale.value,
           child: HypeMark(active: widget.active, size: v ? 36 : 27, glow: _pop.isAnimating && _pop.value < 0.85)),
     );
-    final label = Text(widget.count > 0 ? 'Hype ${FeedApi.count(widget.count)}' : 'Hype',
+    final label = Text(widget.count > 0 ? FeedApi.count(widget.count) : '',
         style: TextStyle(color: color, fontSize: v ? 12 : 13, fontWeight: FontWeight.w700,
             shadows: v ? const [Shadow(blurRadius: 6, color: Colors.black54)] : null));
     return InkWell(
@@ -570,3 +595,4 @@ class _HypeButtonState extends State<HypeButton> with SingleTickerProviderStateM
     );
   }
 }
+

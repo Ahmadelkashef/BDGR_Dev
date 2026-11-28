@@ -8,6 +8,7 @@ import 'ads/ads.dart';
 import 'app_config.dart';
 import 'app_usage.dart';
 import 'app_lang.dart';
+import 'social/comments_sheet.dart' show CommentsUi;
 import 'brand.dart';
 import 'competitions/competition_sports.dart' show competitionPreselect;
 import 'competitions/competitions_page.dart';
@@ -140,7 +141,7 @@ class _MainShellState extends State<MainShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() {}); });
     Diag.sendPending();
     AppUsage.trackOpen(); // user_apps: اليوزر فتح التطبيق ده
-    AppLang.loadUi().then((_) { if (mounted) setState(() {}); });
+    AppLang.loadUi().then((_) { CommentsUi.on = AppLang.feedComments; if (mounted) setState(() {}); });
     HomeActions.showFantasyTab = () { if (mounted && _index != 1) setState(() => _index = 1); };
     HomeActions.showProfileTab = () { if (mounted && _index != 4) setState(() => _index = 4); };
     DeepLinks.pendingMomentId.addListener(_openPendingMoment);

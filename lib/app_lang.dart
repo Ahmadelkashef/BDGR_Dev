@@ -31,10 +31,13 @@ class AppLang {
   /// owner 28 Nov: the language buttons live in Settings only (switch `app_lang_toggles` = settings | everywhere).
   /// false = hide the quick buttons (home, fantasy, competitions, my stats, profile). Default hidden.
   static bool togglesEverywhere = false;
+  /// owner 28 Nov: feed comments (switch `feed_comments`, default hide); copied into CommentsUi at app open
+  static bool feedComments = false;
   static Future<void> loadUi() async {
     try {
       togglesEverywhere = await LocalStore.getStr('lang_toggles') == 'everywhere';
       final r = await Supabase.instance.client.rpc('fantasy_app_config');
+      if (r is Map) feedComments = r['feed_comments']?.toString() == 'show';
       if (r is Map && r['lang_toggles'] != null) {
         final v = '${r['lang_toggles']}';
         await LocalStore.setStr('lang_toggles', v);
